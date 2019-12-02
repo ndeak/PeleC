@@ -18,7 +18,7 @@ contains
                           flag_nscbc_isAnyPerio, flag_nscbc_perio, &
                           time,delta,dt) bind(C, name="impose_NSCBC")
     
-  use network, only : nspec
+  use network, only : nspecies
   use eos_module
   use fundamental_constants_module, only: k_B, n_A
   use amrex_fort_module
@@ -36,7 +36,6 @@ contains
  
   implicit none
    
-
   integer, intent(in) :: lo(1), hi(1)
   integer, intent(in) :: domlo(1), domhi(1)
   integer, intent(in) :: q_l1, q_h1
@@ -87,6 +86,8 @@ contains
   dx = delta(1)
   
   bcMask(:) = 0
+  bc_params(:) = 0
+  bc_target(:) = 0
 
  !--------------------------------------------------------------------------   
  ! lower X
@@ -218,7 +219,7 @@ contains
        eos_state % p        = q(hop,QPRES )
        eos_state % rho      = q(hop,QRHO  )
        ! Here we do 0th-order extrapolation for species mass fraction
-       eos_state % massfrac = q(domlo(1),QFS:QFS+nspec-1)
+       eos_state % massfrac = q(domlo(1),QFS:QFS+nspecies-1)
        eos_state % aux      = q(domlo(1),QFX:QFX+naux-1)
 
        call eos_rp(eos_state)
@@ -240,7 +241,7 @@ contains
        uin(hop,UEDEN) = eos_state % rho  &
           * (eos_state % e + 0.5d0 * (q(hop,QU)**2))
        uin(hop,UTEMP) = eos_state % T
-       do n=1, nspec
+       do n=1, nspecies
           uin(hop,UFS+n-1) = eos_state % rho  *  eos_state % massfrac(n)
        end do   
        
@@ -374,7 +375,7 @@ contains
      
        eos_state % p        = q(hop,QPRES )
        eos_state % rho      = q(hop,QRHO  )
-       eos_state % massfrac = q(domhi(1),QFS:QFS+nspec-1)
+       eos_state % massfrac = q(domhi(1),QFS:QFS+nspecies-1)
        eos_state % aux      = q(domhi(1),QFX:QFX+naux-1)
 
        call eos_rp(eos_state)
@@ -396,7 +397,7 @@ contains
        uin(hop,UEDEN) = eos_state % rho  &
           * (eos_state % e + 0.5d0 * (uin(hop,UMX)**2 + uin(hop,UMY)**2))
        uin(hop,UTEMP) = eos_state % T
-       do n=1, nspec
+       do n=1, nspecies
           uin(hop,UFS+n-1) = eos_state % rho  *  eos_state % massfrac(n)
        end do 
      enddo

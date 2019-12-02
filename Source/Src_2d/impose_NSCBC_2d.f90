@@ -25,7 +25,6 @@ contains
                          time,delta,dt,verbose) bind(C, name="impose_NSCBC")
     
   use amrex_fort_module
-  use network, only : nspec
   use eos_module
   use fundamental_constants_module, only: k_B, n_A
 
@@ -93,6 +92,13 @@ contains
   
   x_bcMask(:,:) = 0
   y_bcMask(:,:) = 0
+
+  bc_params(:) = 0
+  bc_target(:) = 0
+  x_bc_params(:) = 0
+  x_bc_target(:) = 0
+  y_bc_params(:) = 0
+  y_bc_target(:) = 0
 
   if ( flag_nscbc_isAnyPerio == 0) then
 
@@ -470,6 +476,8 @@ end subroutine impose_NSCBC
                                
                                
   use meth_params_module, only : QVAR, QPRES, QU, QV, QRHO
+
+  implicit none
   
   integer, intent(in) :: i,j,idir,isign
   integer, intent(in) :: q_l1, q_l2, q_h1, q_h2
@@ -536,6 +544,8 @@ end subroutine impose_NSCBC
                                
                                
   use meth_params_module, only : QVAR, QPRES, QU, QV, QRHO
+
+  implicit none
   
   integer, intent(in) :: i,j,idir
   integer, intent(in) :: q_l1, q_l2, q_h1, q_h2
@@ -577,6 +587,8 @@ end subroutine impose_NSCBC
                                
                                
   use meth_params_module, only : QVAR, QPRES, QU, QV, QRHO, NQAUX, QC, QGAMC
+
+  implicit none
   
   integer, intent(in) :: i,j,idir
   integer, intent(in) :: q_l1, q_l2, q_h1, q_h2
@@ -620,6 +632,7 @@ end subroutine impose_NSCBC
                                 qaux, qa_l1, qa_l2, qa_h1, qa_h2)
                                
   use eos_module
+  use network, only : nspecies
   use amrex_constants_module, only : ONE
   use meth_params_module, only : NVAR, URHO, UMX, UMY, UMZ, UEDEN, UEINT, UTEMP,&
                                  UFS, NQAUX, QC, QGAMC, QRSPEC, &
@@ -627,7 +640,8 @@ end subroutine impose_NSCBC
                                  QVAR, QRHO, QU, QV, QREINT, QPRES, QTEMP, &
                                  QFS, QFX, QGAME, NHYP
   use prob_params_module, only : SlipWall, NoSlipWall
-  
+
+  implicit none
   
   integer, intent(in) :: i,j,idir,isign,bc_type
   integer, intent(in) :: domlo(2), domhi(2)
@@ -765,7 +779,7 @@ end subroutine impose_NSCBC
      
        eos_state % p        = q(hop,j,QPRES )
        eos_state % rho      = q(hop,j,QRHO  )
-       eos_state % massfrac = q(bndy_loc,j,QFS:QFS+nspec-1)
+       eos_state % massfrac = q(bndy_loc,j,QFS:QFS+nspecies-1)
        eos_state % aux      = q(bndy_loc,j,QFX:QFX+naux-1)
   
        call eos_rp(eos_state)
@@ -789,7 +803,7 @@ end subroutine impose_NSCBC
        uin(hop,j,UEDEN) = eos_state % rho  &
           * (eos_state % e + 0.5d0 * (q(hop,j,QU)**2 + q(hop,j,QV)**2))
        uin(hop,j,UTEMP) = eos_state % T
-       do n=1, nspec
+       do n=1, nspecies
           uin(hop,j,UFS+n-1) = eos_state % rho  *  eos_state % massfrac(n)
        end do   
        
@@ -859,7 +873,7 @@ end subroutine impose_NSCBC
      
        eos_state % p        = q(i,hop,QPRES )
        eos_state % rho      = q(i,hop,QRHO  )
-       eos_state % massfrac = q(i,bndy_loc,QFS:QFS+nspec-1)
+       eos_state % massfrac = q(i,bndy_loc,QFS:QFS+nspecies-1)
        eos_state % aux      = q(i,bndy_loc,QFX:QFX+naux-1)
   
        call eos_rp(eos_state)
@@ -883,7 +897,7 @@ end subroutine impose_NSCBC
        uin(i,hop,UEDEN) = eos_state % rho  &
           * (eos_state % e + 0.5d0 * (q(i,hop,QU)**2 + q(i,hop,QV)**2))
        uin(i,hop,UTEMP) = eos_state % T
-       do n=1, nspec
+       do n=1, nspecies
           uin(i,hop,UFS+n-1) = eos_state % rho  *  eos_state % massfrac(n)
        end do   
        
@@ -907,7 +921,9 @@ end subroutine impose_NSCBC
                                                     
   use meth_params_module, only : QVAR, QPRES, QU, QV, QRHO, NQAUX, QC, QGAMC, QTEMP, QRSPEC
   use prob_params_module, only : probhi, UserBC, Inflow, Outflow, SlipWall, NoSlipWall
-  
+
+  implicit none
+
   integer, intent(in) :: i,j,idir,isign
   integer, intent(in) :: q_l1, q_l2, q_h1, q_h2
   integer, intent(in) :: qa_l1, qa_l2, qa_h1, qa_h2

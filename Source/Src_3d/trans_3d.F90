@@ -2,7 +2,7 @@ module transverse_module
 
   use amrex_constants_module
 
-  use network, only : nspec, naux
+  use network, only : nspecies, naux
   use meth_params_module, only : NQ, QVAR, NVAR, QRHO, QU, QV, QW, &
                                  QPRES, QREINT, QGAME, QFS, QFX, &
                                  URHO, UMX, UMY, UMZ, UEDEN, UEINT, UFS, &
@@ -22,6 +22,7 @@ contains
 
   subroutine reset_edge_state_thermo(qedge, qd_lo, qd_hi, ii, jj, kk, eos_state)
 
+    implicit none
     integer, intent(in) :: ii, jj, kk
     integer, intent(in) :: qd_lo(3), qd_hi(3)
     double precision, intent(inout) :: qedge(qd_lo(1):qd_hi(1),qd_lo(2):qd_hi(2),qd_lo(3):qd_hi(3),QVAR)
@@ -38,7 +39,7 @@ contains
 
           eos_state % rho         = qedge(ii,jj,kk,QRHO)
           eos_state % T           = small_temp
-          eos_state % massfrac(:) = qedge(ii,jj,kk,QFS:QFS-1+nspec)
+          eos_state % massfrac(:) = qedge(ii,jj,kk,QFS:QFS-1+nspecies)
           eos_state % aux(:)      = qedge(ii,jj,kk,QFX:QFX-1+naux)
 
           call eos_rt(eos_state)
@@ -55,7 +56,7 @@ contains
           eos_state % rho      = qedge(ii,jj,kk,QRHO)
           eos_state % e        = qedge(ii,jj,kk,QREINT) / qedge(ii,jj,kk,QRHO)
           eos_state % T        = small_temp
-          eos_state % massfrac = qedge(ii,jj,kk,QFS:QFS+nspec-1)
+          eos_state % massfrac = qedge(ii,jj,kk,QFS:QFS+nspecies-1)
           eos_state % aux      = qedge(ii,jj,kk,QFX:QFX+naux-1)
 
           call eos_re(eos_state)
@@ -92,6 +93,7 @@ contains
     ! Note that what we call jlo here is jlo = lo(2) - 1
     ! Note that what we call jhi here is jhi = hi(2) + 1
 
+    implicit none
     integer :: qd_lo(3),qd_hi(3)
     integer :: fx_lo(3),fx_hi(3)
     integer :: qx_lo(3),qx_hi(3)
@@ -360,6 +362,7 @@ contains
                      gamc,gd_lo,gd_hi, &
                      cdtdx,ilo,ihi,jlo,jhi,kc,km,k3d)
 
+    implicit none
     integer :: qd_lo(3),qd_hi(3)
     integer :: fx_lo(3),fx_hi(3)
     integer :: qx_lo(3),qx_hi(3)
@@ -632,6 +635,7 @@ contains
                      gamc,gd_lo,gd_hi, &
                      cdtdy,ilo,ihi,jlo,jhi,kc,k3d)
 
+    implicit none
     integer :: qd_lo(3),qd_hi(3)
     integer :: fy_lo(3),fy_hi(3)
     integer :: qy_lo(3),qy_hi(3)
@@ -897,6 +901,7 @@ contains
                      gamc,gd_lo,gd_hi, &
                      cdtdy,ilo,ihi,jlo,jhi,kc,km,k3d)
 
+    implicit none
     integer :: qd_lo(3),qd_hi(3)
     integer :: fy_lo(3),fy_hi(3)
     integer :: qy_lo(3),qy_hi(3)
@@ -1170,6 +1175,7 @@ contains
                     gamc,gd_lo,gd_hi, &
                     cdtdz,ilo,ihi,jlo,jhi,km,kc,k3d)
 
+    implicit none
     integer :: qd_lo(3),qd_hi(3)
     integer :: fz_lo(3),fz_hi(3)
     integer :: qz_lo(3),qz_hi(3)
@@ -1593,6 +1599,7 @@ contains
                      srcQ,src_lo,src_hi, &
                      hdt,cdtdx,cdtdy,ilo,ihi,jlo,jhi,kc,km,k3d)
 
+    implicit none
     integer :: qd_lo(3),qd_hi(3)
     integer :: fx_lo(3),fx_hi(3)
     integer :: fy_lo(3),fy_hi(3)
@@ -1930,6 +1937,7 @@ contains
                      srcQ,src_lo,src_hi, &
                      hdt,cdtdx,cdtdz,ilo,ihi,jlo,jhi,km,kc,k3d)
 
+    implicit none
     integer :: qd_lo(3),qd_hi(3)
     integer :: fx_lo(3),fx_hi(3)
     integer :: fz_lo(3),fz_hi(3)
@@ -2237,6 +2245,7 @@ contains
                      srcQ,src_lo,src_hi, &
                      hdt,cdtdy,cdtdz,ilo,ihi,jlo,jhi,km,kc,k3d)
 
+    implicit none
     integer :: qd_lo(3),qd_hi(3)
     integer :: fy_lo(3),fy_hi(3)
     integer :: fz_lo(3),fz_hi(3)

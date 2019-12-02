@@ -186,12 +186,19 @@ PeleC::initialize_eb2_structs() {
                                       sv_eb_bndry_grad_stencil[iLocal].data(),
                                       &Ncut, &dx);
       } else {
-        amrex::Print() << "Unknown or unspecified boundary gradient stencil type:" << bgs << std::endl;
+        amrex::Print() << "Unknown or unspeciesified boundary gradient stencil type:" << bgs << std::endl;
         amrex::Abort();
       }
 
       sv_eb_flux[iLocal].define(sv_eb_bndry_grad_stencil[iLocal], NUM_STATE);
       sv_eb_bcval[iLocal].define(sv_eb_bndry_grad_stencil[iLocal], QVAR);
+
+      if (eb_isothermal && (diffuse_temp != 0 || diffuse_enth != 0)) {
+          sv_eb_bcval[iLocal].setVal(eb_boundary_T, cQTEMP);
+      }
+      if (eb_noslip && diffuse_vel == 1) {
+          sv_eb_bcval[iLocal].setVal(0, cQU, BL_SPACEDIM);
+      }
 
     } else {
       amrex::Print() << "unknown (or multivalued) fab type" << std::endl;
@@ -470,8 +477,8 @@ initialize_EB2 (const Geometry& geom, const int required_level, const int max_le
         
     auto polys = EB2::makeUnion(farwall, ramp, pipe, flat_corner);
 
-    Real lenx = Geometry::ProbLength(0);
-    Real leny = Geometry::ProbLength(1);
+    Real lenx = DefaultGeometry().ProbLength(0);
+    Real leny = DefaultGeometry().ProbLength(1);
     auto pr = EB2::translate(EB2::lathe(polys), {lenx*0.5, leny*0.5, 0.});
         
     auto gshop = EB2::makeShop(pr);

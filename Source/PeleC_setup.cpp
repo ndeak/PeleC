@@ -291,7 +291,7 @@ PeleC::variableSetUp ()
 	std::cout << "Using Ghost-Cells Navier-Stokes Characteristic BCs for diffusion: nscbc_diff = " << nscbc_diff << '\n' << '\n' ;
 
   
-    int coord_type = Geometry::Coord();
+    int coord_type = DefaultGeometry().Coord();
 
     // Get the center variable from the inputs and pass it directly to Fortran.
     Vector<Real> center(BL_SPACEDIM, 0.0);
@@ -300,7 +300,7 @@ PeleC::variableSetUp ()
   
     set_problem_params(dm,phys_bc.lo(),phys_bc.hi(),
 		       Interior,UserBC,Inflow,Outflow,Symmetry,SlipWall,NoSlipWall,coord_type,
-		       Geometry::ProbLo(),Geometry::ProbHi(),center.dataPtr());
+		       DefaultGeometry().ProbLo(),DefaultGeometry().ProbHi(),center.dataPtr());
   
     // Read in the parameters for the tagging criteria
     // and store them in the Fortran module.
@@ -665,6 +665,20 @@ PeleC::variableSetUp ()
 #endif
 
 
+    //
+    // LES coefficients
+    //
+    if(do_les){
+      derive_lst.add("C_s2",IndexType::TheCellType(),1,pc_dernull,the_same_box);
+      derive_lst.addComponent("C_s2",desc_lst,State_Type,Density,1);
+
+      derive_lst.add("C_I",IndexType::TheCellType(),1,pc_dernull,the_same_box);
+      derive_lst.addComponent("C_I",desc_lst,State_Type,Density,1);
+
+      derive_lst.add("Pr_T",IndexType::TheCellType(),1,pc_dernull,the_same_box);
+      derive_lst.addComponent("Pr_T",desc_lst,State_Type,Density,1);
+    }
+
     // 
     // Problem-specific adds
 #include <Problem_Derives.H>
@@ -695,6 +709,11 @@ PeleC::set_active_sources()
       src_list.push_back(spray_src);
     }
 #endif
+
+    // optional LES source
+    if (do_les){
+      src_list.push_back(les_src);
+    }
 
 #ifdef USE_MASA
     // optional MMS source

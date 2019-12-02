@@ -1,7 +1,7 @@
 module transverse_module
 
   use amrex_constants_module
-  use network, only : nspec
+  use network, only : nspecies
   use meth_params_module, only : NQ, QVAR, NVAR, QRHO, QU, QV, QW, QPRES, QREINT, QGAME, &
                                  URHO, UMX, UMY, UEDEN, UEINT, QFS, QFX, &
                                  GDU, GDV, GDPRES, GDGAME, &
@@ -33,6 +33,7 @@ contains
                     vol, vol_l1, vol_l2, vol_h1, vol_h2, &
                     ilo, ihi, jlo, jhi)
 
+    implicit none
     integer qd_l1, qd_l2, qd_h1, qd_h2
     integer gc_l1, gc_l2, gc_h1, gc_h2
     integer fx_l1, fx_l2, fx_h1, fx_h2
@@ -208,7 +209,7 @@ contains
                    if (qpo(i,j,QREINT) < ZERO .and. qpo(i,j,QRHO) > ZERO) then
                       eos_state % rho         = qpo(i,j,QRHO)
                       eos_state % T           = small_temp
-                      eos_state % massfrac(:) = qpo(i,j,QFS:QFS-1+nspec)
+                      eos_state % massfrac(:) = qpo(i,j,QFS:QFS-1+nspecies)
                       eos_state % aux(:)      = qpo(i,j,QFX:QFX-1+naux)
 
                       call eos_rt(eos_state)
@@ -226,7 +227,7 @@ contains
                       eos_state % rho      = qpo(i,j,QRHO)
                       eos_state % e        = qpo(i,j,QREINT) / qpo(i,j,QRHO)
                       eos_state % T        = small_temp
-                      eos_state % massfrac = qpo(i,j,QFS:QFS+nspec-1)
+                      eos_state % massfrac = qpo(i,j,QFS:QFS+nspecies-1)
                       eos_state % aux      = qpo(i,j,QFX:QFX+naux-1)
 
                       call eos_rt(eos_state)
@@ -325,7 +326,7 @@ contains
                    if (qmo(i,j+1,QREINT) < ZERO .and. qmo(i,j+1,QRHO) > ZERO) then
                       eos_state % rho         = qmo(i,j+1,QRHO)
                       eos_state % T           = small_temp
-                      eos_state % massfrac(:) = qmo(i,j+1,QFS:QFS-1+nspec)
+                      eos_state % massfrac(:) = qmo(i,j+1,QFS:QFS-1+nspecies)
                       eos_state % aux(:)      = qmo(i,j+1,QFX:QFX-1+naux)
 
                       call eos_rt(eos_state)
@@ -343,7 +344,7 @@ contains
                       eos_state % rho      = qmo(i,j+1,QRHO)
                       eos_state % e        = qmo(i,j+1,QREINT) / qmo(i,j+1,QRHO)
                       eos_state % T        = small_temp
-                      eos_state % massfrac = qmo(i,j+1,QFS:QFS+nspec-1)
+                      eos_state % massfrac = qmo(i,j+1,QFS:QFS+nspecies-1)
                       eos_state % aux      = qmo(i,j+1,QFX:QFX+naux-1)
 
                       call eos_re(eos_state)
@@ -395,6 +396,7 @@ contains
                     srcQ, src_l1, src_l2, src_h1, src_h2, &
                     hdt, cdtdy, ilo, ihi, jlo, jhi)
 
+    implicit none
     integer qd_l1, qd_l2, qd_h1, qd_h2
     integer gc_l1, gc_l2, gc_h1, gc_h2
     integer fy_l1, fy_l2, fy_h1, fy_h2
@@ -542,7 +544,7 @@ contains
                    if (qpo(i,j,QREINT) < ZERO .and. qpo(i,j,QRHO) > ZERO) then
                       eos_state % rho         = qpo(i,j,QRHO)
                       eos_state % T           = small_temp
-                      eos_state % massfrac(:) = qpo(i,j,QFS:QFS-1+nspec)
+                      eos_state % massfrac(:) = qpo(i,j,QFS:QFS-1+nspecies)
                       eos_state % aux(:)      = qpo(i,j,QFX:QFX-1+naux)
 
                       call eos_rt(eos_state)
@@ -560,7 +562,7 @@ contains
                       eos_state % rho      = qpo(i,j,QRHO)
                       eos_state % e        = qpo(i,j,QREINT) / qpo(i,j,QRHO)
                       eos_state % T        = small_temp
-                      eos_state % massfrac = qpo(i,j,QFS:QFS+nspec-1)
+                      eos_state % massfrac = qpo(i,j,QFS:QFS+nspecies-1)
                       eos_state % aux      = qpo(i,j,QFX:QFX+naux-1)
 
                       call eos_re(eos_state)
@@ -645,7 +647,7 @@ contains
                    if (qmo(i+1,j,QREINT) < ZERO .and. qmo(i+1,j,QRHO) > ZERO) then
                       eos_state % rho         = qmo(i+1,j,QRHO)
                       eos_state % T           = small_temp
-                      eos_state % massfrac(:) = qmo(i+1,j,QFS:QFS-1+nspec)
+                      eos_state % massfrac(:) = qmo(i+1,j,QFS:QFS-1+nspecies)
                       eos_state % aux(:)      = qmo(i+1,j,QFX:QFX-1+naux)
 
                       call eos_rt(eos_state)
@@ -663,7 +665,7 @@ contains
                       eos_state % rho      = qmo(i+1,j,QRHO)
                       eos_state % e        = qmo(i+1,j,QREINT) / qmo(i+1,j,QRHO)
                       eos_state % T        = small_temp
-                      eos_state % massfrac = qmo(i+1,j,QFS:QFS+nspec-1)
+                      eos_state % massfrac = qmo(i+1,j,QFS:QFS+nspecies-1)
                       eos_state % aux      = qmo(i+1,j,QFX:QFX+naux-1)
 
                       call eos_re(eos_state)

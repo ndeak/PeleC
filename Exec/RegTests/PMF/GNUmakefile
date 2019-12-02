@@ -16,10 +16,11 @@ USE_MPI    = FALSE
 
 USE_REACT  = TRUE
 
-#HYP_TYPE   = MOL
+###### CVODE
+USE_SUNDIALS_PP = FALSE
+USE_KLU_PP = FALSE
 
-# define the location of the PELE top directory
-PELE_HOME  := ../../..
+#HYP_TYPE   = MOL
 
 # This sets the EOS directory in $(PELE_PHYSICS_HOME)/Eos
 #Eos_dir     := Soave-Redlich-Kwong
@@ -39,4 +40,6 @@ Transport_dir := EGLib
 Bpack   := ./Make.package
 Blocs   := .
 
-include ../../Make.PeleC
+# define the location of the PELE top directory
+PELEC_HOME    := ../../..
+include $(PELEC_HOME)/Exec/Make.PeleC

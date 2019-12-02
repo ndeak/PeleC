@@ -22,7 +22,7 @@ PeleC::construct_hydro_source(const MultiFab& S, Real time, Real dt, int amr_ite
         std::cout << "... Computing hydro advance" << std::endl;
     }
 
-    BL_ASSERT(S.nGrow() == NUM_GROW);
+    BL_ASSERT(S.nGrow() == NUM_GROW+nGrowF);
 
     sources_for_hydro.setVal(0.0);
 
@@ -91,6 +91,9 @@ PeleC::construct_hydro_source(const MultiFab& S, Real time, Real dt, int amr_ite
     {
 	FArrayBox flux[BL_SPACEDIM];
 
+        FArrayBox filtered_flux[BL_SPACEDIM];
+	FArrayBox filtered_source_out;
+
 	FArrayBox pradial(Box::TheUnitBox(),1);
 	FArrayBox q, qaux, src_q;
 	IArrayBox bcMask[BL_SPACEDIM];
@@ -100,7 +103,7 @@ PeleC::construct_hydro_source(const MultiFab& S, Real time, Real dt, int amr_ite
   int flag_nscbc_isAnyPerio = (geom.isAnyPeriodic()) ? 1 : 0; 
   int flag_nscbc_perio[BL_SPACEDIM]; // For 3D, we will know which corners have a periodicity
   for (int d=0; d<BL_SPACEDIM; ++d) {
-        flag_nscbc_perio[d] = (Geometry::isPeriodic(d)) ? 1 : 0;
+        flag_nscbc_perio[d] = (DefaultGeometry().isPeriodic(d)) ? 1 : 0;
     }
 	const int*  domain_lo = geom.Domain().loVect();
 	const int*  domain_hi = geom.Domain().hiVect();
@@ -108,10 +111,12 @@ PeleC::construct_hydro_source(const MultiFab& S, Real time, Real dt, int amr_ite
 	for (MFIter mfi(S_new,hydro_tile_size); mfi.isValid(); ++mfi)
 	{
 	    const Box& bx    = mfi.tilebox();
-	    const Box& qbx = amrex::grow(bx, NUM_GROW);
+	    const Box& qbx = amrex::grow(bx, NUM_GROW+nGrowF);
 
-	    const int* lo = bx.loVect();
-	    const int* hi = bx.hiVect();
+	    const Box& fbx = amrex::grow(bx, nGrowF);
+
+	    const int* lo = fbx.loVect();
+	    const int* hi = fbx.hiVect();
 
 	    const FArrayBox &statein  = S[mfi];
 	    FArrayBox &stateout = S_new[mfi];
@@ -138,7 +143,7 @@ PeleC::construct_hydro_source(const MultiFab& S, Real time, Real dt, int amr_ite
       // Allocate fabs for bcMask. Note that we grow in the opposite direction
       // because the Riemann solver wants a face value in a ghost-cell
       for (int i = 0; i < BL_SPACEDIM ; i++)  {
-        const Box& bxtmp = amrex::surroundingNodes(bx,i);
+        const Box& bxtmp = amrex::surroundingNodes(fbx,i);
         Box TestBox(bxtmp);
         for(int d=0; d<BL_SPACEDIM; ++d) {
           if (i!=d) TestBox.grow(d,1);
@@ -175,11 +180,11 @@ PeleC::construct_hydro_source(const MultiFab& S, Real time, Real dt, int amr_ite
 
       // Allocate fabs for fluxes
 	    for (int i = 0; i < BL_SPACEDIM ; i++)  {
-		    const Box& bxtmp = amrex::surroundingNodes(bx,i);
-		    flux[i].resize(bxtmp,NUM_STATE);
+		const Box& bxtmp = amrex::surroundingNodes(fbx,i);
+		flux[i].resize(bxtmp,NUM_STATE);
 	    }
 
-	    if (!Geometry::IsCartesian()) {
+	    if (!DefaultGeometry().IsCartesian()) {
 		pradial.resize(amrex::surroundingNodes(bx,0),1);
 	    }
 
@@ -220,13 +225,32 @@ PeleC::construct_hydro_source(const MultiFab& S, Real time, Real dt, int amr_ite
 
 	    courno = std::max(courno,cflLoc);
 
+            // Filter hydro source and fluxes here
+            if (use_explicit_filter)
+            {
+              for (int i = 0; i < BL_SPACEDIM ; i++)  {
+	        const Box& bxtmp = amrex::surroundingNodes(bx,i);
+	        filtered_flux[i].resize(bxtmp,NUM_STATE);
+                les_filter.apply_filter(bxtmp, flux[i], filtered_flux[i], Density, NUM_STATE);
+
+                flux[i].setVal(0);
+                flux[i].copy(filtered_flux[i], Density, Density, NUM_STATE);
+              }
+
+              filtered_source_out.resize(bx, NUM_STATE);
+              les_filter.apply_filter(bx, source_out, filtered_source_out, Density, NUM_STATE);
+
+              source_out.setVal(0);
+              source_out.copy(filtered_source_out, Density, Density, NUM_STATE);
+            }
+
             if (do_reflux  && sub_iteration == sub_ncycle-1 )
             {
               if (level < finest_level)
               {
-                getFluxReg(level+1).CrseAdd(mfi,{D_DECL(&flux[0],&flux[1],&flux[2])}, dxDp,dt);
+                getFluxReg(level+1).CrseAdd(mfi,{D_DECL(&flux[0],&flux[1],&flux[2])}, dxDp,dt,RunOn::Cpu);
 
-                if (!Geometry::IsCartesian()) {
+                if (!DefaultGeometry().IsCartesian()) {
                     amrex::Abort("Flux registers not r-z compatible yet");
                     //getPresReg(level+1).CrseAdd(mfi,pradial, dx,dt);
                 }
@@ -234,9 +258,9 @@ PeleC::construct_hydro_source(const MultiFab& S, Real time, Real dt, int amr_ite
 
               if (level > 0)
               {
-                getFluxReg(level).FineAdd(mfi, {D_DECL(&flux[0],&flux[1],&flux[2])}, dxDp,dt);
+                getFluxReg(level).FineAdd(mfi, {D_DECL(&flux[0],&flux[1],&flux[2])}, dxDp,dt, RunOn::Cpu);
 
-                if (!Geometry::IsCartesian()) {
+                if (!DefaultGeometry().IsCartesian()) {
                     amrex::Abort("Flux registers not r-z compatible yet");
                     //getPresReg(level).FineAdd(mfi,pradial, dx,dt);
                 }

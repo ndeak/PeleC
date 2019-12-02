@@ -11,6 +11,7 @@ module nbrsTest_nd_module
 contains
 
   pure logical function is_inside (i,j,k,lo,hi)
+    implicit none
     integer, intent(in) :: i,j,k,lo(3),hi(3)
     is_inside = i.ge.lo(1) .and. i.le.hi(1) &
          .and.  j.ge.lo(2) .and. j.le.hi(2) &
@@ -18,6 +19,7 @@ contains
   end function is_inside
 
   pure subroutine mysort(c, n)
+    implicit none
     real(amrex_real), intent(in) :: n(dim)
     integer, intent(out) :: c(dim)
     logical          :: mask(dim)
@@ -55,7 +57,7 @@ contains
     ! developed and it was mentioned the original stencil was not stable for low Reynolds flows.
     ! End notes from WZ
 
-    use amrex_mlebabeclap_3d_module, only : amrex_get_dx_eb
+    implicit none
 
     ! Array bounds
     integer,            intent(in   ) :: lo(0:2), hi(0:2)
@@ -87,7 +89,6 @@ contains
     AREA = dx**(dim-1)
     fac = AREA / dx
 
-
     do L = 0, Nsten-1
        i = ebg(L) % iv(0)
        j = ebg(L) % iv(1)
@@ -97,7 +98,7 @@ contains
             .and. j.ge.lo(1) .and. j.le.hi(1) &
             .and. k.ge.lo(2) .and. k.le.hi(2) ) then
 
-          dx_eb = amrex_get_dx_eb(ebg(L)%eb_vfrac)
+          dx_eb = max(0.3d0, (ebg(L)%eb_vfrac*ebg(L)%eb_vfrac-0.25d0)/(2.d0*ebg(L)%eb_vfrac))
 
           bctx = ebg(L) % eb_centroid(1)
           bcty = ebg(L) % eb_centroid(2)
@@ -167,7 +168,7 @@ contains
        bind(C,name="pc_fill_bndry_grad_stencil_ls")
 
       ! Work in process - least squares boundary stencil capability. Currently doesn't work.
-
+    implicit none
     integer,            intent(in   ) :: lo(0:2),hi(0:2)
     integer,            intent(in   ) :: Nebg, Nsten
     type(eb_bndry_geom),intent(in   ) :: ebg(0:Nebg-1)
@@ -252,6 +253,7 @@ contains
   subroutine pc_fill_bndry_grad_stencil(lo, hi, ebg, Nebg, grad_stencil, Nsten, dx) &
        bind(C,name="pc_fill_bndry_grad_stencil")
 
+    implicit none
     integer,            intent(in   ) :: lo(0:2),hi(0:2)
     integer,            intent(in   ) :: Nebg, Nsten
     type(eb_bndry_geom),intent(in   ) :: ebg(0:Nebg-1)
@@ -353,6 +355,7 @@ contains
        bcval, Nvals, bcflux, Nflux, nc) &
        bind(C,name="pc_apply_eb_boundry_flux_stencil")
 
+    implicit none
     integer,          intent(in   ) ::  lo(0:2),  hi(0:2)
     integer,          intent(in   ) :: Nsten, Nvals, Nflux, nc
     type(eb_bndry_sten), intent(in) :: sten(0:Nsten-1)
@@ -398,6 +401,7 @@ contains
        bcval, Nvals, bcflux, Nflux, nc) &
        bind(C,name="pc_apply_eb_boundry_visc_flux_stencil")
 
+    implicit none
     integer,          intent(in   ) ::  lo(0:2),  hi(0:2)
     integer,          intent(in   ) :: Nsten, Nebg, Nvals, Nflux, nc
     type(eb_bndry_sten), intent(in) :: sten(0:Nsten-1)
@@ -498,6 +502,7 @@ contains
   subroutine pc_fill_flux_interp_stencil(lo, hi, slo, shi, sten, Nsten, idir, &
        fc, fclo, fchi, fa, falo, fahi) bind(C,name="pc_fill_flux_interp_stencil")
 
+    implicit none
     integer,          intent(in)  ::  lo(0:2),  hi(0:2)
     integer,          intent(in)  :: slo(0:2), shi(0:2)
     integer,          intent(in)  :: Nsten, idir
@@ -578,6 +583,7 @@ contains
   subroutine pc_apply_face_stencil(lo, hi, slo, shi, sten, Nsten, idir, vin, vin_lo, vin_hi, &
     vout, vout_lo, vout_hi, nc, in_place) bind(C,name="pc_apply_face_stencil")
 
+    implicit none
     integer,          intent(in   ) ::  lo(0:2),  hi(0:2)
     integer,          intent(in   ) :: slo(0:2), shi(0:2)
     integer,          intent(in   ) :: Nsten, idir, nc, in_place
@@ -739,6 +745,7 @@ contains
 
     use meth_params_module, only: levmsk_notcovered, eb_small_vfrac
 
+    implicit none
     integer,          intent(in   ) ::  lo(0:2),  hi(0:2)
     integer,          intent(in   ) :: nc, Ncut, nebflux
     type(eb_bndry_geom), intent(in   ) :: sv_ebg(0:Ncut-1)
@@ -753,7 +760,7 @@ contains
     real(amrex_real), intent(in   ) ::   f0(f0lo(0):f0hi(0),f0lo(1):f0hi(1),f0lo(2):f0hi(2),1:nc)
     real(amrex_real), intent(in   ) ::   f1(f1lo(0):f1hi(0),f1lo(1):f1hi(1),f1lo(2):f1hi(2),1:nc)
     real(amrex_real), intent(in   ) ::   f2(f2lo(0):f2hi(0),f2lo(1):f2hi(1),f2lo(2):f2hi(2),1:nc)
-    real(amrex_real), intent(inout) ::   ebflux(0:nebflux-1,1:nc)
+    real(amrex_real), intent(in   ) ::   ebflux(0:nebflux-1,1:nc)
     real(amrex_real), intent(inout) ::   DC(DClo(0):DChi(0),DClo(1):DChi(1),DClo(2):DChi(2),1:nc)
     real(amrex_real), intent(in   ) ::   vf(vflo(0):vfhi(0),vflo(1):vfhi(1),vflo(2):vfhi(2))
     real(amrex_real), intent(in   ) ::    W( Wlo(0):Whi(0) , Wlo(1):Whi(1) , Wlo(2):Whi(2))
@@ -769,7 +776,7 @@ contains
     real(amrex_real), intent(out) :: dm_as_fine(dflo(1):dfhi(1),dflo(2):dfhi(2),dflo(3):dfhi(3),nc)
     integer,  intent(in) ::  levmsk (lmlo(1):lmhi(1),lmlo(2):lmhi(2),lmlo(3):lmhi(3))
     integer,  intent(in) ::  rr_flag_crse(rfclo(1):rfchi(1),rfclo(2):rfchi(2),rfclo(3):rfchi(3))
-    real(amrex_real) :: drho
+    real(amrex_real) :: drho, tmp
 
     integer :: ii,jj,kk,iii,jjj,kkk
     logical :: valid_dst_cell
@@ -789,9 +796,16 @@ contains
                .and. j.ge.lo(1)-2 .and. j.le.hi(1)+2 &
                .and. k.ge.lo(2)-2 .and. k.le.hi(2)+2 ) then
              kappa_inv = 1.d0 / MAX(vf(i,j,k),1.d-12)
+#ifdef _OPENMP
+!$omp atomic read
+#endif
+             tmp = ebflux(L,n)
+#ifdef _OPENMP
+!$omp end atomic
+#endif
              DC(i,j,k,n) = - ( f0(i+1,j,k,n) - f0(i,j,k,n) &
                   +            f1(i,j+1,k,n) - f1(i,j,k,n) &
-                  +            f2(i,j,k+1,n) - f2(i,j,k,n) + ebflux(L,n)) * VOLINV * kappa_inv
+                  +            f2(i,j,k+1,n) - f2(i,j,k,n) + tmp) * VOLINV * kappa_inv
           endif
        enddo
 
@@ -932,6 +946,7 @@ contains
   subroutine pc_set_body_state(lo, hi, S, Slo, Shi, mask, mlo, mhi, b, nc, bval) &
        bind(C,name="pc_set_body_state")
 
+    implicit none
     integer,          intent(in   ) :: nc, bval
     integer,          intent(in   ) :: lo(1:3),hi(1:3)
     integer,          intent(in   ) :: Slo(1:3),Shi(1:3)
@@ -945,7 +960,15 @@ contains
        do k=lo(3),hi(3)
           do j=lo(2),hi(2)
              do i=lo(1),hi(1)
-                if (mask(i,j,k).eq.bval) S(i,j,k,n)=b(n)
+                if (mask(i,j,k).eq.bval) then
+#ifdef _OPENMP
+!$omp atomic write
+#endif
+                   S(i,j,k,n)=b(n)
+#ifdef _OPENMP
+!$omp end atomic
+#endif
+                endif
              enddo
           enddo
        enddo
@@ -957,7 +980,7 @@ contains
        apx, axlo, axhi, apy, aylo, ayhi, apz, azlo, azhi) &
        bind(C,name="pc_fill_sv_ebg")
 
-
+    implicit none
     integer,          intent(in   ) ::  lo(0:2),  hi(0:2)
     integer, dimension(3), intent(in) :: vflo, vfhi, blo, bhi, axlo, axhi, aylo, ayhi, azlo, azhi
     integer,          intent(in   ) :: Nebg
