@@ -390,8 +390,8 @@ pc_fix_div_and_redistribute(
               if (vf(i + ii, j + jj, k + kk) < eb_small_vfrac) {
                 nbr = 0;
               }
-              sum_kappa +=
-                nbr * vf(i + ii, j + jj, k + kk) * W(i + ii, j + jj, k + kk);
+              sum_kappa += nbr * vf(i + ii, j + jj, k + kk) *
+                           amrex::Math::floor(W(i + ii, j + jj, k + kk));
             }
           }
         }
@@ -408,9 +408,8 @@ pc_fix_div_and_redistribute(
               }
               amrex::Gpu::Atomic::Add(
                 &DC(i + ii, j + jj, k + kk, n),
-                dM[L] * nbr * W(i + ii, j + jj, k + kk) * sum_kappa_inv);
-              // DC(i + ii, j + jj, k + kk, n) += dM[L] * nbr * W(i + ii, j +
-              // jj, k + kk) * sum_kappa_inv;
+                dM[L] * nbr * amrex::Math::floor(W(i + ii, j + jj, k + kk)) *
+                  sum_kappa_inv);
             }
           }
         }
@@ -510,9 +509,9 @@ pc_apply_eb_boundry_visc_flux_stencil(
         ebg[L].eb_normal[0] * ebg[L].eb_normal[0] +
         ebg[L].eb_normal[1] * ebg[L].eb_normal[1] +
         ebg[L].eb_normal[2] * ebg[L].eb_normal[2]);
-      const amrex::Real norm[AMREX_SPACEDIM] = {
-        ebg[L].eb_normal[0] / Nmag, ebg[L].eb_normal[1] / Nmag,
-        ebg[L].eb_normal[2] / Nmag};
+      const amrex::Real norm[AMREX_SPACEDIM] = {ebg[L].eb_normal[0] / Nmag,
+                                                ebg[L].eb_normal[1] / Nmag,
+                                                ebg[L].eb_normal[2] / Nmag};
       amrex::Real alpha[AMREX_SPACEDIM] = {0.0};
       int c[AMREX_SPACEDIM] = {0};
       idxsort(norm, c);
