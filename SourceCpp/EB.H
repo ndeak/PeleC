@@ -19,6 +19,7 @@
 #include <AMReX_EB2_IF_Ellipsoid.H>
 #include <AMReX_EB2_IF_Sphere.H>
 #include <AMReX_EB2_IF_Plane.H>
+#include <AMReX_EB2_IF_Pin.H>
 #include <AMReX_EB2_IF_Extrusion.H>
 #include <AMReX_EB2_GeometryShop.H>
 #include <AMReX_EBFluxRegister_C.H>

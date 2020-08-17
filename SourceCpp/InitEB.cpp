@@ -727,6 +727,70 @@ initialize_EB2(
     auto gshop = amrex::EB2::makeShop(twoPins);
     amrex::EB2::Build(gshop, geom, max_coarsening_level, max_coarsening_level);
 
+  }
+  else if (geom_type == "pins")
+  {
+      //setting some constants
+      //we can only do a maximum of 2 pins (change if needed)
+      const int max_pin=2;
+      
+      //number of user defined pins
+      int num_pin;
+      
+      amrex::ParmParse pp("pins");
+      amrex::Vector<amrex::Array<amrex::Real,AMREX_SPACEDIM>> allpin(max_pin);
+
+      //initalize pins with some dummy values
+      //that fall outside of the domain
+      //
+      const amrex::Real *problo,*probhi;
+      amrex::Real maxlen;
+
+      problo=geom.ProbLo();
+      probhi=geom.ProbHi();
+
+      maxlen=std::max(std::max(geom.ProbLength(0),geom.ProbLength(1)),geom.ProbLength(2));
+
+      //setting pins to be way outside the domain initially
+      for(int ipin=0;ipin<max_pin;ipin++)
+      {
+         allpin[ipin][0] = problo[0]-100.0*maxlen;
+         allpin[ipin][1] = problo[1]-100.0*maxlen;
+         allpin[ipin][2] = problo[2]-100.0*maxlen;
+      }
+            
+      //get user defined number of pins
+      pp.get("num_pin", num_pin);
+
+      amrex::Vector <std::unique_ptr<amrex::EB2::PinIF>> impfunc_pins(max_pin);
+      for(int ipin = 0; ipin < num_pin; ipin++)
+      {
+          amrex::Array<amrex::Real,AMREX_SPACEDIM> tip{0.0,0.0,0.0};
+
+          std::string  tipstr = "pin_" + convertIntGG(ipin) + "_tip"; 
+          std::string  cstr = "pin_" + convertIntGG(ipin) + "_c"; 
+          std::string  dirstr = "pin_" + convertIntGG(ipin) + "_dir"; 
+          amrex::Vector<amrex::Real> vectip;
+          amrex::Real  pinc;
+          int  pindir;
+          pp.getarr(tipstr.c_str(), vectip,  0, AMREX_SPACEDIM);
+          pp.get(cstr.c_str(), pinc);
+          pp.get(dirstr.c_str(), pindir);
+          for(int idir = 0; idir < AMREX_SPACEDIM; idir++)
+          {
+              tip[idir] = vectip[idir] ;
+          }
+          allpin[ipin] = tip;
+
+          impfunc_pins[ipin] = std::unique_ptr<amrex::EB2::PinIF>
+                              (new amrex::EB2::PinIF(pinc, allpin[ipin], pindir, false));
+      }
+
+      auto allpin_IF = amrex::EB2::makeUnion(*impfunc_pins[0],*impfunc_pins[1]);
+
+      auto gshop = amrex::EB2::makeShop(allpin_IF);
+      amrex::EB2::Build(gshop, geom, max_coarsening_level, max_coarsening_level);
+
   } else {
     amrex::EB2::Build(geom, max_level, max_level);
   }

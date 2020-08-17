@@ -6,9 +6,9 @@ stop_time = 6.0
 geometry.is_periodic =  1   0  1
 geometry.coord_sys   =  0       # 0 => cart
 geometry.prob_lo     =  0    0    0 
-geometry.prob_hi     =  4.0  4.0  4.0
+geometry.prob_hi     =  11.0  11.0  11.0
 amr.n_cell           =  128 128 128
-amr.n_cell           =  64   64   64
+#amr.n_cell           =  64   80   64
 
 # >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
 # Interior, UserBC, Symmetry, SlipWall, NoSlipWall
@@ -44,7 +44,7 @@ amr.v                = 1       # verbosity in Amr.cpp
 #amr.grid_log         = grdlog  # name of grid logging file
 
 # REFINEMENT / REGRIDDING
-amr.max_level       = 2       # maximum level number allowed
+amr.max_level       = 3       # maximum level number allowed
 amr.ref_ratio       = 2 2 2 2 # refinement ratio
 amr.regrid_int      = 2       # how often to regrid
 amr.blocking_factor = 16       # block factor in grid generation
@@ -65,11 +65,23 @@ amr.derive_plot_vars=ALL
 #in 2D that will be extruded in the z direction
 #make sure the coordinates are in anti-clockwise direction 
 #eb2.geom_type = "all_regular"
-eb2.geom_type = "PinPin"
-eb2.sphere_radius = 0.5
-eb2.sphere_center = 2.0 4.0  2.0
-eb2.sphere_has_fluid_inside = 0
 ebd.boundary_grad_stencil_type = 0
+eb2.use_eb2 = 1
+eb2.geom_type = pins
+pins.num_pin = 2
+pins.pin_0_tip = 5.5 5.0 5.5
+pins.pin_1_tip = 5.5 6.0 5.5
+pins.pin_0_c = -50
+pins.pin_1_c = 50
+pins.pin_0_dir = 1
+pins.pin_1_dir = 1
+#eb2.geom_type = "PinPin"
+#eb2.sphere_radius = 0.5
+#eb2.sphere_center = 2.0 4.0  2.0
+#eb2.sphere_has_fluid_inside = 0
+#ebd.boundary_grad_stencil_type = 0
+
+#
 
 prob.p = 1013250.0
 prob.rho = 0.00116
@@ -77,7 +89,7 @@ prob.vx_in =  0.01
 prob.vy_in =  0.0
 prob.Re_L = 1.0
 prob.Pr = 0.7
-prob.phiV_top = 2.0
+prob.phiV_top = 1.0
 
 #fabarray.mfiter_tile_size = 1024 1024 1024
 #amrex.fpe_trap_invalid = 1
