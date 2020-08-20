@@ -121,7 +121,7 @@ main(int argc, char* argv[])
     5, 5,
     5); // 5 focdr ebcellflags, 4 for vfrac, 2 is not used for EBSupport::volume
   initialize_EB2(
-    amrptr->Geom(amrptr->maxLevel()), amrptr->maxLevel(), amrptr->maxLevel());
+    amrptr->Geom(amrptr->maxLevel()), amrptr->maxLevel(), amrptr->maxLevel()+10);
 #endif
 
   amrptr->init(strt_time, stop_time);

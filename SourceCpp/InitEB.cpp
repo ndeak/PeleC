@@ -328,6 +328,7 @@ PeleC::define_body_state()
         }
       }
     }
+    body_state[PhiV] = 0.0;
 
     // Find proc with lowest rank to find valid point, use that for all
     amrex::Vector<int> found(amrex::ParallelDescriptor::NProcs(), 0);
@@ -426,7 +427,7 @@ initialize_EB2(
   std::string geom_type("all_regular");
   ppeb2.query("geom_type", geom_type);
 
-  int max_coarsening_level = 4; // Because there are no mg solvers here
+  int max_coarsening_level = 8; // Because there are no mg solvers here
 
   // Custom types defined here - all_regular, plane, sphere, etc, will get
   // picked up by default (see AMReX_BE2.cpp around L100 )
@@ -789,7 +790,7 @@ initialize_EB2(
       auto allpin_IF = amrex::EB2::makeUnion(*impfunc_pins[0],*impfunc_pins[1]);
 
       auto gshop = amrex::EB2::makeShop(allpin_IF);
-      amrex::EB2::Build(gshop, geom, max_coarsening_level, max_coarsening_level);
+      amrex::EB2::Build(gshop, geom, required_level , max_level);
 
   } else {
     amrex::EB2::Build(geom, max_level, max_level);
