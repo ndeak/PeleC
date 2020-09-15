@@ -192,8 +192,8 @@ PeleC::solveEF ( Real time,
    MLMG mlmg(poissonOP);
 
    // relative and absolute tolerances for linear solve
-   const Real tol_rel = 1.e-12;
-   const Real tol_abs = 1.e-10;
+   const Real tol_rel = 1.e-8;
+   const Real tol_abs = 1.e-6;
 
    mlmg.setVerbose(1);
        

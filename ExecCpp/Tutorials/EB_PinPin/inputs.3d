@@ -7,7 +7,7 @@ geometry.is_periodic =  1   0  1
 geometry.coord_sys   =  0       # 0 => cart
 geometry.prob_lo     =  0    0    0 
 geometry.prob_hi     =  11.0  11.0  11.0
-amr.n_cell           =  128 128 128
+amr.n_cell           =  256 256 256
 #amr.n_cell           =  64   80   64
 
 # >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
@@ -71,8 +71,8 @@ eb2.geom_type = pins
 pins.num_pin = 2
 pins.pin_0_tip = 5.5 5.0 5.5
 pins.pin_1_tip = 5.5 6.0 5.5
-pins.pin_0_c = -50
-pins.pin_1_c = 50
+pins.pin_0_c = -5
+pins.pin_1_c = 5
 pins.pin_0_dir = 1
 pins.pin_1_dir = 1
 #eb2.geom_type = "PinPin"
