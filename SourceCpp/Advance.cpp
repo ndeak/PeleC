@@ -169,7 +169,7 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Subtract(S, I_R, NUM_SPECIES, Eden, 1, 0);
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
-    react_state(time, dt);
+    react_state(time, dt, false, &S);
   }
 #endif
 
@@ -190,7 +190,7 @@ PeleC::do_mol_advance(
       amrex::MultiFab::LinComb(S, 0.5, S_old, 0, 0.5, S_new, 0, 0, NVAR, 0);
 
       // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
-      react_state(time, dt);
+      react_state(time, dt, false, &S);
 
       computeTemp(U_new, 0);
     }

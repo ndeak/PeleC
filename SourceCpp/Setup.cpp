@@ -105,7 +105,6 @@ set_z_vel_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
 void
 PeleC::variableSetUp()
 {
-
   // PeleC::variableSetUp is called in the constructor of Amr.cpp, so
   // it should get called every time we start or restart a job
 
@@ -143,11 +142,9 @@ PeleC::variableSetUp()
   // Get options, set phys_bc
   read_params();
 
-  // Initialize the runtime parameters for any of the external code
-  init_extern();
+  EOS::init();
 
-  // Initialize the network
-  init_network();
+  init_transport();
 
 #ifdef PELEC_USE_REACTIONS
   // Initialize the reactor
@@ -155,10 +152,6 @@ PeleC::variableSetUp()
     init_reactor();
   }
 #endif
-
-  init_eos();
-
-  init_transport();
 
   indxmap::init();
 
@@ -228,8 +221,7 @@ PeleC::variableSetUp()
   //    std::cout << "\nTime in set_method_params: " << run_stop << '\n' ;
 
   if (nscbc_adv == 1 && amrex::ParallelDescriptor::IOProcessor())
-    amrex::Print() << '\n'
-                   << "Using Ghost-Cells Navier-Stokes Characteristic BCs for "
+    amrex::Print() << "Using Ghost-Cells Navier-Stokes Characteristic BCs for "
                       "advection: nscbc_adv = "
                    << nscbc_adv << '\n'
                    << '\n';
