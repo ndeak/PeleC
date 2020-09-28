@@ -104,6 +104,11 @@ ifeq ($(USE_EB), TRUE)
   Pdirs += EB
 endif
 
+ifeq ($(USE_PLASMA), TRUE)
+  DEFINES+=-DPELEC_USE_PLASMA
+  Pdirs += LinearSolver/MLMG
+endif
+
 ifeq ($(USE_PARTICLES), TRUE)
   DEFINES+=-DAMREX_PARTICLES
   Pdirs += Particle
