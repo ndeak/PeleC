@@ -106,7 +106,7 @@ endif
 
 ifeq ($(USE_PLASMA), TRUE)
   DEFINES+=-DPELEC_USE_PLASMA
-  Pdirs += LinearSolver/MLMG
+  Pdirs += LinearSolvers/MLMG
 endif
 
 ifeq ($(USE_PARTICLES), TRUE)
