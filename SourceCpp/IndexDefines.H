@@ -60,6 +60,11 @@
 #define NUM_AUX 0
 #endif
 
+#ifdef PELEC_USE_PLASMA
+#define NUM_ADV 0
+#define NUM_AUX 2
+#endif
+
 #define UFS UFA + NUM_ADV
 #define UFX UFS + NUM_SPECIES
 #define NVAR NTHERM + NUM_ADV + NUM_SPECIES + NUM_AUX
