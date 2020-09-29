@@ -88,6 +88,22 @@ set_z_vel_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
     , bc.setLo(2, norm_vel_bc[lo_bc[2]]); bc.setHi(2, norm_vel_bc[hi_bc[2]]););
 }
 
+#ifdef PELEC_USE_PLASMA
+static int phiV_bc[] = {INT_DIR,      EXT_DIR,      FOEXTRAP, REFLECT_EVEN,
+                        EXT_DIR, REFLECT_EVEN, EXT_DIR};
+
+static void
+set_phiV_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
+{
+  const int* lo_bc = phys_bc.lo();
+  const int* hi_bc = phys_bc.hi();
+  for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
+    bc.setLo(dir, phiV_bc[lo_bc[dir]]);
+    bc.setHi(dir, phiV_bc[hi_bc[dir]]);
+  }
+}
+#endif
+
 void
 PeleC::variableSetUp()
 {
@@ -344,6 +360,19 @@ PeleC::variableSetUp()
     name[cnt] = "rho_" + spec_names[i];
   }
   // Get the auxiliary names from the network model.
+#ifdef PELEC_USE_PLASMA
+  AMREX_ASSERT(NUM_AUX == 2);
+  // Add phiV
+  cnt++;
+  set_phiV_bc(bc, phys_bc);
+  bcs[cnt] = bc;
+  name[cnt] = "phiV";
+  // Add nE. TODO: for now assumes nE has same physical BC as regular species
+  cnt++;
+  set_scalar_bc(bc, phys_bc);
+  bcs[cnt] = bc;
+  name[cnt] = "nE";
+#else
   amrex::Vector<std::string> aux_names;
   for (int i = 0; i < NUM_AUX; i++) {
     int len = 20;
@@ -372,6 +401,7 @@ PeleC::variableSetUp()
     bcs[cnt] = bc;
     name[cnt] = "rho_" + aux_names[i];
   }
+#endif
 
   amrex::StateDescriptor::BndryFunc bndryfunc1(pc_bcfill_hyp);
   bndryfunc1.setRunOnGPU(true);
