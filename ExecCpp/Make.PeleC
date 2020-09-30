@@ -45,6 +45,10 @@ ifeq ($(USE_EB), TRUE)
   endif
 endif
 
+ifeq ($(USE_PLASMA), TRUE)
+  USERSuffix += .PLASMA
+endif
+
 all: $(executable) 
 	$(SILENT) $(RM) AMReX_buildInfo.cpp
 	@echo SUCCESS
