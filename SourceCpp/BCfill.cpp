@@ -104,6 +104,70 @@ struct PCHypFillExtDir
     }
 #endif
 #endif
+
+#ifdef PELEC_USE_PLASMA
+    // Try to catch the PhiV BCs.
+    const int* bcp = bcr[UFX].data();
+    // xlo and xhi
+    idir = 0;
+    if ((bcp[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(domlo[idir], iv[1], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, +1, time, geom);
+      dest(iv, UFX) = s_ext[UFX];
+    } else if (
+      (bcp[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(domhi[idir], iv[1], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, -1, time, geom);
+      dest(iv, UFX) = s_ext[UFX];
+    }
+#if AMREX_SPACEDIM > 1
+    // ylo and yhi
+    idir = 1;
+    if ((bcp[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(iv[0], domlo[idir], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, +1, time, geom);
+      dest(iv, UFX) = s_ext[UFX];
+    } else if (
+      (bcp[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(iv[0], domhi[idir], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, -1, time, geom);
+      dest(iv, UFX) = s_ext[UFX];
+    }
+#if AMREX_SPACEDIM == 3
+    // zlo and zhi
+    idir = 2;
+    if ((bcp[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(iv[0], iv[1], domlo[idir], n);
+      }
+      bcnormal(x, s_int, s_ext, idir, +1, time, geom);
+      dest(iv, UFX) = s_ext[UFX];
+    } else if (
+      (bcp[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(iv[0], iv[1], domhi[idir], n);
+      }
+      bcnormal(x, s_int, s_ext, idir, -1, time, geom);
+      dest(iv, UFX) = s_ext[UFX];
+    }
+#endif
+#endif
+#endif
   }
 };
 
