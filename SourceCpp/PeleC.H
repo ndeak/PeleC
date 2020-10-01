@@ -18,6 +18,10 @@
 #include <AMReX_YAFluxRegister.H>
 #endif
 
+#ifdef PELEC_USE_PLASMA
+#include <AMReX_MLMG.H>
+#endif
+
 #ifdef AMREX_LAZY
 #include <AMReX_Lazy.H>
 #endif
@@ -301,6 +305,14 @@ public:
   void finalize_sdc_advance(
     amrex::Real time, amrex::Real dt, int amr_iteration, int amr_ncycle);
 
+#ifdef PELEC_USE_PLASMA
+  void solveEF (amrex::Real time,
+                amrex::Real dt );
+
+  void setBCPhiV ( std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_lobc,
+                   std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_hibc);
+#endif
+
   amrex::Real do_sdc_iteration(
     amrex::Real time,
     amrex::Real dt,
@@ -557,6 +569,10 @@ public:
   static int FirstAdv, NumAdv;
   static int FirstSpec;
   static int FirstAux;
+
+#ifdef PELEC_USE_PLASMA
+  static int PhiV, nE;
+#endif
 
   /// Index locations into particle state
   static int pstateVel, pstateT, pstateDia, pstateRho, pstateY, pstateNum;

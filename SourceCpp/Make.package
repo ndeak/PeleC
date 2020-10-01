@@ -59,6 +59,10 @@ ifeq ($(USE_EB), TRUE)
   CEXE_headers += EBStencilTypes.H
 endif
 
+ifeq ($(USE_PLASMA), TRUE)
+  CEXE_sources += SolveEfield.cpp
+endif
+
 ifeq ($(USE_PARTICLES), TRUE)
   CEXE_sources += Particle.cpp
 endif

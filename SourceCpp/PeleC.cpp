@@ -58,6 +58,10 @@ int PeleC::pstateDia = -1;
 int PeleC::pstateRho = -1;
 int PeleC::pstateY = -1;
 int PeleC::pstateNum = 0;
+#ifdef PELEC_USE_PLASMA
+int PeleC::PhiV = -1;
+int PeleC::nE = -1;
+#endif
 
 #include "pelec_defaults.H"
 
@@ -671,6 +675,11 @@ PeleC::initData()
   }
 
   enforce_consistent_e(S_new);
+
+#ifdef PELEC_USE_PLASMA
+  // Compute PhiV
+  solveEF( cur_time, 0.0 );
+#endif
 
   // computeTemp(S_new,0);
 

@@ -372,6 +372,9 @@ PeleC::variableSetUp()
   set_scalar_bc(bc, phys_bc);
   bcs[cnt] = bc;
   name[cnt] = "nE";
+
+  PhiV = FirstAux;
+  nE = FirstAux+1;
 #else
   amrex::Vector<std::string> aux_names;
   for (int i = 0; i < NUM_AUX; i++) {
