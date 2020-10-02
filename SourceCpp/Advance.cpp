@@ -88,7 +88,8 @@ PeleC::do_mol_advance(
 #endif
 
   // Compute PhiV
-  solveEF( time, dt );
+  // ndeak - add back
+  // solveEF( time, dt );
 
   // Compute S^{n} = MOLRhs(U^{n})
   if (verbose) {

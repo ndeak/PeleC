@@ -50,7 +50,24 @@ amrex_probinit(
   amrex::Real L = (probhi[0] - problo[0]) * 0.2;
 
   amrex::Real cp = 0.0;
-  ProbParm::massfrac[0] = 1.0;
+  // Setting mass fractions for pure air with seed electrons
+  // ProbParm::massfrac[0] = 1.0e-15;
+  // ProbParm::massfrac[1] = 0.233;
+  // ProbParm::massfrac[2] = 0.767;
+
+  // Test mass fractions
+  ProbParm::massfrac[0] = 1.55946879584e-6;
+  ProbParm::massfrac[1] = 0.090894590354;
+  ProbParm::massfrac[2] = 0.0795738;
+  ProbParm::massfrac[3] = 0.04544576356920416;
+  ProbParm::massfrac[4] = 0.090894590354;
+  ProbParm::massfrac[5] = 0.0795738;
+  ProbParm::massfrac[6] = 0.18178762;
+  ProbParm::massfrac[7] = 0.1591460659;
+  ProbParm::massfrac[8] = 0.18178762;
+  ProbParm::massfrac[9] = 0.090894590354;
+
+  
   EOS::RYP2E(
     ProbParm::rho, ProbParm::massfrac.begin(), ProbParm::p, ProbParm::eint);
   EOS::EY2T(ProbParm::eint, ProbParm::massfrac.begin(), ProbParm::T);

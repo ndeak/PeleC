@@ -1,5 +1,5 @@
 # AMReX
-DIM = 3
+DIM = 2
 COMP = gnu
 PRECISION = DOUBLE
 
@@ -16,6 +16,7 @@ USE_MPI = TRUE
 USE_OMP = FALSE
 USE_CUDA = FALSE
 USE_HIP = FALSE
+USE_DPCPP = FALSE
 
 # Debugging
 DEBUG = FALSE
@@ -23,10 +24,18 @@ FSANITIZER = FALSE
 THREAD_SANITIZER = FALSE
 
 # PeleC
-USE_EB = TRUE
-Eos_dir := GammaLaw
-Reactions_dir := Null_air
+USE_REACT = TRUE
+USE_SUNDIALS_PP = FALSE
+USE_EB = FALSE
+USE_MASA = FALSE
+#Eos_dir := GammaLaw
+#Reactions_dir := Null_air
+#Transport_dir := Constant
+Eos_dir := Fuego
+Reactions_dir := Fuego
+Chemistry_Model := PlasmaAir
 Transport_dir := Constant
+
 
 # GNU Make
 Bpack := ./Make.package

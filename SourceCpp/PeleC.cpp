@@ -674,7 +674,8 @@ PeleC::initData()
   enforce_consistent_e(S_new);
 
   // Compute PhiV
-  solveEF( cur_time, 0.0 );
+  // ndeak - add back
+  // solveEF( cur_time, 0.0 );
 
   // computeTemp(S_new,0);
 
@@ -1847,7 +1848,9 @@ PeleC::init_reactor()
 #pragma omp parallel
 #endif
   {
+    // ndeak fix - passing by value
     reactor_init(&reactor_type, &ode_ncells);
+    // reactor_init(reactor_type, ode_ncells);
   }
 #else
   reactor_info(&reactor_type, &ode_ncells);
