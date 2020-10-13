@@ -92,25 +92,13 @@ PeleC::do_mol_advance(
   // Compute PhiV
   solveEF( time, dt );
 
-  // Set arbitrary potential
+  // Set arbitrary potential for testing
   for (amrex::MFIter mfi(U_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
     const amrex::Box& tbox = mfi.tilebox();
     const auto Ufab = U_old.array(mfi);
     amrex::ParallelFor(
       tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         Ufab(i, j, k, PhiV) = j;
-      });
-  }
-
-  // Set arbitrary potential
-  for (amrex::MFIter mfi(Efield, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-    const amrex::Box& tbox = mfi.tilebox();
-    const auto Efab = Efield.array(mfi);
-    amrex::ParallelFor(
-      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        Efab(i, j, k, E_X) = 0;
-        Efab(i, j, k, E_Y) = 1;
-        Efab(i, j, k, E_Z) = 2;
       });
   }
 
