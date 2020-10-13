@@ -652,6 +652,26 @@ PeleC::variableSetUp()
   }
 #endif
 
+  // Plasma derives
+#ifdef PELEC_USE_PLASMA
+  derive_lst.add(
+    "Efieldx", amrex::IndexType::TheCellType(), 3, pc_derEfieldx, the_same_box);
+  derive_lst.addComponent("Efieldx", desc_lst, State_Type, Density, 3);
+
+  derive_lst.add(
+    "Efieldy", amrex::IndexType::TheCellType(), 3, pc_derEfieldy, the_same_box);
+  derive_lst.addComponent("Efieldy", desc_lst, State_Type, Density, 3);
+
+  derive_lst.add(
+    "Efieldz", amrex::IndexType::TheCellType(), 3, pc_derEfieldz, the_same_box);
+  derive_lst.addComponent("Efieldz", desc_lst, State_Type, Density, 3);
+
+  derive_lst.add(
+    "redEfield", amrex::IndexType::TheCellType(), 1, pc_derredEfield, the_same_box);
+  derive_lst.addComponent("redEfield", desc_lst, State_Type, Density, 1);
+#endif
+
+
   // Problem-specific derives
   add_problem_derives<ProblemDerives>(derive_lst, desc_lst);
 

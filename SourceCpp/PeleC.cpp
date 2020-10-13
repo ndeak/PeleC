@@ -458,6 +458,11 @@ PeleC::PeleC(
   get_new_data(Reactions_Type).setVal(0.0);
 #endif
 
+#ifdef PELEC_USE_PLASMA
+  Efield.define(grids, dmap, NUM_E, NUM_GROW, amrex::MFInfo(), Factory());
+  redEfield.define(grids, dmap, 1, NUM_GROW, amrex::MFInfo(), Factory());
+#endif
+
   // Don't need this in pure C++?
   // initialize the Godunov state array used in hydro -- we wait
   // until here so that ngroups is defined (if needed) in

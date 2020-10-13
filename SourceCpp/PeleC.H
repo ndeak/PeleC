@@ -647,6 +647,11 @@ protected:
   amrex::Vector<std::unique_ptr<amrex::MultiFab>> old_sources;
   amrex::Vector<std::unique_ptr<amrex::MultiFab>> new_sources;
 
+#ifdef PELEC_USE_PLASMA
+  amrex::MultiFab Efield;
+  amrex::MultiFab redEfield;
+#endif  
+
 #ifdef PELEC_USE_REACTIONS
   static void init_reactor();
   static void close_reactor();

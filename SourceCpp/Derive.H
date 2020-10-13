@@ -282,4 +282,46 @@ void pc_derpmmserror(
   const int* bcrec,
   const int level);
 #endif
+#ifdef PELEC_USE_PLASMA
+void pc_derEfieldx(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int dcomp,
+  int PhiV,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& geomdata,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int level);
+void pc_derEfieldy(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int dcomp,
+  int PhiV,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& geomdata,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int level);
+void pc_derEfieldz(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int dcomp,
+  int PhiV,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& geomdata,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int level);
+void pc_derredEfield(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int dcomp,
+  int /*ncomp*/,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& geomdata,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int level);
+#endif
 #endif

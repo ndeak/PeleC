@@ -4,6 +4,7 @@
 
 #include "PeleC.H"
 #include "IndexDefines.H"
+#include "Derive.H"
 
 amrex::Real
 PeleC::advance(
@@ -90,6 +91,42 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   // Compute PhiV
   solveEF( time, dt );
+
+  // Set arbitrary potential
+  for (amrex::MFIter mfi(U_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+    const amrex::Box& tbox = mfi.tilebox();
+    const auto Ufab = U_old.array(mfi);
+    amrex::ParallelFor(
+      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        Ufab(i, j, k, PhiV) = j;
+      });
+  }
+
+  // Set arbitrary potential
+  for (amrex::MFIter mfi(Efield, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+    const amrex::Box& tbox = mfi.tilebox();
+    const auto Efab = Efield.array(mfi);
+    amrex::ParallelFor(
+      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        Efab(i, j, k, E_X) = 0;
+        Efab(i, j, k, E_Y) = 1;
+        Efab(i, j, k, E_Z) = 2;
+      });
+  }
+
+  for (amrex::MFIter mfi(U_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+    const amrex::Box& tbox = mfi.tilebox();
+    const auto Ufab = U_old.array(mfi);
+    const auto Efab = Efield.array(mfi);
+    const auto redEfab = redEfield.array(mfi);
+    const auto datbox = U_old[mfi].box();
+
+    pc_derEfieldx(datbox, Efield[mfi], 3, PhiV, U_old[mfi], geom, time, 0, level);
+    pc_derEfieldy(datbox, Efield[mfi], 3, PhiV, U_old[mfi], geom, time, 0, level);
+    pc_derEfieldz(datbox, Efield[mfi], 3, PhiV, U_old[mfi], geom, time, 0, level);
+    pc_derredEfield(datbox, redEfield[mfi], 1, PhiV, Efield[mfi], geom, time, 0, level);
+  }
+
 #endif
 
   // Compute S^{n} = MOLRhs(U^{n})
@@ -277,7 +314,6 @@ PeleC::do_sdc_advance(
   amrex::Real time, amrex::Real dt, int amr_iteration, int amr_ncycle)
 {
   BL_PROFILE("PeleC::do_sdc_advance()");
-
   amrex::Real dt_new = dt;
 
   /** This routine will advance the old state data (called S_old here)

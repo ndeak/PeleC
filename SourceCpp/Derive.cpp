@@ -773,3 +773,99 @@ pc_derpmmserror(
   });
 }
 #endif
+
+
+#ifdef PELEC_USE_PLASMA
+void
+pc_derEfieldx(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int dcomp,
+  int PhiV,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& geomdata,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int level)
+{
+  auto const dat = datfab.array();
+  auto Efieldx = derfab.array();
+
+  const amrex::Real dx = geomdata.CellSize(0);
+
+  // Calculate E_x
+  amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    Efieldx(i, j, k, E_X) = 0.5 * (dat(i + 1, j, k, PhiV) - dat(i - 1, j, k, PhiV)) / dx;
+    // Efieldx(i, j, k, E_X) = 0.5 + Efieldx(i,j,k,E_X);
+  });
+}
+
+void
+pc_derEfieldy(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int dcomp,
+  int PhiV,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& geomdata,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int level)
+{
+  auto const dat = datfab.array();
+  auto Efieldy = derfab.array();
+
+  const amrex::Real dy = geomdata.CellSize(1);
+
+  // Calculate E_y
+  amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    Efieldy(i, j, k, E_Y) = 0.5 * (dat(i, j +  1, k, PhiV) - dat(i, j - 1, k, PhiV)) / dy;
+  });
+}
+
+void
+pc_derEfieldz(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int dcomp,
+  int PhiV,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& geomdata,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int level)
+{
+  auto const dat = datfab.array();
+  auto Efieldz = derfab.array();
+
+  const amrex::Real dz = geomdata.CellSize(2);
+
+  // Calculate E_z
+  amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    Efieldz(i, j, k, E_Z) = 0.5 * (dat(i, j, k + 1, PhiV) - dat(i , j, k - 1, PhiV)) / dz;
+  });
+}
+
+void
+pc_derredEfield(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int dcomp,
+  int /*ncomp*/,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& geomdata,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int level)
+{
+
+  auto const dat = datfab.array();
+  auto redEfield = derfab.array();
+
+  // Calculate reduced electric field strength (Td).
+  amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    redEfield(i, j, k, EMAG) = sqrt(AMREX_D_TERM(+dat(i,j,k,E_X) * dat(i,j,k,E_X), +dat(i,j,k,E_Y) * dat(i,j,k,E_Y), +dat(i,j,k,E_Z) * dat(i,j,k,E_Z)));
+  });
+// TODO: add conversion to Td factor
+}
+#endif
