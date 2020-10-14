@@ -32,17 +32,14 @@ struct PhiVFill
        amrex::Real s_int[NVAR] = {0.0};
        amrex::Real s_ext[NVAR] = {0.0};
 
-       // TODO : figure out correct index (bcomp may be incorrect)
-       printf("bcomp IS : %.6e\n", bcomp);
-
        for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
           if ((bc[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
              bcnormal(x, s_int, s_ext, idir, +1, time, geom);
-             dest(iv, dcomp) = s_ext[bcomp];
+             dest(iv, dcomp) = s_ext[UFX];
           }
           if ((bc[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[idir] > domhi[idir])) {
              bcnormal(x, s_int, s_ext, idir, -1, time, geom);
-             dest(iv, dcomp) = s_ext[bcomp];
+             dest(iv, dcomp) = s_ext[UFX];
           }
        }
     }
@@ -187,11 +184,11 @@ PeleC::solveEF ( Real time,
        }); 
    }
 
-   poissonOP.setEBDirichlet(0,rhiV_BC,beta);
+   poissonOP.setEBDirichlet(0,phiV_BC,beta);
 #endif
 
 // If need be, visualize the charge distribution.    
-//   VisMF::Write(rhiV_BC,"EBDirichPhiV_"+std::to_string(level));
+//   VisMF::Write(phiV_BC,"EBDirichPhiV_"+std::to_string(level));
     
 /////////////////////////////////////   
 // Setup a MG solver
