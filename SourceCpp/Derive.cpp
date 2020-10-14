@@ -3,6 +3,7 @@
 #include "EOS.H"
 #include "Derive.H"
 #include "IndexDefines.H"
+#include <AMReX_PhysBCFunct.H>
 
 void
 pc_dervelx(
@@ -785,18 +786,24 @@ pc_derEfieldx(
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
-  const int* /*bcrec*/,
+  const int* bcrec,
   int level)
 {
-  auto const dat = datfab.array();
-  auto Efieldx = derfab.array();
+  auto const bx_der = derfab.box();
+  auto const    dat = datfab.array(UFX);
+  auto      Efieldx = derfab.array(dcomp);
 
-  const amrex::Real dx = geomdata.CellSize(0);
+  const auto dxinv = geomdata.InvCellSizeArray();
+  const auto domain = geomdata.Domain();
+  amrex::Real factor = -0.5*dxinv[0];
 
   // Calculate E_x
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    Efieldx(i, j, k, E_X) = 0.5 * (dat(i + 1, j, k, PhiV) - dat(i - 1, j, k, PhiV)) / dx;
-    // Efieldx(i, j, k, E_X) = 0.5 + Efieldx(i,j,k,E_X);
+    bool on_lo = ( ( bcrec[2*(UFX)*AMREX_SPACEDIM+0] == amrex::BCType::ext_dir ) && i <= domain.smallEnd(0) );
+    bool on_hi = ( ( bcrec[2*(UFX)*AMREX_SPACEDIM+AMREX_SPACEDIM+0] == amrex::BCType::ext_dir ) && i >= domain.bigEnd(0) );
+    Efieldx(i, j, k) = factor * (dat(i + 1, j, k) - dat(i - 1, j, k));
+    if ( on_lo ) Efieldx(i, j, k) = factor * ( dat(i+1,j,k) + dat(i,j,k) - 2.0 * dat(i-1,j,k) );
+    if ( on_hi ) Efieldx(i, j, k) = factor * ( 2.0 * dat(i+1,j,k) - dat(i,j,k) - dat(i-1,j,k) );
   });
 }
 
@@ -809,17 +816,24 @@ pc_derEfieldy(
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
-  const int* /*bcrec*/,
+  const int* bcrec,
   int level)
 {
-  auto const dat = datfab.array();
-  auto Efieldy = derfab.array();
+  auto const bx_der = derfab.box();
+  auto const    dat = datfab.array(UFX);
+  auto      Efieldy = derfab.array(dcomp);
 
-  const amrex::Real dy = geomdata.CellSize(1);
+  const auto dxinv = geomdata.InvCellSizeArray();
+  const auto domain = geomdata.Domain();
+  amrex::Real factor = -0.5*dxinv[1];
 
   // Calculate E_y
-  amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    Efieldy(i, j, k, E_Y) = 0.5 * (dat(i, j +  1, k, PhiV) - dat(i, j - 1, k, PhiV)) / dy;
+  amrex::ParallelFor(bx_der, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    bool on_lo = ( ( bcrec[2*(UFX)*AMREX_SPACEDIM+1] == amrex::BCType::ext_dir ) && j <= domain.smallEnd(1) );
+    bool on_hi = ( ( bcrec[2*(UFX)*AMREX_SPACEDIM+AMREX_SPACEDIM+1] == amrex::BCType::ext_dir ) && j >= domain.bigEnd(1) );
+    Efieldy(i, j, k) = factor * (dat(i,j+1,k) - dat(i,j-1,k));
+    if ( on_lo ) Efieldy(i, j, k) = factor * ( dat(i,j+1,k) + dat(i,j,k) - 2.0 * dat(i,j-1,k) );
+    if ( on_hi ) Efieldy(i, j, k) = factor * ( 2.0 * dat(i,j+1,k) - dat(i,j,k) - dat(i,j-1,k) );
   });
 }
 
@@ -832,17 +846,24 @@ pc_derEfieldz(
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
-  const int* /*bcrec*/,
+  const int* bcrec,
   int level)
 {
-  auto const dat = datfab.array();
-  auto Efieldz = derfab.array();
+  auto const bx_der = derfab.box();
+  auto const    dat = datfab.array(UFX);
+  auto      Efieldz = derfab.array(dcomp);
 
-  const amrex::Real dz = geomdata.CellSize(2);
+  const auto dxinv = geomdata.InvCellSizeArray();
+  const auto domain = geomdata.Domain();
+  amrex::Real factor = -0.5*dxinv[2];
 
   // Calculate E_z
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    Efieldz(i, j, k, E_Z) = 0.5 * (dat(i, j, k + 1, PhiV) - dat(i , j, k - 1, PhiV)) / dz;
+    bool on_lo = ( ( bcrec[2*(UFX)*AMREX_SPACEDIM+2] == amrex::BCType::ext_dir ) && k <= domain.smallEnd(2) );
+    bool on_hi = ( ( bcrec[2*(UFX)*AMREX_SPACEDIM+AMREX_SPACEDIM+2] == amrex::BCType::ext_dir ) && k >= domain.bigEnd(2) );
+    Efieldz(i, j, k) = factor * (dat(i, j, k + 1) - dat(i , j, k - 1));
+    if ( on_lo ) Efieldz(i, j, k) = factor * ( dat(i,j,k+1) + dat(i,j,k) - 2.0 * dat(i,j,k-1) );
+    if ( on_hi ) Efieldz(i, j, k) = factor * ( 2.0 * dat(i,j,k+1) - dat(i,j,k) - dat(i,j,k-1) );
   });
 }
 
@@ -861,10 +882,18 @@ pc_derredEfield(
 
   auto const dat = datfab.array();
   auto redEfield = derfab.array();
+  const auto dxinv = geomdata.InvCellSizeArray(); 
 
   // Calculate reduced electric field strength (Td).
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    redEfield(i, j, k, EMAG) = sqrt(AMREX_D_TERM(+dat(i,j,k,E_X) * dat(i,j,k,E_X), +dat(i,j,k,E_Y) * dat(i,j,k,E_Y), +dat(i,j,k,E_Z) * dat(i,j,k,E_Z)));
+    amrex::Real ef_x = 0.5 * (dat(i+1, j, k, UFX) - dat(i-1, j, k, UFX)) * dxinv[0];
+    amrex::Real ef_y = 0.5 * (dat(i, j+1, k, UFX) - dat(i, j-1, k, UFX)) * dxinv[1];
+#if AMREX_SPACEDIM == 3
+    amrex::Real ef_z = 0.5 * (dat(i, j, k+1, UFX) - dat(i, j, k-1, UFX)) * dxinv[2];
+#endif
+    redEfield(i, j, k, 0) = std::sqrt( AMREX_D_TERM(  ef_x * ef_x,
+                                                    + ef_y * ef_y,
+                                                    + ef_z * ef_z));
   });
 // TODO: add conversion to Td factor
 }
