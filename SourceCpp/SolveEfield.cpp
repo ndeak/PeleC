@@ -194,6 +194,8 @@ PeleC::solveEF ( Real time,
 // Setup a MG solver
 /////////////////////////////////////   
    MLMG mlmg(poissonOP);
+   // ndeak add
+   printf("finished MLMH setup!\n");
 
    // relative and absolute tolerances for linear solve
    const Real tol_rel = 1.e-8;
@@ -204,6 +206,8 @@ PeleC::solveEF ( Real time,
    // Solve linear system
    //phiV_alias.setVal(0.0); // initial guess for phi
    mlmg.solve({&phiV_alias}, {&chargeDistib}, tol_rel, tol_abs);
+   // ndeak add
+   printf("finished MLMH solve!\n");
 
 }
 

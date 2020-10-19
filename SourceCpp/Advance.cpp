@@ -5,6 +5,40 @@
 #include "PeleC.H"
 #include "IndexDefines.H"
 #include "Derive.H"
+#include "prob.H"
+
+struct PhiVFill
+{
+    AMREX_GPU_DEVICE
+    void operator() (const amrex::IntVect& iv, amrex::Array4<amrex::Real> const& dest,
+                     const int dcomp, const int numcomp,
+                     amrex::GeometryData const& geom, const amrex::Real time,
+                     const amrex::BCRec* bcr, const int bcomp,
+                     const int orig_comp) const
+    {
+       const int* domlo = geom.Domain().loVect();
+       const int* domhi = geom.Domain().hiVect();
+       const amrex::Real* dx = geom.CellSize();
+       const amrex::Real x[AMREX_SPACEDIM] = {AMREX_D_DECL(
+         domlo[0] + (iv[0] + 0.5) * dx[0], domlo[1] + (iv[1] + 0.5) * dx[1],
+         domlo[2] + (iv[2] + 0.5) * dx[2])};
+       const int* bc = bcr->data();
+
+       amrex::Real s_int[NVAR] = {0.0};
+       amrex::Real s_ext[NVAR] = {0.0};
+
+       for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
+          if ((bc[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+             bcnormal(x, s_int, s_ext, idir, +1, time, geom);
+             dest(iv, dcomp) = s_ext[UFX];
+          }
+          if ((bc[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[idir] > domhi[idir])) {
+             bcnormal(x, s_int, s_ext, idir, -1, time, geom);
+             dest(iv, dcomp) = s_ext[UFX];
+          }
+       }
+    }
+};
 
 amrex::Real
 PeleC::advance(
@@ -92,29 +126,43 @@ PeleC::do_mol_advance(
   // Compute PhiV
   solveEF( time, dt );
 
-  // Set arbitrary potential for testing
-  for (amrex::MFIter mfi(U_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-    const amrex::Box& tbox = mfi.tilebox();
-    const auto Ufab = U_old.array(mfi);
-    amrex::ParallelFor(
-      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        Ufab(i, j, k, PhiV) = j;
-      });
+  // Fill ghost cells in same way as in SolveEfield.cpp for now (probably better way to do this?)
+  amrex::MultiFab Phiborder(grids, dmap, 1, 1, amrex::MFInfo(), Factory());
+  Phiborder.copy(U_old,PhiV,0,1,0,0);
+  Phiborder.FillBoundary(geom.periodicity());
+  const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
+  const int* phiVbc = bcphiV.data();
+  const amrex::Vector<amrex::BCRec>& bc = {bcphiV};
+  if (not geom.isAllPeriodic()) {
+    amrex::GpuBndryFuncFab<PhiVFill> bf(PhiVFill{});
+    amrex::PhysBCFunct<amrex::GpuBndryFuncFab<PhiVFill> > phiVf(geom, bc, bf);
+    phiVf(Phiborder, 0, 1, Phiborder.nGrowVect(), time, 0);
   }
+  
+  // Copy back into Sborder? (probably better way to do this...)
+  Sborder.copy(Phiborder, 0, PhiV, 1, 1, 1); 
+ 
+  // Print the potential to verify BCs
+  // for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+  //   const amrex::Box& tbox = mfi.tilebox();
+  //   const auto Ufab = Sborder.array(mfi);
+  //   amrex::ParallelFor(
+  //     tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //       // Ufab(i, j, k, PhiV) = j;
+  //     });
+  // }
 
   for (amrex::MFIter mfi(U_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
     const amrex::Box& tbox = mfi.tilebox();
-    const auto Ufab = U_old.array(mfi);
-    const auto Efab = Efield.array(mfi);
-    const auto redEfab = redEfield.array(mfi);
     const auto datbox = U_old[mfi].box();
 
-    pc_derEfieldx(datbox, Efield[mfi], 3, PhiV, U_old[mfi], geom, time, 0, level);
-    pc_derEfieldy(datbox, Efield[mfi], 3, PhiV, U_old[mfi], geom, time, 0, level);
-    pc_derEfieldz(datbox, Efield[mfi], 3, PhiV, U_old[mfi], geom, time, 0, level);
-    pc_derredEfield(datbox, redEfield[mfi], 1, PhiV, Efield[mfi], geom, time, 0, level);
+    pc_derEfieldx(datbox, Efield[mfi], 0, PhiV, Sborder[mfi], geom, time, phiVbc, level);
+    pc_derEfieldy(datbox, Efield[mfi], 1, PhiV, Sborder[mfi], geom, time, phiVbc, level);
+#if AMREX_SPACEDIM == 3
+    pc_derEfieldz(datbox, Efield[mfi], 2, PhiV, Sborder[mfi], geom, time, phiVbc, level);
+#endif
+    pc_derredEfield(datbox, redEfield[mfi], 0, PhiV, Sborder[mfi], geom, time, phiVbc, level);
   }
-
 #endif
 
   // Compute S^{n} = MOLRhs(U^{n})
