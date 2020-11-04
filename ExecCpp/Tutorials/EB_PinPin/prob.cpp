@@ -50,18 +50,33 @@ amrex_probinit(
   amrex::Real L = (probhi[0] - problo[0]) * 0.2;
 
   amrex::Real cp = 0.0;
-  ProbParm::massfrac[0] = 0.233;
-  ProbParm::massfrac[1] = 0.767;
+  // Air mass fractions
+  for (int n = 0; n < NUM_SPECIES; n++) ProbParm::massfrac[n] = 0.0;
+  ProbParm::massfrac[1] = 0.233;
+  ProbParm::massfrac[2] = 0.767;
+
+  // Test mass fractions (equal mole fraction values)
+  // ProbParm::massfrac[0] = 1.55946879584e-6;
+  // ProbParm::massfrac[1] = 0.090894590354;
+  // ProbParm::massfrac[2] = 0.0795738;
+  // ProbParm::massfrac[3] = 0.04544576356920416;
+  // ProbParm::massfrac[4] = 0.090894590354;
+  // ProbParm::massfrac[5] = 0.0795738;
+  // ProbParm::massfrac[6] = 0.18178762;
+  // ProbParm::massfrac[7] = 0.1591460659;
+  // ProbParm::massfrac[8] = 0.18178762;
+  // ProbParm::massfrac[9] = 0.090894590354;
+
   EOS::RYP2E(
     ProbParm::rho, ProbParm::massfrac.begin(), ProbParm::p, ProbParm::eint);
   EOS::EY2T(ProbParm::eint, ProbParm::massfrac.begin(), ProbParm::T);
   EOS::TY2Cp(ProbParm::T, ProbParm::massfrac.begin(), cp);
 
-//  transport_params::const_bulk_viscosity = 0.0;
-//  transport_params::const_diffusivity = 0.0;
-//  transport_params::const_viscosity =
-//    ProbParm::rho * ProbParm::vx_in * L / ProbParm::Re_L;
-//  transport_params::const_conductivity =
-//    transport_params::const_viscosity * cp / ProbParm::Pr;
+ // transport_params::const_bulk_viscosity = 0.0;
+ // transport_params::const_diffusivity = 0.0;
+ // transport_params::const_viscosity =
+ //   ProbParm::rho * ProbParm::vx_in * L / ProbParm::Re_L;
+ // transport_params::const_conductivity =
+ //   transport_params::const_viscosity * cp / ProbParm::Pr;
 }
 }
