@@ -10,6 +10,12 @@ pc_compute_hyp_mol_flux(
     a,
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> del,
   const int plm_iorder
+#ifdef PELEC_USE_PLASMA
+  ,
+  const amrex::GpuArray<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> drift,
+  const amrex::Array4<const amrex::Real>& K_cc,
+  const int do_harmonic
+#endif
 #ifdef PELEC_USE_EB
   ,
   const amrex::Real eb_small_vfrac,
@@ -146,6 +152,18 @@ pc_compute_hyp_mol_flux(
         const amrex::Real rhoe_r = eos_state_rho * eos_state_e;
         const amrex::Real gamc_r = eos_state_gamma;
 
+        // ndeak TODO: After calculation of edge states, need cell-edge effective velocity
+        // Step 1: Get cell-centered mobilities
+        // Step 2: Calculate cell-centered effective velocities
+        // Step 3: Extrapolate to get cell-edge values
+        
+#ifdef PELEC_USE_PLASMA
+        amrex::Real c[NUM_SPECIES];
+        for(int n=0; n<NUM_SPECIES; n++)
+          pc_move_transcoefs_to_ec(i, j, k, n, K_cc, c, dir, do_harmonic);
+
+        amrex::Real drift_tmp[NUM_SPECIES] = {0.0};
+#endif
         amrex::Real flux_tmp[NVAR] = {0.0};
         amrex::Real ustar = 0.0;
 

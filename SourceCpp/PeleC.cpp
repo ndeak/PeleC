@@ -61,6 +61,10 @@ int PeleC::pstateNum = 0;
 #ifdef PELEC_USE_PLASMA
 int PeleC::PhiV = -1;
 int PeleC::nE = -1;
+int PeleC::ef_verbose = 0;
+int PeleC::ef_debug = 0;
+amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
+bool PeleC::def_harm_avg_cen2edge  = false;
 #endif
 
 #include "pelec_defaults.H"
@@ -461,6 +465,11 @@ PeleC::PeleC(
 #ifdef PELEC_USE_PLASMA
   Efield.define(grids, dmap, NUM_E, NUM_GROW, amrex::MFInfo(), Factory());
   redEfield.define(grids, dmap, 1, NUM_GROW, amrex::MFInfo(), Factory());
+  KSpec_old.define(grids,dmap,NUM_SPECIES,1); 
+  KSpec_new.define(grids,dmap,NUM_SPECIES,1); 
+  coeffs_old.define(grids,dmap,NUM_SPECIES+3,1); 
+  Q_ext.define(grids,dmap,NQ,1); 
+  Qaux_ext.define(grids,dmap,NQAUX,1); 
 #endif
 
   // Don't need this in pure C++?

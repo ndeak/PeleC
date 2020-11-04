@@ -4,11 +4,21 @@
 #include <AMReX_MLEBABecLap.H>
 #endif
 #include <AMReX_MLMG.H>
+#include <AMReX_ParmParse.H>
+#include <SolveEfield.H>
 #include "prob.H"
 
 #include <cmath>
 
 using namespace amrex;
+
+namespace EFConst{
+    AMREX_GPU_DEVICE_MANAGED amrex::Real eps0 = 8.854187817e-12;          //Free space permittivity (C/(V.m))
+    AMREX_GPU_DEVICE_MANAGED amrex::Real epsr = 1.0;
+    AMREX_GPU_DEVICE_MANAGED amrex::Real elemCharge = 1.60217662e-19;     //Coulomb per charge
+    AMREX_GPU_DEVICE_MANAGED amrex::Real Na = 6.022e23;                   //Avogadro's number
+    AMREX_GPU_DEVICE_MANAGED amrex::Real PP_RU_MKS = 8.31446261815324;    //Universal gas constant (J/mol-K)
+}
 
 using std::string;
 
@@ -44,6 +54,43 @@ struct PhiVFill
        }
     }
 };
+
+void 
+PeleC::ef_init() 
+{
+    amrex::Print() << " Init EFIELD solve options \n";
+
+    // Params defaults
+    ef_verbose = 0;
+    ef_debug = 0;
+    def_harm_avg_cen2edge  = false;
+
+    // User input parser to query efield inputs
+    amrex::ParmParse pp("ef");
+    pp.query("verbose",ef_verbose);
+    pp.query("debug",ef_debug);
+    pp.query("def_harm_avg_cen2edge",def_harm_avg_cen2edge);
+
+    // ndeak add - hard-coding chargers for now
+    zk[0] = -1.0;
+    zk[1] =  0.0;
+    zk[2] =  0.0;
+    zk[3] =  0.0;
+    zk[4] =  1.0;
+    zk[5] =  1.0;
+    zk[6] =  1.0;
+    zk[7] =  1.0;
+    zk[8] =  1.0;
+    zk[9] = -1.0;
+}
+
+void PeleC::ef_define_data() {
+   BL_PROFILE("PELC_EF::ef_define_data()");
+
+   // De_ec = ;
+   // Ke_ec = ;
+
+}
 
 void
 PeleC::solveEF ( Real time,
@@ -258,3 +305,95 @@ void PeleC::setBCPhiV(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
    }
 
 }
+
+void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time) {
+  BL_PROFILE("PeleC::ef_calc_transport()");
+ 
+  // ndeak note - since only MOL is being used for now, it is assumed all data MFs are at time t=n
+
+  if ( ef_verbose ) amrex::Print() << " Compute EF transport prop.\n";
+
+  const TimeLevel whichTime = which_time(State_Type, time);
+
+  // BL_ASSERT(whichTime == AmrOldTime || whichTime == AmrNewTime);
+
+  // MultiFab& S     = (whichTime == AmrOldTime) ? get_old_data(State_Type) : get_new_data(State_Type);
+  // MultiFab& diff  = (whichTime == AmrOldTime) ? (*diffn_cc) : (*diffnp1_cc);
+  // MultiFab& Kspec = (whichTime == AmrOldTime) ? KSpec_old : KSpec_new;
+
+  // Get the cc transport coeffs. These are temporary.
+  MultiFab Ke_cc(grids,dmap,1,1);
+  MultiFab De_cc(grids,dmap,1,1);
+
+  // Fillpatch the state 
+  // ndeak note - not needed since S with boundary cells is provided as input
+  // FillPatchIterator fpi(*this,S,Ke_cc.nGrow(),time,State_Type,UFS,NUM_SPECIES+3);
+  // MultiFab& S_cc = fpi.get_mf();
+
+  // ndeak add - get BCs for species (used in center->edge extrap)
+  const amrex::BCRec& bcspec = get_desc_lst()[State_Type].getBC(UFS);
+  const int* bcrec = bcspec.data();
+
+#ifdef _OPENMP
+#pragma omp parallel if (Gpu::notInLaunchRegion())
+#endif
+  for (MFIter mfi(S, TilingIfNotGPU()); mfi.isValid(); ++mfi)
+  {
+     const amrex::Box& tbox = mfi.tilebox();
+     auto const& rhoY = S.array(mfi,UFS);
+     auto const& T    = Q_ext.array(mfi,QTEMP);
+     auto const& rhoD = coeffs_old.array(mfi,dComp_rhoD);
+     auto const& Ke   = Ke_cc.array(mfi);
+     auto const& De   = De_cc.array(mfi);
+     auto const& Ks   = KSpec_old.array(mfi);
+     Real factor = EFConst::PP_RU_MKS / ( EFConst::Na * EFConst::elemCharge );
+     amrex::ParallelFor(tbox, [rhoY, T, factor, Ke, De]
+     AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+     {
+        getKappaE(i,j,k,Ke);
+        getDiffE(i,j,k,factor,T,Ke,De);
+     });
+     Real mwt[NUM_SPECIES];
+     EOS::molecular_weight(mwt);
+     amrex::ParallelFor(tbox, [rhoY, rhoD, T, Ks, mwt]
+     AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+     {
+        getKappaSp(i,j,k, mwt, zk, rhoY, rhoD, T, Ks);
+     });
+  }
+  if ( ef_debug ) {
+     std::string timetag = (whichTime == AmrOldTime) ? "old" : "new";
+     VisMF::Write(KSpec_old,"KappaSpec"+timetag+"_Lvl"+std::to_string(level));
+  }
+
+//   // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
+//   // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
+//   const Box& domain = geom.Domain();
+//   bool use_harmonic_avg = def_harm_avg_cen2edge ? true : false;
+// #ifdef _OPENMP
+// #pragma omp parallel if (Gpu::notInLaunchRegion())
+// #endif
+//   for (MFIter mfi(De_cc,TilingIfNotGPU()); mfi.isValid();++mfi)
+//   {
+//      for (int dir = 0; dir < AMREX_SPACEDIM; dir++)
+//      {
+//         const Box ebx = mfi.nodaltilebox(dir);
+//         const Box& edomain = amrex::surroundingNodes(domain,dir);
+//         const auto& diff_c  = De_cc.array(mfi);
+//         const auto& diff_ed = De_ec[dir]->array(mfi);
+//         const auto& kappa_c  = Ke_cc.array(mfi);
+//         const auto& kappa_ed = Ke_ec[dir]->array(mfi);
+//         amrex::ParallelFor(ebx, [dir, bc_lo, bc_hi, use_harmonic_avg, diff_c, diff_ed,
+//                                  kappa_c, kappa_ed, edomain]
+//         AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+//         {
+//            int idx[3] = {i,j,k};
+//            bool on_lo = ( ( bcrec[dir] == amrex::BCType::ext_dir ) && k <= domain.smallEnd(dir) );
+//            bool on_hi = ( ( bcrec[AMREX_SPACEDIM+dir] == amrex::BCType::ext_dir ) && k >= domain.bigEnd(dir) );
+//            cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, diff_c, diff_ed);
+//            cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, kappa_c, kappa_ed);
+//         });
+//      }
+//   }
+}
+

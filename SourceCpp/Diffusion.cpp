@@ -2,8 +2,8 @@
 
 void
 PeleC::getMOLSrcTerm(
-  const amrex::MultiFab& S,
-  amrex::MultiFab& MOLSrcTerm,
+  const amrex::MultiFab& S,   // ndeak note - Sborder (includes ghosts)
+  amrex::MultiFab& MOLSrcTerm,    // ndeak note - S (no ghosts)
   amrex::Real time,
   amrex::Real dt,
   amrex::Real flux_factor)
@@ -99,6 +99,88 @@ PeleC::getMOLSrcTerm(
   const bool as_fine = (fr_as_fine != nullptr);
 #endif
 
+#ifdef PELEC_USE_PLASMA
+// ndeak add 
+// TODO : redundant calculations - fold into loop below if possible
+// step 1: MFI iter over extended region to fully fill in diffusivity MF
+//    step 1a: Get primitivie variables in an grown MF 
+//    step 1b: Use primitive variables to calculate ion diffusivities
+//    step 1c: Leave electron diffusivity alone, it is handled in ef transport fcn
+// step 2: Call the ef transport fcn
+  for (amrex::MFIter mfi(S, amrex::TilingIfNotGPU()); mfi.isValid();
+         ++mfi) {
+    const amrex::Box& tbox = mfi.tilebox();
+    auto const& s = S.array(mfi);
+    auto const& q = Q_ext.array(mfi);
+    auto const& qaux = Qaux_ext.array(mfi);
+    {
+        BL_PROFILE("PeleC::ctoprim()");
+        amrex::ParallelFor(
+          tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            pc_ctoprim(i, j, k, s, q, qaux);
+        });
+    }
+    
+    // Calculate species diffusivities
+    auto const& qar_yin = Q_ext.array(mfi,QFS);
+    auto const& qar_Tin = Q_ext.array(mfi,QTEMP);
+    auto const& qar_rhoin = Q_ext.array(mfi,QRHO);
+    auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
+    auto const& coe_mu = coeffs_old.array(mfi,dComp_mu);
+    auto const& coe_xi = coeffs_old.array(mfi,dComp_xi);
+    auto const& coe_lambda = coeffs_old.array(mfi,dComp_lambda);
+    BL_PROFILE("PeleC::get_transport_coeffs()");
+    // Get Transport coefs on GPU.
+    amrex::launch(tbox, [=] AMREX_GPU_DEVICE(amrex::Box const& tbx) 
+    {
+      get_transport_coeffs(tbox, qar_yin, qar_Tin, qar_rhoin, coe_rhoD, coe_mu, coe_xi,coe_lambda);
+    });
+  }
+  
+  // Get the cc species transport properties
+  ef_calc_transport(S, time); 
+
+  // check values
+  // for (amrex::MFIter mfi(S, amrex::TilingIfNotGPU()); mfi.isValid();
+  //        ++mfi) {
+  //   const amrex::Box& tbox = mfi.tilebox();
+  //   auto const& qar_yin = Q_ext.array(mfi,QFS);
+  //   auto const& qar_Tin = Q_ext.array(mfi,QTEMP);
+  //   auto const& qar_rhoin = Q_ext.array(mfi,QRHO);
+  //   auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
+  //   auto const& coe_mu = coeffs_old.array(mfi,dComp_mu);
+  //   auto const& coe_xi = coeffs_old.array(mfi,dComp_xi);
+  //   auto const& coe_lambda = coeffs_old.array(mfi,dComp_lambda);
+  //   auto const& Ks   = KSpec_old.array(mfi);
+
+  //   amrex::ParallelFor(tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //     printf("D(%i,%i,%i,E) = %.6e\n", i,j,k, coe_rhoD(i,j,k,0) / qar_rhoin(i,j,k));
+  //     printf("D(%i,%i,%i,O2) = %.6e\n", i,j,k, coe_rhoD(i,j,k,1) / qar_rhoin(i,j,k));
+  //     printf("D(%i,%i,%i,N2) = %.6e\n", i,j,k, coe_rhoD(i,j,k,2) / qar_rhoin(i,j,k));
+  //     printf("D(%i,%i,%i,O) = %.6e\n", i,j,k, coe_rhoD(i,j,k,3) / qar_rhoin(i,j,k));
+  //     printf("D(%i,%i,%i,O2+) = %.6e\n", i,j,k, coe_rhoD(i,j,k,4) / qar_rhoin(i,j,k));
+  //     printf("D(%i,%i,%i,N2+) = %.6e\n", i,j,k, coe_rhoD(i,j,k,5) / qar_rhoin(i,j,k));
+  //     printf("D(%i,%i,%i,O4+) = %.6e\n", i,j,k, coe_rhoD(i,j,k,6) / qar_rhoin(i,j,k));
+  //     printf("D(%i,%i,%i,N4+) = %.6e\n", i,j,k, coe_rhoD(i,j,k,7) / qar_rhoin(i,j,k));
+  //     printf("D(%i,%i,%i,O2+N2) = %.6e\n", i,j,k, coe_rhoD(i,j,k,8) / qar_rhoin(i,j,k));
+  //     printf("D(%i,%i,%i,O2-) = %.6e\n", i,j,k, coe_rhoD(i,j,k,9) / qar_rhoin(i,j,k));
+  //   });
+  //   amrex::ParallelFor(tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //     printf("Ks(%i,%i,%i,E) = %.6e\n", i,j,k, Ks(i,j,k,0));
+  //     printf("Ks(%i,%i,%i,O2) = %.6e\n", i,j,k, Ks(i,j,k,1));
+  //     printf("Ks(%i,%i,%i,N2) = %.6e\n", i,j,k, Ks(i,j,k,2));
+  //     printf("Ks(%i,%i,%i,O) = %.6e\n", i,j,k, Ks(i,j,k,3));
+  //     printf("Ks(%i,%i,%i,O2+) = %.6e\n", i,j,k, Ks(i,j,k,4));
+  //     printf("Ks(%i,%i,%i,N2+) = %.6e\n", i,j,k, Ks(i,j,k,5));
+  //     printf("Ks(%i,%i,%i,O4+) = %.6e\n", i,j,k, Ks(i,j,k,6));
+  //     printf("Ks(%i,%i,%i,N4+) = %.6e\n", i,j,k, Ks(i,j,k,7));
+  //     printf("Ks(%i,%i,%i,O2+N2) = %.6e\n", i,j,k, Ks(i,j,k,8));
+  //     printf("Ks(%i,%i,%i,O2-) = %.6e\n", i,j,k, Ks(i,j,k,9));
+  //   });
+  // }
+  // exit(1);
+#endif
+
 #ifdef _OPENMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -157,6 +239,9 @@ PeleC::getMOLSrcTerm(
       int nqaux = NQAUX > 0 ? NQAUX : 1;
       amrex::FArrayBox q(gbox, QVAR), qaux(gbox, nqaux),
         coeff_cc(gbox, nCompTr);
+#ifdef PELEC_USE_PLASMA
+      amrex::FArrayBox KSpec_cc(gbox, NUM_SPECIES);
+#endif
       amrex::Elixir qeli = q.elixir();
       amrex::Elixir qauxeli = qaux.elixir();
       amrex::Elixir coefeli = coeff_cc.elixir();
@@ -227,11 +312,18 @@ PeleC::getMOLSrcTerm(
       }
 
       amrex::FArrayBox flux_ec[AMREX_SPACEDIM];
+#ifdef PELEC_USE_PLASMA
+      amrex::FArrayBox drift_ec[AMREX_SPACEDIM];
+      auto const& K_cc = KSpec_cc.array();
+#endif
       amrex::Elixir flux_eli[AMREX_SPACEDIM];
       const amrex::Box eboxes[AMREX_SPACEDIM] = {AMREX_D_DECL(
         amrex::surroundingNodes(cbox, 0), amrex::surroundingNodes(cbox, 1),
         amrex::surroundingNodes(cbox, 2))};
       amrex::GpuArray<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> flx;
+#ifdef PELEC_USE_PLASMA
+      amrex::GpuArray<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> drift;
+#endif
       const amrex::GpuArray<
         const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
         a{AMREX_D_DECL(
@@ -241,6 +333,11 @@ PeleC::getMOLSrcTerm(
         flux_eli[dir] = flux_ec[dir].elixir();
         flx[dir] = flux_ec[dir].array();
         setV(eboxes[dir], NVAR, flx[dir], 0);
+#ifdef PELEC_USE_PLASMA
+        drift_ec[dir].resize(eboxes[dir], NUM_SPECIES);
+        drift[dir] = drift_ec[dir].array();
+        setV(eboxes[dir], NUM_SPECIES, drift[dir], 0);
+#endif
       }
 
       amrex::FArrayBox Dfab(cbox, NVAR);
@@ -373,8 +470,15 @@ PeleC::getMOLSrcTerm(
             (nFlux > 0 ? eb_flux_thdlocal.dataPtr() : 0);
 #endif
           auto const& vol = volume.array(mfi);
+          // ndeak note - for plasma species, need to replace this call with 
+          // IAMR's Godunov::ComputeEdgeState and Godunov::ComputeFluxes, essentially
+          // Likely extra work needed if using EB
           pc_compute_hyp_mol_flux(
             cbox, qar, qauxar, flx, a, dx, plm_iorder
+#ifdef PELEC_USE_PLASMA
+            ,
+            drift, K_cc, do_harmonic
+#endif
 #ifdef PELEC_USE_EB
             ,
             eb_small_vfrac, vfrac.array(mfi), flags.array(mfi),

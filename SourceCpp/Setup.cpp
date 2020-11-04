@@ -163,6 +163,10 @@ PeleC::variableSetUp()
   }
 #endif
 
+#ifdef PELEC_USE_PLASMA
+  ef_init();
+#endif
+
   //
   // Set number of state variables and pointers to components
   //

@@ -311,6 +311,12 @@ public:
 
   void setBCPhiV ( std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_lobc,
                    std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_hibc);
+
+  void ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time);
+  
+  // void ef_init();
+
+  void ef_define_data();
 #endif
 
   amrex::Real do_sdc_iteration(
@@ -570,10 +576,6 @@ public:
   static int FirstSpec;
   static int FirstAux;
 
-#ifdef PELEC_USE_PLASMA
-  static int PhiV, nE;
-#endif
-
   /// Index locations into particle state
   static int pstateVel, pstateT, pstateDia, pstateRho, pstateY, pstateNum;
 
@@ -646,10 +648,24 @@ protected:
   ///
   amrex::Vector<std::unique_ptr<amrex::MultiFab>> old_sources;
   amrex::Vector<std::unique_ptr<amrex::MultiFab>> new_sources;
-
+  
+  // Defining plasma variables
 #ifdef PELEC_USE_PLASMA
-  amrex::MultiFab Efield;
-  amrex::MultiFab redEfield;
+  static int PhiV, nE;
+  static int ef_verbose;
+  static int ef_debug;
+  static bool def_harm_avg_cen2edge;
+
+  amrex::MultiFab     Efield;
+  amrex::MultiFab     redEfield;
+  amrex::MultiFab     KSpec_old;     // Need both old and new since adv is at t^n+1/2
+  amrex::MultiFab     KSpec_new;
+  amrex::MultiFab     coeffs_old;         // Species diffusivities (used to calculate mobilities)
+  amrex::MultiFab     Q_ext;  
+  amrex::MultiFab     Qaux_ext;  
+  amrex::MultiFab**   Ke_ec;
+
+  static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;    // Species charges
 #endif  
 
 #ifdef PELEC_USE_REACTIONS
@@ -664,6 +680,10 @@ protected:
 
 #ifdef PELEC_USE_MASA
   static void init_mms();
+#endif
+
+#ifdef PELEC_USE_PLASMA
+  static void ef_init();
 #endif
 
   static void clear_prob();
