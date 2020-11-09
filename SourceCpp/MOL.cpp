@@ -1,4 +1,7 @@
 #include "MOL.H"
+#ifdef PELEC_USE_PLASM
+#include "mechanism.h"
+#endif
 
 void
 pc_compute_hyp_mol_flux(
@@ -12,8 +15,10 @@ pc_compute_hyp_mol_flux(
   const int plm_iorder
 #ifdef PELEC_USE_PLASMA
   ,
-  const amrex::GpuArray<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> drift,
   const amrex::Array4<const amrex::Real>& K_cc,
+  const amrex::Array4<const amrex::Real>& E_cc,
+  const int* bcr,
+  const amrex::Geometry& geom,
   const int do_harmonic
 #endif
 #ifdef PELEC_USE_EB
@@ -35,6 +40,12 @@ pc_compute_hyp_mol_flux(
   const int R_P = 4;
   const int R_Y = 5;
   const int bc_test_val = 1;
+
+#ifdef PELEC_USE_PLASMA
+  const int* domlo = geom.Domain().loVect();
+  const int* domhi = geom.Domain().hiVect();
+  double Te;
+#endif
 
   for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
     amrex::FArrayBox dq_fab(cbox, QVAR);
@@ -65,6 +76,8 @@ pc_compute_hyp_mol_flux(
           );
         });
     }
+    // ndeak note - box is contracted in the dir direction so we don't index out
+    // ebox by defauly has 3 ghost cells in all directions
     const amrex::Box tbox = amrex::grow(cbox, dir, -1);
     const amrex::Box ebox = amrex::surroundingNodes(tbox, dir);
     amrex::ParallelFor(
@@ -72,6 +85,10 @@ pc_compute_hyp_mol_flux(
         const int ii = i - bdim[0];
         const int jj = j - bdim[1];
         const int kk = k - bdim[2];
+
+        // ndeak printing 
+        // printf("Ex(%i, %i) = %.6e,\t Ey(%i, %i) = %.6e\n", i, j, E_cc(i,j,k,0), i, j, E_cc(i,j,k,1));
+        // for(int n=0; n<NUM_SPECIES; n++) printf("mu(%i, %i, %i) = %.6e\n", i, j, n, E_cc(i,j,k,n));
 
         amrex::Real qtempl[5 + NUM_SPECIES] = {0.0};
         qtempl[R_UN] =
@@ -157,12 +174,25 @@ pc_compute_hyp_mol_flux(
         // Step 2: Calculate cell-centered effective velocities
         // Step 3: Extrapolate to get cell-edge values
         
+        amrex::Real drift_tmp[NUM_SPECIES] = {0.0};
 #ifdef PELEC_USE_PLASMA
+        // ndeak note - because ebox is contracted in the dir direction,
+        // we do not index out when we access i-1, j-1, etc. 
+  
+        // get cell-edge mobilities for each species
         amrex::Real c[NUM_SPECIES];
         for(int n=0; n<NUM_SPECIES; n++)
-          pc_move_transcoefs_to_ec(i, j, k, n, K_cc, c, dir, do_harmonic);
+          c[n] = 0.5 * (K_cc(i,j,k,n) + K_cc(ii,jj,kk,n));
+          // pc_move_transcoefs_to_ec(i, j, k, n, K_cc, c, dir, true);
 
-        amrex::Real drift_tmp[NUM_SPECIES] = {0.0};
+        // Get cell-edge electric field components
+        amrex::Real E[NUM_E];
+        for(int n=0; n<NUM_E; n++)
+          E[n] = 0.5 * (E_cc(i,j,k,n) + E_cc(ii,jj,kk,n));
+          // pc_move_transcoefs_to_ec(i, j, k, n, E_cc, c, dir, true);
+      
+        for(int n=0; n<NUM_SPECIES; n++)
+          drift_tmp[n] = c[n] * E[dir];
 #endif
         amrex::Real flux_tmp[NVAR] = {0.0};
         amrex::Real ustar = 0.0;
@@ -177,13 +207,14 @@ pc_compute_hyp_mol_flux(
           flux_tmp[UEINT], tmp0, tmp1, tmp2, tmp3, tmp4);
 
         for (int n = 0; n < NUM_SPECIES; n++) {
-          flux_tmp[UFS + n] = (ustar > 0.0) ? flux_tmp[URHO] * qtempl[R_Y + n]
+          flux_tmp[UFS + n] = (ustar + drift_tmp[n] > 0.0) ? flux_tmp[URHO] * qtempl[R_Y + n]
                                             : flux_tmp[URHO] * qtempr[R_Y + n];
           flux_tmp[UFS + n] =
-            (ustar == 0.0)
+            (ustar + drift_tmp[n] == 0.0)
               ? flux_tmp[URHO] * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
               : flux_tmp[UFS + n];
         }
+
 
         flux_tmp[UTEMP] = 0.0;
         for (int n = UFX; n < UFX + NUM_AUX; n++) {
@@ -196,6 +227,64 @@ pc_compute_hyp_mol_flux(
         for (int ivar = 0; ivar < NVAR; ivar++) {
           flx[dir](i, j, k, ivar) += flux_tmp[ivar] * a[dir](i, j, k);
         }
+#ifdef PELEC_USE_PLASMA 
+        // Overwrite species fluxes at the electrode boundaries
+        // Calculate number density at the interior cell (0th order approx for now)
+        // assumes Y_k at ghost cell is equal to interior value at ext_dir boundary,
+        // so doesn't matter which species array we take from for now
+        // TODO: make sure calculation of EoN is in units of Td
+        amrex::Real Xstar[NUM_SPECIES];
+        amrex::Real ndens = 0.0;
+        amrex::Real kB = 1.380649e-16; // erg/K
+        amrex::Real NA = 6.0221409e23; // 1/mol
+        amrex::Real Ttemp;
+        double EoN, Te;
+        amrex::Real mwt[NUM_SPECIES];
+        EOS::molecular_weight(mwt);
+        int iv[3] = {i,j,k};
+
+        // overwrite fluxes on all ext_dir boundaries
+        if ((bcr[dir] == amrex::BCType::ext_dir) and (iv[dir] == domlo[dir])) {
+          // Calculate number density at cell edge, assuming for now it is equal to the interior cell value
+          EOS::Y2X(spr, Xstar);
+          EOS::RYP2T(qtempr[R_RHO], spr, qtempr[R_P], Ttemp);
+          for(int n=0; n<NUM_SPECIES; n++) {
+            if (n != E_ID) ndens += qtempr[R_P] * Xstar[n] / (kB * Ttemp);
+          }
+          // Use the number density to calculate the reduced electric field strength
+          EoN = (E[0]*E[0] + E[1]*E[1] + E[2]*E[2]) / ndens;
+          // Use EoN to get Te for electron flux at the boundary
+          ExtrapTe(EoN, &Te);
+          for(int n=0; n<NUM_SPECIES; n++){
+            if(n == E_ID){
+              flx[dir](i, j, k, UFS + n) = -0.5 * spr[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+            }
+            else{
+              flx[dir](i, j, k, UFS + n) = -0.5 * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+            }
+          }
+        }
+        if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
+          // Calculate number density at cell edge, assuming for now it is equal to the interior cell value
+          EOS::Y2X(spl, Xstar);
+          EOS::RYP2T(qtempl[R_RHO], spl, qtempl[R_P], Ttemp);
+          for(int n=0; n<NUM_SPECIES; n++) {
+            if (n != E_ID) ndens += qtempl[R_P] * Xstar[n] / (kB * Ttemp);
+          }
+          // Use the number density to calculate the reduced electric field strength
+          EoN = (E[0]*E[0] + E[1]*E[1] + E[2]*E[2]) / ndens;
+          // Use EoN to get Te for electron flux at the boundary
+          ExtrapTe(EoN, &Te);
+          for(int n=0; n<NUM_SPECIES; n++){
+            if(n == E_ID){
+              flx[dir](i, j, k, UFS + n) = 0.5 * spl[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+            }
+            else{
+              flx[dir](i, j, k, UFS + n) = 0.5 * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+            }
+          }
+        }
+#endif
       });
   }
 

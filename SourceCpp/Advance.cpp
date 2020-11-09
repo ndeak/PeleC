@@ -7,6 +7,109 @@
 #include "Derive.H"
 #include "prob.H"
 
+#ifdef PELEC_USE_PLASMA
+struct EfieldFillExtDir
+{
+  AMREX_GPU_DEVICE
+  void operator()(
+    const amrex::IntVect& iv,
+    amrex::Array4<amrex::Real> const& dest,
+    const int dcomp,
+    const int numcomp,
+    amrex::GeometryData const& geom,
+    const amrex::Real time,
+    const amrex::BCRec* bcr,
+    const int bcomp,
+    const int orig_comp) const
+  {
+    const int* domlo = geom.Domain().loVect();
+    const int* domhi = geom.Domain().hiVect();
+    const amrex::Real* prob_lo = geom.ProbLo();
+    const amrex::Real* prob_hi = geom.ProbHi();
+    const amrex::Real* dx = geom.CellSize();
+    const amrex::Real x[AMREX_SPACEDIM] = {AMREX_D_DECL(
+      prob_lo[0] + (iv[0] + 0.5) * dx[0], prob_lo[1] + (iv[1] + 0.5) * dx[1],
+      prob_lo[2] + (iv[2] + 0.5) * dx[2])};
+
+    const int* bc = bcr->data();
+
+    amrex::Real s_int[NUM_E] = {0.0};
+    amrex::Real s_ext[NUM_E] = {0.0};
+
+    // xlo and xhi
+    int idir = 0;
+    if ((bc[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(domlo[idir], iv[1], iv[2]));
+      for (int n = 0; n < NUM_E; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      ef_bcnormal(x, s_int, s_ext, idir, +1, time, geom);
+      for (int n = 0; n < NUM_E; n++) {
+        dest(iv, n) = s_ext[n];
+      }
+    } else if (
+      (bc[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(domhi[idir], iv[1], iv[2]));
+      for (int n = 0; n < NUM_E; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      ef_bcnormal(x, s_int, s_ext, idir, -1, time, geom);
+      for (int n = 0; n < NUM_E; n++) {
+        dest(iv, n) = s_ext[n];
+      }
+    }
+#if AMREX_SPACEDIM > 1
+    // ylo and yhi
+    idir = 1;
+    if ((bc[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(iv[0], domlo[idir], iv[2]));
+      for (int n = 0; n < NUM_E; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      ef_bcnormal(x, s_int, s_ext, idir, +1, time, geom);
+      for (int n = 0; n < NUM_E; n++) {
+        dest(iv, n) = s_ext[n];
+      }
+    } else if (
+      (bc[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(iv[0], domhi[idir], iv[2]));
+      for (int n = 0; n < NUM_E; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      ef_bcnormal(x, s_int, s_ext, idir, -1, time, geom);
+      for (int n = 0; n < NUM_E; n++) {
+        dest(iv, n) = s_ext[n];
+      }
+    }
+#if AMREX_SPACEDIM == 3
+    // zlo and zhi
+    idir = 2;
+    if ((bc[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      for (int n = 0; n < NUM_E; n++) {
+        s_int[n] = dest(iv[0], iv[1], domlo[idir], n);
+      }
+      ef_bcnormal(x, s_int, s_ext, idir, +1, time, geom);
+      for (int n = 0; n < NUM_E; n++) {
+        dest(iv, n) = s_ext[n];
+      }
+    } else if (
+      (bc[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      for (int n = 0; n < NUM_E; n++) {
+        s_int[n] = dest(iv[0], iv[1], domhi[idir], n);
+      }
+      ef_bcnormal(x, s_int, s_ext, idir, -1, time, geom);
+      for (int n = 0; n < NUM_E; n++) {
+        dest(iv, n) = s_ext[n];
+      }
+    }
+#endif
+#endif
+  }
+};
+
 struct PhiVFill
 {
     AMREX_GPU_DEVICE
@@ -39,6 +142,7 @@ struct PhiVFill
        }
     }
 };
+#endif
 
 amrex::Real
 PeleC::advance(
@@ -143,12 +247,14 @@ PeleC::do_mol_advance(
   Sborder.copy(Phiborder, 0, PhiV, 1, 1, 1); 
  
   // Print the potential to verify BCs
-  // for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+  // for (amrex::MFIter mfi(Phiborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
   //   const amrex::Box& tbox = mfi.tilebox();
+  //   int ng = Phiborder.nGrow();
+  //   const amrex::Box gbox = amrex::grow(tbox, ng);
   //   const auto Ufab = Sborder.array(mfi);
   //   amrex::ParallelFor(
-  //     tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //       // Ufab(i, j, k, PhiV) = j;
+  //     gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //       printf("PhiV(%i, %i, %i) = %.6e\n", i, j, k, Ufab(i, j, k, PhiV));
   //     });
   // }
 
@@ -163,6 +269,41 @@ PeleC::do_mol_advance(
 #endif
     pc_derredEfield(datbox, redEfield[mfi], 0, PhiV, Sborder[mfi], geom, time, phiVbc, level);
   }
+
+  // Testing for efield bc fill
+  for (amrex::MFIter mfi(U_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+    const amrex::Box& tbox = mfi.tilebox();
+    const auto Efab = Efield.array(mfi);
+    amrex::ParallelFor(
+      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        Efab(i,j,k,0) = i;
+        Efab(i,j,k,1) = j;
+        Efab(i,j,k,2) = k;
+      });
+  }
+
+  // Fill ghost cells in same way as in SolveEfield.cpp for now (probably better way to do this?)
+  Efield.FillBoundary(geom.periodicity());
+  const amrex::BCRec& bcEfield = get_desc_lst()[State_Type].getBC(PhiV);    // Valid to use same BCRec as PhiV?
+  // const int* Efieldbc = bcEfield.data();
+  const amrex::Vector<amrex::BCRec>& Ebc = {bcEfield};
+  if (not geom.isAllPeriodic()) {
+    amrex::GpuBndryFuncFab<EfieldFillExtDir> Ebf(EfieldFillExtDir{});
+    amrex::PhysBCFunct<amrex::GpuBndryFuncFab<EfieldFillExtDir> > Efieldf(geom, Ebc, Ebf);
+    Efieldf(Efield, 0, NUM_E, Efield.nGrowVect(), time, 0);
+  }
+  // for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+  //   const amrex::Box& tbox = mfi.tilebox();
+  //   int ng = Phiborder.nGrow();
+  //   const amrex::Box gbox = amrex::grow(tbox, ng);
+  //   const auto Efab = Efield.array(mfi);
+  //   amrex::ParallelFor(
+  //     gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //       printf("Efield(%i, %i, 0) = %.6e\n", i, j, Efab(i,j,k,0));
+  //       printf("Efield(%i, %i, 1) = %.6e\n", i, j, Efab(i,j,k,1));
+  //     });
+  // }
+
 #endif
 
   // Compute S^{n} = MOLRhs(U^{n})

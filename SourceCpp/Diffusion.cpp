@@ -179,6 +179,10 @@ PeleC::getMOLSrcTerm(
   //   });
   // }
   // exit(1);
+  
+  // Obtain potential BCRec to use late
+  const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
+  const int* PhiVbc = bcphiV.data();
 #endif
 
 #ifdef _OPENMP
@@ -239,9 +243,6 @@ PeleC::getMOLSrcTerm(
       int nqaux = NQAUX > 0 ? NQAUX : 1;
       amrex::FArrayBox q(gbox, QVAR), qaux(gbox, nqaux),
         coeff_cc(gbox, nCompTr);
-#ifdef PELEC_USE_PLASMA
-      amrex::FArrayBox KSpec_cc(gbox, NUM_SPECIES);
-#endif
       amrex::Elixir qeli = q.elixir();
       amrex::Elixir qauxeli = qaux.elixir();
       amrex::Elixir coefeli = coeff_cc.elixir();
@@ -312,17 +313,14 @@ PeleC::getMOLSrcTerm(
       }
 
       amrex::FArrayBox flux_ec[AMREX_SPACEDIM];
-#ifdef PELEC_USE_PLASMA
-      amrex::FArrayBox drift_ec[AMREX_SPACEDIM];
-      auto const& K_cc = KSpec_cc.array();
-#endif
       amrex::Elixir flux_eli[AMREX_SPACEDIM];
       const amrex::Box eboxes[AMREX_SPACEDIM] = {AMREX_D_DECL(
         amrex::surroundingNodes(cbox, 0), amrex::surroundingNodes(cbox, 1),
         amrex::surroundingNodes(cbox, 2))};
       amrex::GpuArray<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> flx;
 #ifdef PELEC_USE_PLASMA
-      amrex::GpuArray<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> drift;
+      auto const& K_cc = KSpec_old.array(mfi);
+      auto const& E_cc = Efield.array(mfi);
 #endif
       const amrex::GpuArray<
         const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
@@ -333,11 +331,6 @@ PeleC::getMOLSrcTerm(
         flux_eli[dir] = flux_ec[dir].elixir();
         flx[dir] = flux_ec[dir].array();
         setV(eboxes[dir], NVAR, flx[dir], 0);
-#ifdef PELEC_USE_PLASMA
-        drift_ec[dir].resize(eboxes[dir], NUM_SPECIES);
-        drift[dir] = drift_ec[dir].array();
-        setV(eboxes[dir], NUM_SPECIES, drift[dir], 0);
-#endif
       }
 
       amrex::FArrayBox Dfab(cbox, NVAR);
@@ -477,7 +470,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, a, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            drift, K_cc, do_harmonic
+            K_cc, E_cc, PhiVbc, geom, do_harmonic
 #endif
 #ifdef PELEC_USE_EB
             ,
@@ -485,6 +478,7 @@ PeleC::getMOLSrcTerm(
             d_sv_eb_bndry_geom, Ncut, d_eb_flux_thdlocal, nFlux
 #endif
           );
+          exit(1);
         }
 
         // Filter hydro source term and fluxes here

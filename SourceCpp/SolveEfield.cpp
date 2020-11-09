@@ -71,17 +71,24 @@ PeleC::ef_init()
     pp.query("debug",ef_debug);
     pp.query("def_harm_avg_cen2edge",def_harm_avg_cen2edge);
 
-    // ndeak add - hard-coding chargers for now
-    zk[0] = -1.0;
-    zk[1] =  0.0;
-    zk[2] =  0.0;
-    zk[3] =  0.0;
-    zk[4] =  1.0;
-    zk[5] =  1.0;
-    zk[6] =  1.0;
-    zk[7] =  1.0;
-    zk[8] =  1.0;
-    zk[9] = -1.0;
+    // ndeak add - hard-coding charges for now
+    // zk[0] = -1.0;
+    // zk[1] =  0.0;
+    // zk[2] =  0.0;
+    // zk[3] =  0.0;
+    // zk[4] =  1.0;
+    // zk[5] =  1.0;
+    // zk[6] =  1.0;
+    // zk[7] =  1.0;
+    // zk[8] =  1.0;
+    // zk[9] = -1.0;
+
+    // get charge per unit  mass (C/kg)
+    Real zk_temp[NUM_SPECIES];
+    EOS::charge_mass(zk_temp);
+    for (int k = 0; k < NUM_SPECIES; k++) {
+       zk[k] = zk_temp[k];
+    }
 }
 
 void PeleC::ef_define_data() {
@@ -322,8 +329,8 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   // MultiFab& Kspec = (whichTime == AmrOldTime) ? KSpec_old : KSpec_new;
 
   // Get the cc transport coeffs. These are temporary.
-  MultiFab Ke_cc(grids,dmap,1,1);
-  MultiFab De_cc(grids,dmap,1,1);
+  // MultiFab Ke_cc(grids,dmap,1,1);
+  // MultiFab De_cc(grids,dmap,1,1);
 
   // Fillpatch the state 
   // ndeak note - not needed since S with boundary cells is provided as input
@@ -343,15 +350,15 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      auto const& rhoY = S.array(mfi,UFS);
      auto const& T    = Q_ext.array(mfi,QTEMP);
      auto const& rhoD = coeffs_old.array(mfi,dComp_rhoD);
-     auto const& Ke   = Ke_cc.array(mfi);
-     auto const& De   = De_cc.array(mfi);
+     // auto const& Ke   = Ke_cc.array(mfi);
+     // auto const& De   = De_cc.array(mfi);
      auto const& Ks   = KSpec_old.array(mfi);
      Real factor = EFConst::PP_RU_MKS / ( EFConst::Na * EFConst::elemCharge );
-     amrex::ParallelFor(tbox, [rhoY, T, factor, Ke, De]
+     amrex::ParallelFor(tbox, [rhoY, T, factor, Ks, rhoD]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
-        getKappaE(i,j,k,Ke);
-        getDiffE(i,j,k,factor,T,Ke,De);
+        getKappaE(i,j,k,E_ID,Ks);
+        getDiffE(i,j,k,E_ID,factor,T,rhoY,Ks,rhoD);
      });
      Real mwt[NUM_SPECIES];
      EOS::molecular_weight(mwt);

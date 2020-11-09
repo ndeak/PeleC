@@ -110,8 +110,10 @@ void pc_compute_hyp_mol_flux(
   const int plm_iorder
 #ifdef PELEC_USE_PLASMA
   ,
-  const amrex::GpuArray<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> drift,
   const amrex::Array4<const amrex::Real>& K_cc,
+  const amrex::Array4<const amrex::Real>& E_cc,
+  const int* bcr,
+  const amrex::Geometry& geom,
   const int do_harmonic
 #endif
 #ifdef PELEC_USE_EB
