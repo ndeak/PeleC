@@ -1,5 +1,15 @@
 function(build_pelec_exe pelec_exe_name)
 
+  add_executable(${pelec_exe_name} "")
+  target_sources(${pelec_exe_name}
+     PRIVATE
+       prob_parm.H
+       prob.H
+       prob.cpp
+  )
+  
+  target_include_directories(${pelec_exe_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
   set(PELE_PHYSICS_SRC_DIR ${CMAKE_SOURCE_DIR}/Submodules/PelePhysics)
   set(PELE_PHYSICS_BIN_DIR ${CMAKE_BINARY_DIR}/Submodules/PelePhysics/${pelec_exe_name})
 
@@ -29,14 +39,39 @@ function(build_pelec_exe pelec_exe_name)
                  ${PELEC_MECHANISM_DIR}/chemistry_file.H
                  ${PELEC_MECHANISM_DIR}/mechanism.cpp
                  ${PELEC_MECHANISM_DIR}/mechanism.h)
+  # Avoid warnings from mechanism.cpp for now
+  if(NOT PELEC_ENABLE_CUDA)
+    list(APPEND MY_CXX_FLAGS "-Wno-sign-compare"
+                             "-Wno-unreachable-code"
+                             "-Wno-null-dereference"
+                             "-Wno-float-conversion"
+                             "-Wno-shadow"
+                             "-Wno-overloaded-virtual")
+  if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" OR
+     "${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
+    list(APPEND MY_CXX_FLAGS "-Wno-unused-variable")
+    list(APPEND MY_CXX_FLAGS "-Wno-unused-parameter")
+    list(APPEND MY_CXX_FLAGS "-Wno-vla-extension")
+    list(APPEND MY_CXX_FLAGS "-Wno-zero-length-array")
+  elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    list(APPEND MY_CXX_FLAGS "-Wno-unused-variable")
+    list(APPEND MY_CXX_FLAGS "-Wno-unused-parameter")
+    list(APPEND MY_CXX_FLAGS "-Wno-vla")
+    list(APPEND MY_CXX_FLAGS "-Wno-pedantic")
+  endif()
+  endif()
+  separate_arguments(MY_CXX_FLAGS)
+  set_source_files_properties(${PELEC_MECHANISM_DIR}/mechanism.cpp PROPERTIES COMPILE_OPTIONS "${MY_CXX_FLAGS}")
+  set_source_files_properties(${PELEC_MECHANISM_DIR}/chemistry_file.H PROPERTIES COMPILE_OPTIONS "${MY_CXX_FLAGS}")
+  set_source_files_properties(${PELEC_MECHANISM_DIR}/mechanism.H PROPERTIES COMPILE_OPTIONS "${MY_CXX_FLAGS}")
   target_include_directories(${pelec_exe_name} SYSTEM PRIVATE ${PELEC_MECHANISM_DIR})
+  target_include_directories(${pelec_exe_name} SYSTEM PRIVATE ${PELE_PHYSICS_SRC_DIR}/Support/Fuego/Evaluation)
   
   if(PELEC_ENABLE_REACTIONS)
     target_compile_definitions(${pelec_exe_name} PRIVATE PELEC_USE_REACTIONS)
     target_sources(${pelec_exe_name} PRIVATE
                    ${SRC_DIR}/React.H
                    ${SRC_DIR}/React.cpp)
-    target_include_directories(${pelec_exe_name} SYSTEM PRIVATE ${PELE_PHYSICS_SRC_DIR}/Support/Fuego/Evaluation)
   endif()
   
   if(PELEC_ENABLE_MASA)
@@ -118,17 +153,16 @@ function(build_pelec_exe pelec_exe_name)
   include(AMReXBuildInfo)
   generate_buildinfo(${pelec_exe_name} ${CMAKE_SOURCE_DIR})
   target_include_directories(${pelec_exe_name} PUBLIC ${AMREX_SUBMOD_LOCATION}/Tools/C_scripts)
+  #set_target_properties(${amr_wind_lib_name} buildInfo${amr_wind_lib_name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-  if(PELEC_ENABLE_MASA)
-    if(MASA_FOUND)
-      #Link our executable to the MASA libraries, etc
-      target_link_libraries(${pelec_exe_name} PRIVATE ${MASA_LIBRARY})
-      target_compile_definitions(${pelec_exe_name} PRIVATE USE_MASA DO_PROBLEM_POST_TIMESTEP DO_PROBLEM_POST_INIT)
-      target_include_directories(${pelec_exe_name} SYSTEM PRIVATE ${MASA_INCLUDE_DIRS})
-      target_include_directories(${pelec_exe_name} SYSTEM PRIVATE ${MASA_MOD_DIRS})
-    endif()
+  if(PELEC_ENABLE_MASA AND MASA_FOUND)
+    #Link our executable to the MASA libraries, etc
+    target_link_libraries(${pelec_exe_name} PRIVATE ${MASA_LIBRARY})
+    target_compile_definitions(${pelec_exe_name} PRIVATE PELEC_USE_MASA)
+    target_include_directories(${pelec_exe_name} SYSTEM PRIVATE ${MASA_INCLUDE_DIRS})
+    target_include_directories(${pelec_exe_name} SYSTEM PRIVATE ${MASA_MOD_DIRS})
   endif()
-
+ 
   if(PELEC_ENABLE_MPI)
     target_link_libraries(${pelec_exe_name} PUBLIC $<$<BOOL:${MPI_CXX_FOUND}>:MPI::MPI_CXX>)
   endif()
@@ -136,7 +170,7 @@ function(build_pelec_exe pelec_exe_name)
   #PeleC include directories
   target_include_directories(${pelec_exe_name} PRIVATE ${SRC_DIR})
   target_include_directories(${pelec_exe_name} PRIVATE ${CMAKE_BINARY_DIR})
-  
+
   #Link to amrex library
   target_link_libraries(${pelec_exe_name} PRIVATE amrex)
 
@@ -147,6 +181,7 @@ function(build_pelec_exe pelec_exe_name)
       list(FILTER PELEC_SOURCES INCLUDE REGEX "\\.cpp")
       set_source_files_properties(${PELEC_SOURCES} PROPERTIES LANGUAGE CUDA)
     endforeach()
+    set_target_properties(${pelec_exe_name} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
   endif()
  
   #Define what we want to be installed during a make install 

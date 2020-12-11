@@ -54,9 +54,9 @@ pc_prob_close()
 extern "C" {
 void
 amrex_probinit(
-  const int* init,
-  const int* name,
-  const int* namelen,
+  const int* /*init*/,
+  const int* /*name*/,
+  const int* /*namelen*/,
   const amrex_real* problo,
   const amrex_real* probhi)
 {
@@ -178,14 +178,11 @@ amrex_probinit(
 }
 }
 
-#ifdef DO_PROBLEM_POST_TIMESTEP
 void
 PeleC::problem_post_timestep()
 {
   if ((verbose <= 0) || (!do_mms))
     return;
-
-  bool local_flag = true;
 
   int finest_level = parent->finestLevel();
   amrex::Real time = state[State_Type].curTime();
@@ -199,8 +196,6 @@ PeleC::problem_post_timestep()
   amrex::Real rhov_residual = 0.0;
   amrex::Real rhow_residual = 0.0;
   amrex::Real rhoE_residual = 0.0;
-  int datwidth = 14;
-  int datprecision = 6;
 
 #ifdef PELEC_USE_MASA
   if (level == 0) {
@@ -212,6 +207,7 @@ PeleC::problem_post_timestep()
     for (int lev = 0; lev <= finest_level; lev++) {
       PeleC& pc_lev = getLevel(lev);
 
+      bool local_flag = true;
       rho_mms_err += pc_lev.volWgtSquaredSum("rhommserror", time, local_flag);
       AMREX_D_TERM(
         u_mms_err += pc_lev.volWgtSquaredSum("ummserror", time, local_flag);
@@ -291,6 +287,8 @@ PeleC::problem_post_timestep()
         std::ostream& data_log2 = parent->DataLog(1);
 
         // Write the quantities at this time
+        const int datwidth = 14;
+        const int datprecision = 6;
         data_log2 << std::setw(datwidth) << time;
         data_log2 << std::setw(datwidth) << std::setprecision(datprecision)
                   << rho_mms_err;
@@ -323,9 +321,7 @@ PeleC::problem_post_timestep()
   Error("MASA is not turned on. Turn on with USE_MASA=TRUE.");
 #endif
 }
-#endif
 
-#ifdef DO_PROBLEM_POST_INIT
 void
 PeleC::problem_post_init()
 {
@@ -334,8 +330,6 @@ PeleC::problem_post_init()
     return;
 
   amrex::Real time = state[State_Type].curTime();
-  int datwidth = 14;
-  int datprecision = 6;
 
   if (level == 0) {
     if (amrex::ParallelDescriptor::IOProcessor()) {
@@ -344,6 +338,7 @@ PeleC::problem_post_init()
 
         std::ostream& data_log2 = parent->DataLog(1);
         if (time == 0.0) {
+          const int datwidth = 14;
           data_log2 << std::setw(datwidth) << "          time";
           data_log2 << std::setw(datwidth) << "   rho_mms_err";
           AMREX_D_TERM(data_log2 << std::setw(datwidth) << "     u_mms_err";
@@ -361,4 +356,8 @@ PeleC::problem_post_init()
     }
   }
 }
-#endif
+
+void
+PeleC::problem_post_restart()
+{
+}

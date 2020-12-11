@@ -15,10 +15,10 @@ AMREX_GPU_DEVICE_MANAGED amrex::Real frac =
   0.5; // fraction of the domain for the interface
 AMREX_GPU_DEVICE_MANAGED int idir = 1; // direction across which to jump
 AMREX_GPU_DEVICE_MANAGED amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> split;
-AMREX_GPU_DEVICE_MANAGED std::string gasL = "N2";
-AMREX_GPU_DEVICE_MANAGED std::string gasR = "HE";
 AMREX_GPU_DEVICE_MANAGED int left_gas_id = N2_ID;
 AMREX_GPU_DEVICE_MANAGED int right_gas_id = HE_ID;
+std::string gasL = "N2";
+std::string gasR = "HE";
 } // namespace ProbParm
 
 void
@@ -29,9 +29,9 @@ pc_prob_close()
 extern "C" {
 void
 amrex_probinit(
-  const int* init,
-  const int* name,
-  const int* namelen,
+  const int* /*init*/,
+  const int* /*name*/,
+  const int* /*namelen*/,
   const amrex_real* problo,
   const amrex_real* probhi)
 {
@@ -60,7 +60,7 @@ amrex_probinit(
     ProbParm::right_gas_id = N2_ID;
   }
 
-  amrex::Real e_l, e_r, cs, cp;
+  amrex::Real e_l, e_r /*, cs, cp */;
   amrex::Real massfrac_l[NUM_SPECIES] = {0.0};
   amrex::Real massfrac_r[NUM_SPECIES] = {0.0};
   massfrac_l[ProbParm::left_gas_id] = 1.0;
@@ -76,16 +76,17 @@ amrex_probinit(
 }
 }
 
-#ifdef DO_PROBLEM_POST_TIMESTEP
 void
 PeleC::problem_post_timestep()
 {
 }
-#endif
 
-#ifdef DO_PROBLEM_POST_INIT
 void
 PeleC::problem_post_init()
 {
 }
-#endif
+
+void
+PeleC::problem_post_restart()
+{
+}

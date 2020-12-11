@@ -240,7 +240,7 @@ PeleC::checkPoint(
   const std::string& dir,
   std::ostream& os,
   amrex::VisMF::How how,
-  bool dump_old_default)
+  bool /*dump_old_default*/)
 {
   amrex::AmrLevel::checkPoint(dir, os, how, dump_old);
 
@@ -364,7 +364,11 @@ PeleC::setPlotVariables()
 
   bool plot_rhoy = true;
   pp.query("plot_rhoy", plot_rhoy);
-  if (!plot_rhoy) {
+  if (plot_rhoy) {
+    for (int i = 0; i < NUM_SPECIES; i++) {
+      parent->addStatePlotVar(desc_lst[State_Type].name(FirstSpec + i));
+    }
+  } else {
     for (int i = 0; i < NUM_SPECIES; i++) {
       parent->deleteStatePlotVar(desc_lst[State_Type].name(FirstSpec + i));
     }
@@ -552,7 +556,7 @@ PeleC::writeJobInfo(const std::string& dir)
 
   jobInfoFile << "\n\n";
 
-  int mlen = 20;
+  const int mlen = 20;
 
   jobInfoFile << PrettyLine;
   jobInfoFile << " Species Information\n";
@@ -601,8 +605,8 @@ void
 PeleC::writeBuildInfo(std::ostream& os)
 {
   std::string PrettyLine = std::string(78, '=') + "\n";
-  std::string OtherLine = std::string(78, '-') + "\n";
-  std::string SkipSpace = std::string(8, ' ');
+  // std::string OtherLine = std::string(78, '-') + "\n";
+  // std::string SkipSpace = std::string(8, ' ');
 
   // build information
   os << PrettyLine;
@@ -745,37 +749,12 @@ PeleC::writeBuildInfo(std::ostream& os)
      << "OFF" << std::endl;
 #endif
 
-#ifdef DO_PROBLEM_POST_TIMESTEP
-  os << std::setw(35) << std::left << "DO_PROBLEM_POST_TIMESTEP "
-     << std::setw(6) << "ON" << std::endl;
-#else
-  os << std::setw(35) << std::left << "DO_PROBLEM_POST_TIMESTEP "
-     << std::setw(6) << "OFF" << std::endl;
-#endif
-
-#ifdef DO_PROBLEM_POST_RESTART
-  os << std::setw(35) << std::left << "DO_PROBLEM_POST_RESTART " << std::setw(6)
-     << "ON" << std::endl;
-#else
-  os << std::setw(35) << std::left << "DO_PROBLEM_POST_RESTART " << std::setw(6)
-     << "OFF" << std::endl;
-#endif
-
-#ifdef DO_PROBLEM_POST_INIT
-  os << std::setw(35) << std::left << "DO_PROBLEM_POST_INIT " << std::setw(6)
-     << "ON" << std::endl;
-#else
-  os << std::setw(35) << std::left << "DO_PROBLEM_POST_INIT " << std::setw(6)
-     << "OFF" << std::endl;
-#endif
-
   os << "\n\n";
 }
 
 void
 PeleC::writePlotFile(const std::string& dir, ostream& os, amrex::VisMF::How how)
 {
-  int i, n;
   //
   // The list of indices of State to write to plotfile.
   // first component of pair is state_type,
@@ -833,7 +812,7 @@ PeleC::writePlotFile(const std::string& dir, ostream& os, amrex::VisMF::How how)
     //
     // Names of variables -- first state, then derived
     //
-    for (i = 0; i < plot_var_map.size(); i++) {
+    for (int i = 0; i < plot_var_map.size(); i++) {
       int typ = plot_var_map[i].first;
       int comp = plot_var_map[i].second;
       os << desc_lst[typ].name(comp) << '\n';
@@ -843,7 +822,7 @@ PeleC::writePlotFile(const std::string& dir, ostream& os, amrex::VisMF::How how)
                                                 end = derive_names.end();
          it != end; ++it) {
       const amrex::DeriveRec* rec = derive_lst.get(*it);
-      for (i = 0; i < rec->numDerive(); i++)
+      for (int i = 0; i < rec->numDerive(); i++)
         os << rec->variableName(i) << '\n';
     }
 
@@ -851,22 +830,22 @@ PeleC::writePlotFile(const std::string& dir, ostream& os, amrex::VisMF::How how)
     os << parent->cumTime() << '\n';
     int f_lev = parent->finestLevel();
     os << f_lev << '\n';
-    for (i = 0; i < AMREX_SPACEDIM; i++)
+    for (int i = 0; i < AMREX_SPACEDIM; i++)
       os << amrex::DefaultGeometry().ProbLo(i) << ' ';
     os << '\n';
-    for (i = 0; i < AMREX_SPACEDIM; i++)
+    for (int i = 0; i < AMREX_SPACEDIM; i++)
       os << amrex::DefaultGeometry().ProbHi(i) << ' ';
     os << '\n';
-    for (i = 0; i < f_lev; i++)
+    for (int i = 0; i < f_lev; i++)
       os << parent->refRatio(i)[0] << ' ';
     os << '\n';
-    for (i = 0; i <= f_lev; i++)
+    for (int i = 0; i <= f_lev; i++)
       os << parent->Geom(i).Domain() << ' ';
     os << '\n';
-    for (i = 0; i <= f_lev; i++)
+    for (int i = 0; i <= f_lev; i++)
       os << parent->levelSteps(i) << ' ';
     os << '\n';
-    for (i = 0; i <= f_lev; i++) {
+    for (int i = 0; i <= f_lev; i++) {
       for (int k = 0; k < AMREX_SPACEDIM; k++)
         os << parent->Geom(i).CellSize()[k] << ' ';
       os << '\n';
@@ -905,10 +884,10 @@ PeleC::writePlotFile(const std::string& dir, ostream& os, amrex::VisMF::How how)
     os << level << ' ' << grids.size() << ' ' << cur_time << '\n';
     os << parent->levelSteps(level) << '\n';
 
-    for (i = 0; i < grids.size(); ++i) {
+    for (int i = 0; i < grids.size(); ++i) {
       amrex::RealBox gridloc =
         amrex::RealBox(grids[i], geom.CellSize(), geom.ProbLo());
-      for (n = 0; n < AMREX_SPACEDIM; n++)
+      for (int n = 0; n < AMREX_SPACEDIM; n++)
         os << gridloc.lo(n) << ' ' << gridloc.hi(n) << '\n';
     }
     //
@@ -934,18 +913,16 @@ PeleC::writePlotFile(const std::string& dir, ostream& os, amrex::VisMF::How how)
   // NOTE: we are assuming that each state variable has one component,
   // but a derived variable is allowed to have multiple components.
   int cnt = 0;
-  int ncomp = 1;
   const int nGrow = 0;
   amrex::MultiFab plotMF(
     grids, dmap, n_data_items, nGrow, amrex::MFInfo(), Factory());
-  amrex::MultiFab* this_dat = 0;
   //
   // Cull data from state variables -- use no ghost cells.
   //
-  for (i = 0; i < plot_var_map.size(); i++) {
+  for (int i = 0; i < plot_var_map.size(); i++) {
     int typ = plot_var_map[i].first;
     int comp = plot_var_map[i].second;
-    this_dat = &state[typ].newData();
+    amrex::MultiFab* this_dat = &state[typ].newData();
     amrex::MultiFab::Copy(plotMF, *this_dat, comp, cnt, 1, nGrow);
     cnt++;
   }
@@ -953,12 +930,11 @@ PeleC::writePlotFile(const std::string& dir, ostream& os, amrex::VisMF::How how)
   // Cull data from derived variables.
   //
   if (derive_names.size() > 0) {
-
     for (std::list<std::string>::const_iterator it = derive_names.begin(),
                                                 end = derive_names.end();
          it != end; ++it) {
       const amrex::DeriveRec* rec = derive_lst.get(*it);
-      ncomp = rec->numDerive();
+      int ncomp = rec->numDerive();
 
       auto derive_dat = derive(*it, cur_time, nGrow);
       amrex::MultiFab::Copy(plotMF, *derive_dat, 0, cnt, ncomp, nGrow);
@@ -1017,7 +993,6 @@ void
 PeleC::writeSmallPlotFile(
   const std::string& dir, ostream& os, amrex::VisMF::How how)
 {
-  int i, n;
   //
   // The list of indices of State to write to plotfile.
   // first component of pair is state_type,
@@ -1049,7 +1024,7 @@ PeleC::writeSmallPlotFile(
     //
     // Names of variables -- first state, then derived
     //
-    for (i = 0; i < plot_var_map.size(); i++) {
+    for (int i = 0; i < plot_var_map.size(); i++) {
       int typ = plot_var_map[i].first;
       int comp = plot_var_map[i].second;
       os << desc_lst[typ].name(comp) << '\n';
@@ -1059,22 +1034,22 @@ PeleC::writeSmallPlotFile(
     os << parent->cumTime() << '\n';
     int f_lev = parent->finestLevel();
     os << f_lev << '\n';
-    for (i = 0; i < AMREX_SPACEDIM; i++)
+    for (int i = 0; i < AMREX_SPACEDIM; i++)
       os << amrex::DefaultGeometry().ProbLo(i) << ' ';
     os << '\n';
-    for (i = 0; i < AMREX_SPACEDIM; i++)
+    for (int i = 0; i < AMREX_SPACEDIM; i++)
       os << amrex::DefaultGeometry().ProbHi(i) << ' ';
     os << '\n';
-    for (i = 0; i < f_lev; i++)
+    for (int i = 0; i < f_lev; i++)
       os << parent->refRatio(i)[0] << ' ';
     os << '\n';
-    for (i = 0; i <= f_lev; i++)
+    for (int i = 0; i <= f_lev; i++)
       os << parent->Geom(i).Domain() << ' ';
     os << '\n';
-    for (i = 0; i <= f_lev; i++)
+    for (int i = 0; i <= f_lev; i++)
       os << parent->levelSteps(i) << ' ';
     os << '\n';
-    for (i = 0; i <= f_lev; i++) {
+    for (int i = 0; i <= f_lev; i++) {
       for (int k = 0; k < AMREX_SPACEDIM; k++)
         os << parent->Geom(i).CellSize()[k] << ' ';
       os << '\n';
@@ -1114,10 +1089,10 @@ PeleC::writeSmallPlotFile(
     os << level << ' ' << grids.size() << ' ' << cur_time << '\n';
     os << parent->levelSteps(level) << '\n';
 
-    for (i = 0; i < grids.size(); ++i) {
+    for (int i = 0; i < grids.size(); ++i) {
       amrex::RealBox gridloc =
         amrex::RealBox(grids[i], geom.CellSize(), geom.ProbLo());
-      for (n = 0; n < AMREX_SPACEDIM; n++)
+      for (int n = 0; n < AMREX_SPACEDIM; n++)
         os << gridloc.lo(n) << ' ' << gridloc.hi(n) << '\n';
     }
     //
@@ -1141,18 +1116,16 @@ PeleC::writeSmallPlotFile(
   const int nGrow = 0;
   amrex::MultiFab plotMF(
     grids, dmap, n_data_items, nGrow, amrex::MFInfo(), Factory());
-  amrex::MultiFab* this_dat = 0;
   //
   // Cull data from state variables -- use no ghost cells.
   //
-  for (i = 0; i < plot_var_map.size(); i++) {
+  for (int i = 0; i < plot_var_map.size(); i++) {
     int typ = plot_var_map[i].first;
     int comp = plot_var_map[i].second;
-    this_dat = &state[typ].newData();
+    amrex::MultiFab* this_dat = &state[typ].newData();
     amrex::MultiFab::Copy(plotMF, *this_dat, comp, cnt, 1, nGrow);
     cnt++;
   }
-
   //
   // Use the Full pathname when naming the MultiFab.
   //

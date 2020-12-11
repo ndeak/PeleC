@@ -9,7 +9,7 @@ void
 pc_dervelx(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -29,7 +29,7 @@ void
 pc_dervely(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -49,7 +49,7 @@ void
 pc_dervelz(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -69,7 +69,7 @@ void
 pc_dermagvel(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -93,7 +93,7 @@ void
 pc_dermagmom(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -116,7 +116,7 @@ void
 pc_derkineng(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -139,7 +139,7 @@ void
 pc_dereint1(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -165,7 +165,7 @@ void
 pc_dereint2(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -186,7 +186,7 @@ void
 pc_derlogden(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -206,7 +206,7 @@ void
 pc_derspec(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -227,13 +227,13 @@ void
 pc_dermagvort(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
-  int level)
+  int /*level*/)
 {
   auto const dat = datfab.array();
   auto vort = derfab.array();
@@ -285,13 +285,13 @@ void
 pc_derdivu(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
-  int level)
+  int /*level*/)
 {
   auto const dat = datfab.array();
   auto divu = derfab.array();
@@ -318,13 +318,13 @@ void
 pc_derenstrophy(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
-  int level)
+  int /*level*/)
 {
   // This routine will derive enstrophy  = 1/2 rho (x_vorticity^2 +
   // y_vorticity^2 + z_vorticity^2)
@@ -377,11 +377,11 @@ pc_derenstrophy(
 
 void
 pc_dernull(
-  const amrex::Box& bx,
-  amrex::FArrayBox& derfab,
-  int dcomp,
+  const amrex::Box& /*bx*/,
+  amrex::FArrayBox& /*derfab*/,
+  int /*dcomp*/,
   int /*ncomp*/,
-  const amrex::FArrayBox& datfab,
+  const amrex::FArrayBox& /*datfab*/,
   const amrex::Geometry& /*geomdata*/,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
@@ -394,7 +394,7 @@ void
 pc_dermolefrac(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -422,7 +422,7 @@ void
 pc_dersoundspeed(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -449,15 +449,15 @@ void
 pc_derentropy(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
-  const amrex::FArrayBox& datfab,
+  const amrex::FArrayBox& /*datfab*/,
   const amrex::Geometry& /*geomdata*/,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  // auto const dat = datfab.array();
   auto sfab = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -471,7 +471,7 @@ void
 pc_dermachnumber(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -501,7 +501,7 @@ void
 pc_derpres(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -516,7 +516,7 @@ pc_derpres(
     const amrex::Real rho = dat(i, j, k, URHO);
     const amrex::Real rhoInv = 1.0 / rho;
     amrex::Real T = dat(i, j, k, UTEMP);
-    amrex::Real e = dat(i, j, k, UEINT) * rhoInv;
+    // amrex::Real e = dat(i, j, k, UEINT) * rhoInv;
     amrex::Real p, massfrac[NUM_SPECIES];
     for (int n = 0; n < NUM_SPECIES; ++n)
       massfrac[n] = dat(i, j, k, UFS + n) * rhoInv;
@@ -529,7 +529,7 @@ void
 pc_dertemp(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -549,7 +549,7 @@ void
 pc_derspectrac(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& /*geomdata*/,
@@ -570,13 +570,13 @@ void
 pc_derradialvel(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
-  int level)
+  int /*level*/)
 {
   auto const dat = datfab.array();
   auto rvel = derfab.array();
@@ -607,21 +607,21 @@ void
 pc_derrhommserror(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
-  int level)
+  int /*level*/)
 {
   auto const dat = datfab.array();
   auto rhommserror = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
     geomdata.ProbLoArray();
-  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_hi =
-    geomdata.ProbHiArray();
+  // const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_hi =
+  // geomdata.ProbHiArray();
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx =
     geomdata.CellSizeArray();
 
@@ -639,21 +639,21 @@ void
 pc_derummserror(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
-  int level)
+  int /*level*/)
 {
   auto const dat = datfab.array();
   auto ummserror = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
     geomdata.ProbLoArray();
-  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_hi =
-    geomdata.ProbHiArray();
+  // const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_hi =
+  // geomdata.ProbHiArray();
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx =
     geomdata.CellSizeArray();
 
@@ -671,21 +671,21 @@ void
 pc_dervmmserror(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
-  int level)
+  int /*level*/)
 {
   auto const dat = datfab.array();
   auto vmmserror = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
     geomdata.ProbLoArray();
-  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_hi =
-    geomdata.ProbHiArray();
+  // const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_hi =
+  // geomdata.ProbHiArray();
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx =
     geomdata.CellSizeArray();
 
@@ -703,21 +703,21 @@ void
 pc_derwmmserror(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
-  int level)
+  int /*level*/)
 {
   auto const dat = datfab.array();
   auto wmmserror = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
     geomdata.ProbLoArray();
-  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_hi =
-    geomdata.ProbHiArray();
+  // const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_hi =
+  // geomdata.ProbHiArray();
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx =
     geomdata.CellSizeArray();
 
@@ -735,21 +735,21 @@ void
 pc_derpmmserror(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
-  int dcomp,
+  int /*dcomp*/,
   int /*ncomp*/,
   const amrex::FArrayBox& datfab,
   const amrex::Geometry& geomdata,
   amrex::Real /*time*/,
   const int* /*bcrec*/,
-  int level)
+  int /*level*/)
 {
   auto const dat = datfab.array();
   auto pmmserror = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
     geomdata.ProbLoArray();
-  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_hi =
-    geomdata.ProbHiArray();
+  // const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_hi =
+  // geomdata.ProbHiArray();
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx =
     geomdata.CellSizeArray();
 

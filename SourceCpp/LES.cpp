@@ -51,7 +51,7 @@
 
 void
 PeleC::construct_old_les_source(
-  amrex::Real time, amrex::Real dt, int sub_iteration, int sub_ncycle)
+  amrex::Real time, amrex::Real dt, int /*sub_iteration*/, int /*sub_ncycle*/)
 {
   // Add grow cells necessary for explicit filtering of source terms
   if (use_explicit_filter) {
@@ -185,14 +185,14 @@ PeleC::getSmagorinskyLESTerm(
 {
   // Only use this functionality for 3D
 #if AMREX_SPACEDIM == 3
-  int ngrow = 1;
+  const int ngrow = 1;
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
   amrex::Real dx1 = dx[0];
   for (int dir = 1; dir < AMREX_SPACEDIM; ++dir) {
     dx1 *= dx[dir];
   }
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dxD = {
-    D_DECL(dx1, dx1, dx1)};
+    {D_DECL(dx1, dx1, dx1)}};
   const amrex::Real* dxDp = &(dxD[0]);
 
   amrex::MultiFab S(grids, dmap, NVAR, ngrow);
@@ -216,7 +216,7 @@ PeleC::getSmagorinskyLESTerm(
       const amrex::Box vbox = mfi.tilebox();
       const amrex::Box gbox = amrex::grow(vbox, ngrow);
       const amrex::Box cbox = amrex::grow(vbox, ngrow - 1);
-      const amrex::Box& dbox = geom.Domain();
+      // const amrex::Box& dbox = geom.Domain();
 
 #ifdef PELEC_USE_EB
       const auto& flag_fab = flags[mfi];
@@ -285,8 +285,8 @@ PeleC::getSmagorinskyLESTerm(
       amrex::Elixir flux_eli[AMREX_SPACEDIM];
       const amrex::GpuArray<
         const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
-        a{AMREX_D_DECL(
-          area[0].array(mfi), area[1].array(mfi), area[2].array(mfi))};
+        a{{AMREX_D_DECL(
+          area[0].array(mfi), area[1].array(mfi), area[2].array(mfi))}};
       amrex::GpuArray<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> flx;
       for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
         flux_ec[dir].resize(eboxes[dir], NVAR);
@@ -297,14 +297,14 @@ PeleC::getSmagorinskyLESTerm(
       {
         BL_PROFILE("PeleC::pc_smagorinsky_sfs_term()");
         for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
-          amrex::Real Cs = PeleC::Cs;
-          amrex::Real CI = PeleC::CI;
-          amrex::Real PrT = PeleC::PrT;
+          amrex::Real Cs_local = PeleC::Cs;
+          amrex::Real CI_local = PeleC::CI;
+          amrex::Real PrT_local = PeleC::PrT;
           amrex::ParallelFor(
             eboxes[dir], [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
               pc_smagorinsky_sfs_term(
-                i, j, k, q_ar, tanders[dir], a[dir], dx[dir], dir, Cs, CI, PrT,
-                flx[dir]);
+                i, j, k, q_ar, tanders[dir], a[dir], dx[dir], dir, Cs_local,
+                CI_local, PrT_local, flx[dir]);
             });
         }
       }
@@ -340,13 +340,13 @@ PeleC::getSmagorinskyLESTerm(
 
         if (level < parent->finestLevel()) {
           getFluxReg(level + 1).CrseAdd(
-            mfi, {AMREX_D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])}, dxDp,
+            mfi, {{AMREX_D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])}}, dxDp,
             dt, device);
         }
 
         if (level > 0) {
           getFluxReg(level).FineAdd(
-            mfi, {AMREX_D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])}, dxDp,
+            mfi, {{AMREX_D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])}}, dxDp,
             dt, device);
         }
       }
@@ -405,7 +405,7 @@ PeleC::getDynamicSmagorinskyLESTerm(
     dx1 *= dx[dir];
   }
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dxD = {
-    D_DECL(dx1, dx1, dx1)};
+    {D_DECL(dx1, dx1, dx1)}};
   const amrex::Real* dxDp = &(dxD[0]);
 
   // 1. Get state variable data
@@ -438,7 +438,7 @@ PeleC::getDynamicSmagorinskyLESTerm(
       const amrex::Box g3box = amrex::grow(vbox, nGrowC + 1);
       const amrex::Box g4box = amrex::grow(vbox, 1);
       const amrex::Box cbox = amrex::grow(vbox, 0);
-      const amrex::Box& dbox = geom.Domain();
+      // const amrex::Box& dbox = geom.Domain();
 
 #ifdef PELEC_USE_EB
       const auto& flag_fab = flags[mfi];
@@ -492,12 +492,12 @@ PeleC::getDynamicSmagorinskyLESTerm(
       auto const& alpha_ar = alpha.array();
       auto const& flux_T_ar = flux_T.array();
       {
-        const int les_filter_fgr = PeleC::les_filter_fgr;
+        const int les_filter_fgr_local = PeleC::les_filter_fgr;
         BL_PROFILE("PeleC::pc_smagorinsky_sfs_term()");
         amrex::ParallelFor(
           g1box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             pc_dynamic_smagorinsky_quantities(
-              i, j, k, q_ar, les_filter_fgr, dx, K_ar, RUT_ar, alphaij_ar,
+              i, j, k, q_ar, les_filter_fgr_local, dx, K_ar, RUT_ar, alphaij_ar,
               alpha_ar, flux_T_ar);
           });
       }
@@ -555,14 +555,14 @@ PeleC::getDynamicSmagorinskyLESTerm(
       auto const& filtered_alpha_ar = filtered_alpha.array();
       auto const& filtered_flux_T_ar = filtered_flux_T.array();
       {
-        const int les_test_filter_fgr = PeleC::les_test_filter_fgr;
+        const int les_test_filter_fgr_local = PeleC::les_test_filter_fgr;
         BL_PROFILE("PeleC::pc_dynamic_smagorinsky_coeffs()");
         amrex::ParallelFor(
           g3box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             pc_dynamic_smagorinsky_coeffs(
-              i, j, k, filtered_Q_ar, les_test_filter_fgr, dx, filtered_K_ar,
-              filtered_RUT_ar, filtered_alphaij_ar, filtered_alpha_ar,
-              filtered_flux_T_ar, coeff_cc_ar);
+              i, j, k, filtered_Q_ar, les_test_filter_fgr_local, dx,
+              filtered_K_ar, filtered_RUT_ar, filtered_alphaij_ar,
+              filtered_alpha_ar, filtered_flux_T_ar, coeff_cc_ar);
           });
       }
 
@@ -636,8 +636,8 @@ PeleC::getDynamicSmagorinskyLESTerm(
       amrex::Elixir flux_eli[AMREX_SPACEDIM];
       const amrex::GpuArray<
         const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
-        a{AMREX_D_DECL(
-          area[0].array(mfi), area[1].array(mfi), area[2].array(mfi))};
+        a{{AMREX_D_DECL(
+          area[0].array(mfi), area[1].array(mfi), area[2].array(mfi))}};
       amrex::GpuArray<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> flx;
       for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
         flux_ec[dir].resize(eboxes[dir], NVAR);
@@ -688,13 +688,13 @@ PeleC::getDynamicSmagorinskyLESTerm(
 
         if (level < parent->finestLevel()) {
           getFluxReg(level + 1).CrseAdd(
-            mfi, {AMREX_D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])}, dxDp,
+            mfi, {{AMREX_D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])}}, dxDp,
             dt, device);
         }
 
         if (level > 0) {
           getFluxReg(level).FineAdd(
-            mfi, {AMREX_D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])}, dxDp,
+            mfi, {{AMREX_D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])}}, dxDp,
             dt, device);
         }
       }

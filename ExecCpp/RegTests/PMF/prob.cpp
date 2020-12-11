@@ -6,7 +6,8 @@ AMREX_GPU_DEVICE_MANAGED amrex::Real phi_in = -0.2;
 AMREX_GPU_DEVICE_MANAGED amrex::Real T_in = 298.0;
 AMREX_GPU_DEVICE_MANAGED amrex::Real vn_in = 0.2;
 AMREX_GPU_DEVICE_MANAGED amrex::Real pertmag = 0.0;
-AMREX_GPU_DEVICE_MANAGED amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> L = {1.0};
+AMREX_GPU_DEVICE_MANAGED amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> L = {
+  {1.0}};
 AMREX_GPU_DEVICE_MANAGED unsigned int pmf_N = 0;
 AMREX_GPU_DEVICE_MANAGED unsigned int pmf_M = 0;
 AMREX_GPU_DEVICE_MANAGED bool pmf_do_average = false;
@@ -46,10 +47,10 @@ checkQuotes(const std::string& str)
 }
 
 void
-read_pmf(const std::string myfile)
+read_pmf(const std::string& myfile)
 {
   std::string firstline, secondline, remaininglines;
-  int pos1, pos2;
+  unsigned int pos1, pos2;
   int variable_count, line_count;
 
   std::ifstream infile(myfile);
@@ -73,7 +74,7 @@ read_pmf(const std::string myfile)
 
   ProbParm::pmf_names.resize(variable_count);
   pos1 = 0;
-  pos2 = 0;
+  // pos2 = 0;
   for (int i = 0; i < variable_count; i++) {
     pos1 = firstline.find('"', pos1);
     pos2 = firstline.find('"', pos1 + 1);
@@ -102,11 +103,11 @@ read_pmf(const std::string myfile)
   iss.seekg(0, std::ios::beg);
   std::getline(iss, firstline);
   std::getline(iss, secondline);
-  for (int i = 0; i < ProbParm::pmf_N; i++) {
+  for (unsigned int i = 0; i < ProbParm::pmf_N; i++) {
     std::getline(iss, remaininglines);
     std::istringstream sinput(remaininglines);
     sinput >> (*ProbParm::pmf_X)[i];
-    for (int j = 0; j < ProbParm::pmf_M; j++) {
+    for (unsigned int j = 0; j < ProbParm::pmf_M; j++) {
       sinput >> (*ProbParm::pmf_Y)[j * ProbParm::pmf_N + i];
     }
   }
@@ -117,13 +118,13 @@ read_pmf(const std::string myfile)
 void
 init_bc()
 {
-  amrex::Real vt, ek, a, yl, yr, sumY, T, rho, e;
+  amrex::Real vt, ek, T, rho, e;
   amrex::Real molefrac[NUM_SPECIES], massfrac[NUM_SPECIES];
-  amrex::GpuArray<amrex::Real, NUM_SPECIES + 4> pmf_vals = {0.0};
+  amrex::GpuArray<amrex::Real, NUM_SPECIES + 4> pmf_vals = {{0.0}};
 
   if (ProbParm::phi_in < 0) {
-    yl = 0.0;
-    yr = 0.0;
+    const amrex::Real yl = 0.0;
+    const amrex::Real yr = 0.0;
     pmf(yl, yr, pmf_vals);
     amrex::Real mysum = 0.0;
     for (int n = 0; n < NUM_SPECIES; n++) {
@@ -134,7 +135,7 @@ init_bc()
     T = pmf_vals[0];
     ProbParm::vn_in = pmf_vals[1];
   } else {
-    a = 0.5;
+    const amrex::Real a = 0.5;
     for (int n = 0; n < NUM_SPECIES; n++)
       molefrac[n] = 0.0;
     molefrac[O2_ID] = 1.0 / (1.0 + ProbParm::phi_in / a + 0.79 / 0.21);
@@ -142,7 +143,7 @@ init_bc()
     molefrac[N2_ID] = 1.0 - molefrac[H2_ID] - molefrac[O2_ID];
     T = ProbParm::T_in;
   }
-  const int p = ProbParm::pamb;
+  const amrex::Real p = ProbParm::pamb;
 
   EOS::X2Y(molefrac, massfrac);
   EOS::PYT2RE(p, massfrac, T, rho, e);
@@ -181,9 +182,9 @@ pc_prob_close()
 extern "C" {
 void
 amrex_probinit(
-  const int* init,
-  const int* name,
-  const int* namelen,
+  const int* /*init*/,
+  const int* /*name*/,
+  const int* /*namelen*/,
   const amrex_real* problo,
   const amrex_real* probhi)
 {
@@ -210,16 +211,17 @@ amrex_probinit(
 }
 }
 
-#ifdef DO_PROBLEM_POST_TIMESTEP
 void
 PeleC::problem_post_timestep()
 {
 }
-#endif
 
-#ifdef DO_PROBLEM_POST_INIT
 void
 PeleC::problem_post_init()
 {
 }
-#endif
+
+void
+PeleC::problem_post_restart()
+{
+}

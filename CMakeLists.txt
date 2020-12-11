@@ -1,7 +1,7 @@
 ############################ BASE ######################################
 
 cmake_minimum_required (VERSION 3.14 FATAL_ERROR)
-project(PeleC CXX C Fortran)
+project(PeleC CXX C)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/CMake")
 include(CMakePackageConfigHelpers)
 
@@ -9,9 +9,9 @@ include(CMakePackageConfigHelpers)
 
 #General options for all executables in the project
 set(PELEC_DIM "3" CACHE STRING "Number of physical dimensions")
-option(PELEC_ENABLE_DOCUMENTATION "Build documentation" OFF)
-option(PELEC_ENABLE_AMREX_EB "Enable EB in AMReX library" OFF)
-option(PELEC_ENABLE_ALL_WARNINGS "Enable all compiler warnings" OFF)
+option(PELEC_ENABLE_AMREX_EB "Enable EB in AMReX library" ON)
+option(PELEC_ENABLE_ALL_WARNINGS "Enable all compiler warnings" ON)
+option(PELEC_ENABLE_WERROR "Treat compiler warnings as errors" OFF)
 option(PELEC_ENABLE_TESTS "Enable regression and unit tests" OFF)
 option(PELEC_ENABLE_MASA "Enable tests that require MASA" OFF)
 option(PELEC_ENABLE_FCOMPARE "Enable building fcompare when not testing" OFF)
@@ -21,6 +21,8 @@ option(PELEC_ENABLE_FCOMPARE_FOR_TESTS "Check test plots against gold files" OFF
 option(PELEC_ENABLE_MPI "Enable MPI" OFF)
 option(PELEC_ENABLE_OPENMP "Enable OpenMP" OFF)
 option(PELEC_ENABLE_CUDA "Enable CUDA" OFF)
+option(PELEC_ENABLE_HIP "Enable HIP" OFF)
+option(PELEC_ENABLE_DPCPP "Enable DPC++" OFF)
 
 #Options for C++
 set(CMAKE_CXX_STANDARD 14)
@@ -33,9 +35,12 @@ endif()
 
 if(PELEC_ENABLE_CUDA)
   enable_language(CUDA)
-  if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS "9.0")
+  if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS "10.0")
     message(FATAL_ERROR "Your nvcc version is ${CMAKE_CUDA_COMPILER_VERSION} which is unsupported."
-      "Please use CUDA toolkit version 9.0 or newer.")
+      "Please use CUDA toolkit version 10.0 or newer.")
+  endif()
+  if(PELEC_ENABLE_MASA)
+    message(FATAL_ERROR "MASA enabled with CUDA is unsupported.")
   endif()
 endif()
 
@@ -48,6 +53,9 @@ endif()
 set(AMREX_SUBMOD_LOCATION "${CMAKE_SOURCE_DIR}/Submodules/AMReX")
 include(${CMAKE_SOURCE_DIR}/CMake/SetAmrexOptions.cmake)
 list(APPEND CMAKE_MODULE_PATH "${AMREX_SUBMOD_LOCATION}/Tools/CMake")
+if(PELEC_ENABLE_CUDA)
+  include(AMReX_SetupCUDA)
+endif()
 add_subdirectory(${AMREX_SUBMOD_LOCATION})
 include(${CMAKE_SOURCE_DIR}/CMake/SetAmrexCompileFlags.cmake)
 
@@ -85,8 +93,4 @@ if(PELEC_ENABLE_TESTS)
   include(CTest)
   add_subdirectory("Submodules/GoogleTest")
   add_subdirectory(Tests)
-endif()
-
-if(PELEC_ENABLE_DOCUMENTATION)
-   add_subdirectory(Docs)
 endif()

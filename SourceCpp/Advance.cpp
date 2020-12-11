@@ -172,7 +172,7 @@ PeleC::advance(
     }
   }
 
-  amrex::Real dt_new = dt;
+  amrex::Real dt_new;
   if (do_mol) {
     dt_new = do_mol_advance(time, dt, amr_iteration, amr_ncycle);
   } else {
@@ -193,28 +193,31 @@ PeleC::do_mol_advance(
   // into MOL advance yet");
 
   for (int i = 0; i < num_state_type; ++i) {
-    bool skip = false;
 #ifdef PELEC_USE_REACTIONS
-    skip = i == Reactions_Type && do_react;
+    if (!(i == Reactions_Type && do_react)) {
 #endif
-    if (!skip) {
       state[i].allocOldData();
       state[i].swapTimeLevels(dt);
+#ifdef PELEC_USE_REACTIONS
     }
+#endif
   }
 
   if (do_mol_load_balance || do_react_load_balance) {
     get_new_data(Work_Estimate_Type).setVal(0.0);
   }
 
-  amrex::MultiFab& U_old = get_old_data(State_Type);
-  amrex::MultiFab& U_new = get_new_data(State_Type);
-  amrex::MultiFab S(grids, dmap, NVAR, 0, amrex::MFInfo(), Factory());
+  // get old and new state
+  amrex::MultiFab& S_old = get_old_data(State_Type);
+  amrex::MultiFab& S_new = get_new_data(State_Type);
 
-  amrex::MultiFab S_old, S_new;
+  // define sourceterm
+  amrex::MultiFab molSrc(grids, dmap, NVAR, 0, amrex::MFInfo(), Factory());
+
+  amrex::MultiFab molSrc_old, molSrc_new;
   if (mol_iters > 1) {
-    S_old.define(grids, dmap, NVAR, 0, amrex::MFInfo(), Factory());
-    S_new.define(grids, dmap, NVAR, 0, amrex::MFInfo(), Factory());
+    molSrc_old.define(grids, dmap, NVAR, 0, amrex::MFInfo(), Factory());
+    molSrc_new.define(grids, dmap, NVAR, 0, amrex::MFInfo(), Factory());
   }
 
 #ifdef PELEC_USE_REACTIONS
@@ -222,8 +225,8 @@ PeleC::do_mol_advance(
 #endif
 
 #ifdef PELEC_USE_EB
-  set_body_state(U_old);
-  set_body_state(U_new);
+  set_body_state(S_old);
+  set_body_state(S_new);
 #endif
 
 #ifdef PELEC_USE_PLASMA
@@ -312,7 +315,7 @@ PeleC::do_mol_advance(
   }
   FillPatch(*this, Sborder, nGrowTr, time, State_Type, 0, NVAR);
   amrex::Real flux_factor = 0;
-  getMOLSrcTerm(Sborder, S, time, dt, flux_factor);
+  getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
 
   // Build other (neither spray nor diffusion) sources at t_old
   for (int n = 0; n < src_list.size(); ++n) {
@@ -324,25 +327,28 @@ PeleC::do_mol_advance(
     ) {
       construct_old_source(
         src_list[n], time, dt, amr_iteration, amr_ncycle, 0, 0);
-      amrex::MultiFab::Saxpy(S, 1.0, *old_sources[src_list[n]], 0, 0, NVAR, 0);
+
+      // add sources to molsrc
+      amrex::MultiFab::Saxpy(
+        molSrc, 1.0, *old_sources[src_list[n]], 0, 0, NVAR, 0);
     }
   }
 
   if (mol_iters > 1)
-    amrex::MultiFab::Copy(S_old, S, 0, 0, NVAR, 0);
+    amrex::MultiFab::Copy(molSrc_old, molSrc, 0, 0, NVAR, 0);
 
   // U^* = U^n + dt*S^n
-  amrex::MultiFab::LinComb(U_new, 1.0, Sborder, 0, dt, S, 0, 0, NVAR, 0);
+  amrex::MultiFab::LinComb(S_new, 1.0, Sborder, 0, dt, molSrc, 0, 0, NVAR, 0);
 
 #ifdef PELEC_USE_REACTIONS
-  // U^{n+1,*} = U^n + dt*S^n + dt*I_R)
+  // U^{n+1,*} = U^n + dt*S^n + dt*I_R
   if (do_react == 1) {
-    amrex::MultiFab::Saxpy(U_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
-    amrex::MultiFab::Saxpy(U_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
+    amrex::MultiFab::Saxpy(S_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
+    amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
   }
 #endif
 
-  computeTemp(U_new, 0);
+  computeTemp(S_new, 0);
 
   // Compute S^{n+1} = MOLRhs(U^{n+1,*})
   if (verbose) {
@@ -350,7 +356,7 @@ PeleC::do_mol_advance(
   }
   FillPatch(*this, Sborder, nGrowTr, time + dt, State_Type, 0, NVAR);
   flux_factor = mol_iters > 1 ? 0 : 1;
-  getMOLSrcTerm(Sborder, S, time, dt, flux_factor);
+  getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
 
   // Build other (neither spray nor diffusion) sources at t_new
   for (int n = 0; n < src_list.size(); ++n) {
@@ -362,34 +368,38 @@ PeleC::do_mol_advance(
     ) {
       construct_new_source(
         src_list[n], time + dt, dt, amr_iteration, amr_ncycle, 0, 0);
-      amrex::MultiFab::Saxpy(S, 1.0, *new_sources[src_list[n]], 0, 0, NVAR, 0);
+
+      // add sources to molsrc
+      amrex::MultiFab::Saxpy(
+        molSrc, 1.0, *new_sources[src_list[n]], 0, 0, NVAR, 0);
     }
   }
 
   // U^{n+1.**} = 0.5*(U^n + U^{n+1,*}) + 0.5*dt*S^{n+1} = U^n + 0.5*dt*S^n +
   // 0.5*dt*S^{n+1} + 0.5*dt*I_R
-  amrex::MultiFab::LinComb(U_new, 0.5, Sborder, 0, 0.5, U_old, 0, 0, NVAR, 0);
+  amrex::MultiFab::LinComb(S_new, 0.5, Sborder, 0, 0.5, S_old, 0, 0, NVAR, 0);
   amrex::MultiFab::Saxpy(
-    U_new, 0.5 * dt, S, 0, 0, NVAR,
+    S_new, 0.5 * dt, molSrc, 0, 0, NVAR,
     0); //  NOTE: If I_R=0, we are done and U_new is the final new-time state
 
 #ifdef PELEC_USE_REACTIONS
   if (do_react == 1) {
-    amrex::MultiFab::Saxpy(U_new, 0.5 * dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
-    amrex::MultiFab::Saxpy(U_new, 0.5 * dt, I_R, NUM_SPECIES, Eden, 1, 0);
+    amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
+    amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES, Eden, 1, 0);
 
-    // F_{AD} = (1/dt)(U^{n+1,**} - U^n) - I_R
+    // F_{AD} = (1/dt)(U^{n+1,**} - U^n) - I_R = 0.5*(S^{n}+S^{n+1}(which is a
+    // guess!))
     amrex::MultiFab::LinComb(
-      S, 1.0 / dt, U_new, 0, -1.0 / dt, U_old, 0, 0, NVAR, 0);
-    amrex::MultiFab::Subtract(S, I_R, 0, FirstSpec, NUM_SPECIES, 0);
-    amrex::MultiFab::Subtract(S, I_R, NUM_SPECIES, Eden, 1, 0);
+      molSrc, 1.0 / dt, S_new, 0, -1.0 / dt, S_old, 0, 0, NVAR, 0);
+    amrex::MultiFab::Subtract(molSrc, I_R, 0, FirstSpec, NUM_SPECIES, 0);
+    amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES, Eden, 1, 0);
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
-    react_state(time, dt, false, &S);
+    react_state(time, dt, false, &molSrc);
   }
 #endif
 
-  computeTemp(U_new, 0);
+  computeTemp(S_new, 0);
 
 #ifdef PELEC_USE_REACTIONS
   if (do_react == 1) {
@@ -400,21 +410,22 @@ PeleC::do_mol_advance(
       }
       FillPatch(*this, Sborder, nGrowTr, time + dt, State_Type, 0, NVAR);
       flux_factor = mol_iter == mol_iters ? 1 : 0;
-      getMOLSrcTerm(Sborder, S_new, time, dt, flux_factor);
+      getMOLSrcTerm(Sborder, molSrc_new, time, dt, flux_factor);
 
       // F_{AD} = (1/2)(S_old + S_new)
-      amrex::MultiFab::LinComb(S, 0.5, S_old, 0, 0.5, S_new, 0, 0, NVAR, 0);
+      amrex::MultiFab::LinComb(
+        molSrc, 0.5, molSrc_old, 0, 0.5, molSrc_new, 0, 0, NVAR, 0);
 
       // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
-      react_state(time, dt, false, &S);
+      react_state(time, dt, false, &molSrc);
 
-      computeTemp(U_new, 0);
+      computeTemp(S_new, 0);
     }
   }
 #endif
 
 #ifdef PELEC_USE_EB
-  set_body_state(U_new);
+  set_body_state(S_new);
 #endif
 
   return dt;
@@ -536,7 +547,7 @@ PeleC::do_sdc_iteration(
 
   BL_PROFILE("PeleC::do_sdc_iteration()");
 
-  amrex::MultiFab& S_old = get_old_data(State_Type);
+  const amrex::MultiFab& S_old = get_old_data(State_Type);
   amrex::MultiFab& S_new = get_new_data(State_Type);
 
   initialize_sdc_iteration(
@@ -824,12 +835,12 @@ PeleC::construct_Snew(
 
 void
 PeleC::initialize_sdc_iteration(
-  amrex::Real time,
-  amrex::Real dt,
-  int amr_iteration,
-  int amr_ncycle,
-  int sdc_iteration,
-  int sdc_ncycle)
+  amrex::Real /*time*/,
+  amrex::Real /*dt*/,
+  int /*amr_iteration*/,
+  int /*amr_ncycle*/,
+  int /*sdc_iteration*/,
+  int /*sdc_ncycle*/)
 {
   BL_PROFILE("PeleC::initialize_sdc_iteration()");
 
@@ -846,19 +857,22 @@ PeleC::initialize_sdc_iteration(
 
 void
 PeleC::finalize_sdc_iteration(
-  amrex::Real time,
-  amrex::Real dt,
-  int amr_iteration,
-  int amr_ncycle,
-  int sdc_iteration,
-  int sdc_ncycle)
+  amrex::Real /*time*/,
+  amrex::Real /*dt*/,
+  int /*amr_iteration*/,
+  int /*amr_ncycle*/,
+  int /*sdc_iteration*/,
+  int /*sdc_ncycle*/)
 {
   BL_PROFILE("PeleC::finalize_sdc_iteration()");
 }
 
 void
 PeleC::initialize_sdc_advance(
-  amrex::Real time, amrex::Real dt, int amr_iteration, int amr_ncycle)
+  amrex::Real /*time*/,
+  amrex::Real dt,
+  int /*amr_iteration*/,
+  int /*amr_ncycle*/)
 {
   BL_PROFILE("PeleC::initialize_sdc_advance()");
 
@@ -880,7 +894,10 @@ PeleC::initialize_sdc_advance(
 
 void
 PeleC::finalize_sdc_advance(
-  amrex::Real time, amrex::Real dt, int amr_iteration, int amr_ncycle)
+  amrex::Real /*time*/,
+  amrex::Real /*dt*/,
+  int /*amr_iteration*/,
+  int /*amr_ncycle*/)
 {
   BL_PROFILE("PeleC::finalize_sdc_advance()");
 
@@ -895,5 +912,5 @@ PeleC::finalize_sdc_advance(
     }
   }
 
-  amrex::Real cur_time = state[State_Type].curTime();
+  // amrex::Real cur_time = state[State_Type].curTime();
 }
