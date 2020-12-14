@@ -5,6 +5,7 @@
 
 #include "EOS.H"
 #include "prob_parm.H"
+#include "prob.H"
 #include "Transport.H"
 
 namespace ProbParm {
@@ -79,4 +80,19 @@ amrex_probinit(
  // transport_params::const_conductivity =
  //   transport_params::const_viscosity * cp / ProbParm::Pr;
 }
+}
+
+void
+PeleC::problem_post_timestep()
+{
+}
+
+void
+PeleC::problem_post_init()
+{
+}
+
+void
+PeleC::problem_post_restart()
+{
 }
