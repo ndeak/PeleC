@@ -235,7 +235,7 @@ PeleC::do_mol_advance(
 
   // Fill ghost cells in same way as in SolveEfield.cpp for now (probably better way to do this?)
   amrex::MultiFab Phiborder(grids, dmap, 1, 1, amrex::MFInfo(), Factory());
-  Phiborder.copy(U_old,PhiV,0,1,0,0);
+  Phiborder.copy(S_old,PhiV,0,1,0,0);
   Phiborder.FillBoundary(geom.periodicity());
   const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
   const int* phiVbc = bcphiV.data();
@@ -261,9 +261,9 @@ PeleC::do_mol_advance(
   //     });
   // }
 
-  for (amrex::MFIter mfi(U_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(S_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
     const amrex::Box& tbox = mfi.tilebox();
-    const auto datbox = U_old[mfi].box();
+    const auto datbox = S_old[mfi].box();
 
     pc_derEfieldx(datbox, Efield[mfi], 0, PhiV, Sborder[mfi], geom, time, phiVbc, level);
     pc_derEfieldy(datbox, Efield[mfi], 1, PhiV, Sborder[mfi], geom, time, phiVbc, level);
@@ -274,27 +274,27 @@ PeleC::do_mol_advance(
   }
 
   // Testing for efield bc fill
-  for (amrex::MFIter mfi(U_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-    const amrex::Box& tbox = mfi.tilebox();
-    const auto Efab = Efield.array(mfi);
-    amrex::ParallelFor(
-      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        Efab(i,j,k,0) = i;
-        Efab(i,j,k,1) = j;
-        Efab(i,j,k,2) = k;
-      });
-  }
-
+//  for (amrex::MFIter mfi(S_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+//    const amrex::Box& tbox = mfi.tilebox();
+//    const auto Efab = Efield.array(mfi);
+//    amrex::ParallelFor(
+//      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+//        Efab(i,j,k,0) = i;
+//        Efab(i,j,k,1) = j;
+//        Efab(i,j,k,2) = k;
+//      });
+//  }
+//
   // Fill ghost cells in same way as in SolveEfield.cpp for now (probably better way to do this?)
-  Efield.FillBoundary(geom.periodicity());
-  const amrex::BCRec& bcEfield = get_desc_lst()[State_Type].getBC(PhiV);    // Valid to use same BCRec as PhiV?
-  // const int* Efieldbc = bcEfield.data();
-  const amrex::Vector<amrex::BCRec>& Ebc = {bcEfield};
-  if (not geom.isAllPeriodic()) {
-    amrex::GpuBndryFuncFab<EfieldFillExtDir> Ebf(EfieldFillExtDir{});
-    amrex::PhysBCFunct<amrex::GpuBndryFuncFab<EfieldFillExtDir> > Efieldf(geom, Ebc, Ebf);
-    Efieldf(Efield, 0, NUM_E, Efield.nGrowVect(), time, 0);
-  }
+  //Efield.FillBoundary(geom.periodicity());
+  //const amrex::BCRec& bcEfield = get_desc_lst()[State_Type].getBC(PhiV);    // Valid to use same BCRec as PhiV?
+  //// const int* Efieldbc = bcEfield.data();
+  //const amrex::Vector<amrex::BCRec>& Ebc = {bcEfield};
+  //if (not geom.isAllPeriodic()) {
+  //  amrex::GpuBndryFuncFab<EfieldFillExtDir> Ebf(EfieldFillExtDir{});
+  //  amrex::PhysBCFunct<amrex::GpuBndryFuncFab<EfieldFillExtDir> > Efieldf(geom, Ebc, Ebf);
+  //  Efieldf(Efield, 0, NUM_E, Efield.nGrowVect(), time, 0);
+  //}
   // for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
   //   const amrex::Box& tbox = mfi.tilebox();
   //   int ng = Phiborder.nGrow();
