@@ -61,6 +61,9 @@ endif
 
 ifeq ($(USE_PLASMA), TRUE)
   CEXE_sources += SolveEfield.cpp
+  CEXE_headers += GMRES.H
+  CEXE_sources += GMRES.cpp
+  CEXE_sources += PlasmaNL.cpp
 endif
 
 ifeq ($(USE_PARTICLES), TRUE)
