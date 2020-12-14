@@ -319,6 +319,27 @@ public:
   // void ef_init();
 
   void ef_define_data();
+
+// non-linear solve functions
+  void ef_solve_NL( const amrex::Real      &dt,
+                    const amrex::Real      &time,
+                          amrex::MultiFab  &ForcingnE);
+
+  void ef_nlResidual(const amrex::Real        &dt,
+                     const amrex::MultiFab    &a_nl_state,
+                           amrex::MultiFab    &a_nl_resid,
+                           int                update_res_scaling = 0,
+                           int                update_precond = 0);
+
+// GMRES signatures
+  void ef_normMF(const amrex::MultiFab  &a_vec,
+                       amrex::Real  &norm);
+
+  void jtimesv(const amrex::MultiFab  &x, amrex::MultiFab  &Ax);
+
+  void ef_applyPrecond(const amrex::MultiFab  &v,
+                             amrex::MultiFab  &Pv);
+
 #endif
 
   amrex::Real do_sdc_iteration(
@@ -668,6 +689,23 @@ protected:
   amrex::MultiFab**   Ke_ec;
 
   static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;    // Species charges
+
+// Non-linear solve data
+  amrex::Real                nl_stateNorm;
+  amrex::Real                nl_residNorm;
+  amrex::MultiFab            nl_state;
+  amrex::MultiFab            nl_resid;
+
+// Non-linear solve options
+  static int         ef_use_PETSC_direct;      // Flag to trigger using PETSC direct solve
+  static amrex::Real ef_lambda_jfnk;           // Perturbation mag. for JFNK differencing
+  static int         ef_diffT_jfnk;            // Differencing type: 1 - one-sided first order, 2 - centered second order
+  static int         ef_maxNewtonIter;         // Maximum number of newton iterations
+  static amrex::Real ef_newtonTol;             // Tolerance of newton iteration (on inf. norm.)
+  static int         ef_GMRES_size;            // Size of the GMRES Krylov base
+  static amrex::Real ef_GMRES_reltol;          // Relarive tolerance of the GMRES solve
+  static int         ef_GMRES_maxRst;          // Maximum number of GMRES restart
+  static int         ef_GMRES_verbose;         // GMRES verbosity
 #endif  
 
 #ifdef PELEC_USE_REACTIONS

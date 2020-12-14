@@ -65,6 +65,15 @@ int PeleC::ef_verbose = 0;
 int PeleC::ef_debug = 0;
 amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
 bool PeleC::def_harm_avg_cen2edge  = false;
+int  PeleC::ef_use_PETSC_direct = 0;
+amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
+int  PeleC::ef_diffT_jfnk = 1;
+int  PeleC::ef_maxNewtonIter = 10;
+amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
+int  PeleC::ef_GMRES_size = 10;
+int  PeleC::ef_GMRES_maxRst = 1;
+amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
+int  PeleC::ef_GMRES_verbose = 0;
 #endif
 
 #include "pelec_defaults.H"
@@ -647,7 +656,6 @@ PeleC::initData()
   // int ns = NVAR;
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
   amrex::MultiFab& S_new = get_new_data(State_Type);
-  // amrex::Real cur_time = state[State_Type].curTime();
 
   S_new.setVal(0.0);
 
@@ -693,6 +701,7 @@ PeleC::initData()
 
 #ifdef PELEC_USE_PLASMA
   // Compute PhiV
+   amrex::Real cur_time = state[State_Type].curTime();
   solveEF( cur_time, 0.0 );
 #endif
 
