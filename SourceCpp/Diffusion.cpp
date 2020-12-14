@@ -4,7 +4,7 @@ void
 PeleC::getMOLSrcTerm(
   const amrex::MultiFab& S,   // ndeak note - Sborder (includes ghosts)
   amrex::MultiFab& MOLSrcTerm,    // ndeak note - S (no ghosts)
-  amrex::Real /*time*/,
+  amrex::Real time,
   amrex::Real dt,
   amrex::Real flux_factor)
 {
