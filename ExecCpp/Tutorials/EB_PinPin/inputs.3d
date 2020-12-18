@@ -1,16 +1,16 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
-max_step = 2
+max_step = 10000
 stop_time = 6.0
 
 # PROBLEM SIZE & GEOMETRY
 geometry.is_periodic =  1   0  1
 geometry.coord_sys   =  0       # 0 => cart
 geometry.prob_lo     =  0    0    0 
-geometry.prob_hi     =  11.0  11.0  11.0
+geometry.prob_hi     =  1.0  1.0  1.0
 amr.n_cell           =  256 256 256
 amr.n_cell           =  128 128 128
 amr.n_cell           =  64 64 64
-amr.n_cell           =  32 32 32
+#amr.n_cell           =  32 32 32
 #amr.n_cell           =  64   80   64
 
 # >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
@@ -60,7 +60,7 @@ amr.check_int       = -1       # number of timesteps between checkpoints
 # PLOTFILES
 amr.plot_files_output = 1
 amr.plot_file       = plt
-amr.plot_int        = 1
+amr.plot_int        = 100
 amr.derive_plot_vars=ALL
 
 #extruded triangles lets the user create a maximum of 5 triangles 

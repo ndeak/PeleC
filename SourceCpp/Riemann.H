@@ -37,7 +37,8 @@ riemann(
   amrex::Real& qint_iv1,
   amrex::Real& qint_iv2,
   amrex::Real& qint_gdpres,
-  amrex::Real& qint_gdgame)
+  amrex::Real& qint_gdgame,
+  amrex::Real& qint_rgd)
 {
   const amrex::Real wsmall = SMALL_DENS * csmall;
 
@@ -157,6 +158,7 @@ riemann(
   regd = mask ? estar : regd;
 
   gdnv_state_rho = rgd;
+  qint_rgd = rgd;
   gdnv_state_p = qint_gdpres;
   for (int n = 0; n < NUM_SPECIES; n++) {
     gdnv_state_massfrac[n] = sp[n];

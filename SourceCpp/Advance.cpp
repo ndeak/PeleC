@@ -233,7 +233,7 @@ PeleC::do_mol_advance(
   // Compute PhiV
   solveEF( time, dt );
 
-  // Fill ghost cells in same way as in SolveEfield.cpp for now (probably better way to do this?)
+  // Fill potential ghost cells in same way as in SolveEfield.cpp for now (probably better way to do this?)
   amrex::MultiFab Phiborder(grids, dmap, 1, 1, amrex::MFInfo(), Factory());
   Phiborder.copy(S_old,PhiV,0,1,0,0);
   Phiborder.FillBoundary(geom.periodicity());
@@ -274,37 +274,38 @@ PeleC::do_mol_advance(
   }
 
   // Testing for efield bc fill
-//  for (amrex::MFIter mfi(S_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-//    const amrex::Box& tbox = mfi.tilebox();
-//    const auto Efab = Efield.array(mfi);
-//    amrex::ParallelFor(
-//      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-//        Efab(i,j,k,0) = i;
-//        Efab(i,j,k,1) = j;
-//        Efab(i,j,k,2) = k;
-//      });
-//  }
-//
+  for (amrex::MFIter mfi(S_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+    const amrex::Box& tbox = mfi.tilebox();
+    const auto Efab = Efield.array(mfi);
+    amrex::ParallelFor(
+      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        Efab(i,j,k,0) = 25.0;
+        Efab(i,j,k,1) = 0.0;
+        Efab(i,j,k,2) = 0.0;
+      });
+  }
+
   // Fill ghost cells in same way as in SolveEfield.cpp for now (probably better way to do this?)
-  //Efield.FillBoundary(geom.periodicity());
-  //const amrex::BCRec& bcEfield = get_desc_lst()[State_Type].getBC(PhiV);    // Valid to use same BCRec as PhiV?
-  //// const int* Efieldbc = bcEfield.data();
-  //const amrex::Vector<amrex::BCRec>& Ebc = {bcEfield};
-  //if (not geom.isAllPeriodic()) {
-  //  amrex::GpuBndryFuncFab<EfieldFillExtDir> Ebf(EfieldFillExtDir{});
-  //  amrex::PhysBCFunct<amrex::GpuBndryFuncFab<EfieldFillExtDir> > Efieldf(geom, Ebc, Ebf);
-  //  Efieldf(Efield, 0, NUM_E, Efield.nGrowVect(), time, 0);
-  //}
+  Efield.FillBoundary(geom.periodicity());
+  const amrex::BCRec& bcEfield = get_desc_lst()[State_Type].getBC(PhiV);    // Valid to use same BCRec as PhiV?
+  // const int* Efieldbc = bcEfield.data();
+  const amrex::Vector<amrex::BCRec>& Ebc = {bcEfield};
+  if (not geom.isAllPeriodic()) {
+    amrex::GpuBndryFuncFab<EfieldFillExtDir> Ebf(EfieldFillExtDir{});
+    amrex::PhysBCFunct<amrex::GpuBndryFuncFab<EfieldFillExtDir> > Efieldf(geom, Ebc, Ebf);
+    Efieldf(Efield, 0, NUM_E, Efield.nGrowVect(), time, 0);
+  }
+
   // for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-  //   const amrex::Box& tbox = mfi.tilebox();
-  //   int ng = Phiborder.nGrow();
-  //   const amrex::Box gbox = amrex::grow(tbox, ng);
-  //   const auto Efab = Efield.array(mfi);
-  //   amrex::ParallelFor(
-  //     gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //       printf("Efield(%i, %i, 0) = %.6e\n", i, j, Efab(i,j,k,0));
-  //       printf("Efield(%i, %i, 1) = %.6e\n", i, j, Efab(i,j,k,1));
-  //     });
+  //    const amrex::Box& tbox = mfi.tilebox();
+  //    int ng = Phiborder.nGrow();
+  //    const amrex::Box gbox = amrex::grow(tbox, ng);
+  //    const auto Efab = Efield.array(mfi);
+  //    amrex::ParallelFor(
+  //      gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //        printf("Efield(%i, %i, 0) = %.6e\n", i, j, Efab(i,j,k,0));
+  //        printf("Efield(%i, %i, 1) = %.6e\n", i, j, Efab(i,j,k,1));
+  //      });
   // }
 
 #endif
@@ -356,6 +357,9 @@ PeleC::do_mol_advance(
   }
   FillPatch(*this, Sborder, nGrowTr, time + dt, State_Type, 0, NVAR);
   flux_factor = mol_iters > 1 ? 0 : 1;
+#ifdef PELEC_USE_PLASMA
+  // TODO: re-evaluate efield based on * quantities
+#endif
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
 
   // Build other (neither spray nor diffusion) sources at t_new

@@ -183,7 +183,7 @@ pc_compute_hyp_mol_flux(
         // ndeak note - because ebox is contracted in the dir direction,
         // we do not index out when we access i-1, j-1, etc. 
   
-        // get cell-edge mobilities for each species
+        // get cell-edge mobilities for each species (includes charge sign)
         amrex::Real c[NUM_SPECIES];
         for(int n=0; n<NUM_SPECIES; n++)
           c[n] = 0.5 * (K_cc(i,j,k,n) + K_cc(ii,jj,kk,n));
@@ -195,20 +195,21 @@ pc_compute_hyp_mol_flux(
           E[n] = 0.5 * (E_cc(i,j,k,n) + E_cc(ii,jj,kk,n));
           // pc_move_transcoefs_to_ec(i, j, k, n, E_cc, c, dir, true);
       
-        for(int n=0; n<NUM_SPECIES; n++)
+        for(int n=0; n<NUM_SPECIES; n++){
           drift_tmp[n] = c[n] * E[dir];
+        }
 #endif
         amrex::Real flux_tmp[NVAR] = {0.0};
         amrex::Real ustar = 0.0;
 
-        amrex::Real tmp0, tmp1, tmp2, tmp3, tmp4;
+        amrex::Real tmp0, tmp1, tmp2, tmp3, tmp4, tmp5;
         riemann(
           qtempl[R_RHO], qtempl[R_UN], qtempl[R_UT1], qtempl[R_UT2],
           qtempl[R_P], rhoe_l, spl, gamc_l, qtempr[R_RHO], qtempr[R_UN],
           qtempr[R_UT1], qtempr[R_UT2], qtempr[R_P], rhoe_r, spr, gamc_r,
           bc_test_val, csmall, cavg, ustar, flux_tmp[URHO], flux_tmp[f_idx[0]],
           flux_tmp[f_idx[1]], flux_tmp[f_idx[2]], flux_tmp[UEDEN],
-          flux_tmp[UEINT], tmp0, tmp1, tmp2, tmp3, tmp4);
+          flux_tmp[UEINT], tmp0, tmp1, tmp2, tmp3, tmp4, tmp5);
 
         for (int n = 0; n < NUM_SPECIES; n++) {
           flux_tmp[UFS + n] = (ustar + drift_tmp[n] > 0.0) ? flux_tmp[URHO] * qtempl[R_Y + n]
@@ -228,66 +229,136 @@ pc_compute_hyp_mol_flux(
           flux_tmp[n] = (NUM_ADV > 0) ? 0.0 : flux_tmp[n];
         }
 
+#ifdef PELEC_USE_PLASMA
+        // Recalculate fluxes taking into account drift velocity
+        // Riemann solver temporary values: tmp0 = idir velocity
+        //                                  tmp1 = other velocity comp 1
+        //                                  tmp2 = other velocity comp 2
+        //                                  tmp3 = godunov state pressure
+        //                                  tmp4 = 
+
+        // Calculate new species and u momentum fluxes
+        amrex::Real mfgd[NUM_SPECIES];
+        amrex::Real uflux_tmp = 0.0;
+        flux_tmp[f_idx[0]] = 0.0;
+        for(int n = 0; n < NUM_SPECIES; n++){
+          // Calculate species density flux using left or right state (based on effective velocity)
+          flux_tmp[UFS + n] = (ustar + drift_tmp[n] > 0.0) ? tmp5 * (tmp0 + drift_tmp[n]) * qtempl[R_Y + n]
+                                                           : tmp5 * (tmp0 + drift_tmp[n]) * qtempr[R_Y + n];
+          
+          // Calculate u momentum density flux using left or right state (based on effective velocity)
+          uflux_tmp = (ustar + drift_tmp[n] > 0.0) ? tmp5 * pow((tmp0 + drift_tmp[n]), 2) * qtempl[R_Y + n]
+                                                   : tmp5 * pow((tmp0 + drift_tmp[n]), 2) * qtempr[R_Y + n];
+
+          // Correct flux value to account for a zero effective velocity
+          flux_tmp[UFS + n] =
+            (ustar + drift_tmp[n] == 0.0)
+              ? tmp5 * (tmp0 + drift_tmp[n]) * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
+              : flux_tmp[UFS + n];
+
+          flux_tmp[f_idx[0]] +=
+            (ustar + drift_tmp[n] == 0.0)
+              ? tmp5 * pow((tmp0 + drift_tmp[n]), 2) * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
+              : uflux_tmp;
+
+
+          // Re-evaluate species mass fractions based on corrections          
+          mfgd[n] = flux_tmp[UFS + n] / (tmp5 * (tmp0 + drift_tmp[n]));
+        }
+      
+        // TODO: should the Godunov states (density pressure velocity) be re-evaluated as well? 
+
+        // Use species fluxes to correct density flux and density values
+        flux_tmp[URHO] = 0.0;  
+        for(int n = 0; n < NUM_SPECIES; n++) flux_tmp[URHO] += flux_tmp[UFS + n];
+        // rgd = flux_tmp[URHO] / tmp0;
+
+        // Use updated density flux to calculate new momentum fluxes
+        // TODO: do the velocity components that are not orthogonal to the cell 
+        // face also need to be updated with appropriate drift components?
+        // flux_tmp[f_idx[0]] +=  flux_tmp[URHO] * tmp0 + tmp3;
+        flux_tmp[f_idx[0]] +=  tmp3;
+        flux_tmp[f_idx[1]] = flux_tmp[URHO] * tmp1;
+        flux_tmp[f_idx[2]] = flux_tmp[URHO] * tmp2;
+
+        // Re-evaluate other quantities to obtain new energy fluxes
+        // amrex::Real egd;
+        // EOS::RYP2E(tmp5, mfgd, tmp3, egd);      
+        // amrex::Real regd = tmp5 * egd;
+        // amrex::Real rhoetot = regd + 0.5 * tmp5 * (tmp0 * tmp0 + tmp1 * tmp1 + tmp2 * tmp2);
+        // flux_tmp[UEDEN] = tmp0 * (rhoetot + tmp3); 
+        // flux_tmp[UEINT] = tmp0 * regd;
+#endif
         for (int ivar = 0; ivar < NVAR; ivar++) {
           flx[dir](i, j, k, ivar) += flux_tmp[ivar] * a[dir](i, j, k);
         }
-#ifdef PELEC_USE_PLASMA 
-        // Overwrite species fluxes at the electrode boundaries
-        // Calculate number density at the interior cell (0th order approx for now)
-        // assumes Y_k at ghost cell is equal to interior value at ext_dir boundary,
-        // so doesn't matter which species array we take from for now
-        // TODO: make sure calculation of EoN is in units of Td
-        amrex::Real Xstar[NUM_SPECIES];
-        amrex::Real ndens = 0.0;
-        amrex::Real kB = 1.380649e-16; // erg/K
-        amrex::Real NA = 6.0221409e23; // 1/mol
-        amrex::Real Ttemp;
-        double EoN, Te;
-        amrex::Real mwt[NUM_SPECIES];
-        EOS::molecular_weight(mwt);
-        int iv[3] = {i,j,k};
 
-        // overwrite fluxes on all ext_dir boundaries
-        if ((bcr[dir] == amrex::BCType::ext_dir) and (iv[dir] == domlo[dir])) {
-          // Calculate number density at cell edge, assuming for now it is equal to the interior cell value
-          EOS::Y2X(spr, Xstar);
-          EOS::RYP2T(qtempr[R_RHO], spr, qtempr[R_P], Ttemp);
-          for(int n=0; n<NUM_SPECIES; n++) {
-            if (n != E_ID) ndens += qtempr[R_P] * Xstar[n] / (kB * Ttemp);
-          }
-          // Use the number density to calculate the reduced electric field strength
-          EoN = (E[0]*E[0] + E[1]*E[1] + E[2]*E[2]) / ndens;
-          // Use EoN to get Te for electron flux at the boundary
-          ExtrapTe(EoN, &Te);
-          for(int n=0; n<NUM_SPECIES; n++){
-            if(n == E_ID){
-              flx[dir](i, j, k, UFS + n) = -0.5 * spr[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-            }
-            else{
-              flx[dir](i, j, k, UFS + n) = -0.5 * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-            }
-          }
-        }
-        if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
-          // Calculate number density at cell edge, assuming for now it is equal to the interior cell value
-          EOS::Y2X(spl, Xstar);
-          EOS::RYP2T(qtempl[R_RHO], spl, qtempl[R_P], Ttemp);
-          for(int n=0; n<NUM_SPECIES; n++) {
-            if (n != E_ID) ndens += qtempl[R_P] * Xstar[n] / (kB * Ttemp);
-          }
-          // Use the number density to calculate the reduced electric field strength
-          EoN = (E[0]*E[0] + E[1]*E[1] + E[2]*E[2]) / ndens;
-          // Use EoN to get Te for electron flux at the boundary
-          ExtrapTe(EoN, &Te);
-          for(int n=0; n<NUM_SPECIES; n++){
-            if(n == E_ID){
-              flx[dir](i, j, k, UFS + n) = 0.5 * spl[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-            }
-            else{
-              flx[dir](i, j, k, UFS + n) = 0.5 * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-            }
-          }
-        }
+#ifdef PELEC_USE_PLASMA 
+//         // Overwrite species fluxes at the electrode boundaries
+//         // Calculate number density at the interior cell (0th order approx for now)
+//         // assumes Y_k at ghost cell is equal to interior value at ext_dir boundary,
+//         // so doesn't matter which species array we take from for now
+//         // TODO: make sure calculation of EoN is in units of Td
+//         // TODO: Make sure other flux values are updated as well
+//         amrex::Real Xstar[NUM_SPECIES];
+//         amrex::Real ndens = 0.0;
+//         amrex::Real kB = 1.380649e-16; // erg/K
+//         amrex::Real NA = 6.0221409e23; // 1/mol
+//         amrex::Real Ttemp;
+//         double EoN, Te;
+//         amrex::Real mwt[NUM_SPECIES];
+//         EOS::molecular_weight(mwt);
+//         int iv[3] = {i,j,k};
+// 
+//         // overwrite fluxes on all ext_dir boundaries
+//         if ((bcr[dir] == amrex::BCType::ext_dir) and (iv[dir] == domlo[dir])) {
+//           // Calculate number density at cell edge, assuming for now it is equal to the interior cell value
+//           EOS::Y2X(spr, Xstar);
+//           EOS::RYP2T(qtempr[R_RHO], spr, qtempr[R_P], Ttemp);
+//           for(int n=0; n<NUM_SPECIES; n++) {
+//             if (n != E_ID) ndens += qtempr[R_P] * Xstar[n] / (kB * Ttemp);
+//           }
+//           // Use the number density to calculate the reduced electric field strength
+//           EoN = (E[0]*E[0] + E[1]*E[1] + E[2]*E[2]) / ndens;
+//           // Use EoN to get Te for electron flux at the boundary
+//           ExtrapTe(EoN, &Te);
+//           for(int n=0; n<NUM_SPECIES; n++){
+//             if(n == E_ID){
+//               flx[dir](i, j, k, UFS + n) = -0.5 * spr[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+//               // printf("flx[%i](%i, %i, %i, %i) = %.6e\n", dir, i, j, k, n, flx[dir](i, j, k, UFS + n));
+//               // printf("factor(%i, %i, %i, %i) = %.6e\n", i, j, k, n, pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) );
+//               // printf("spr(%i, %i, %i, %i) = %.6e\n", i, j, k, n, spr[n]);
+//             }
+//             else{
+//               flx[dir](i, j, k, UFS + n) = -0.5 * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+//               printf("flx[%i](%i, %i, %i, %i) = %.6e\n", dir, i, j, k, n, flx[dir](i, j, k, UFS + n));
+//             }
+//           }
+//         }
+//         if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
+//           // Calculate number density at cell edge, assuming for now it is equal to the interior cell value
+//           EOS::Y2X(spl, Xstar);
+//           EOS::RYP2T(qtempl[R_RHO], spl, qtempl[R_P], Ttemp);
+//           for(int n=0; n<NUM_SPECIES; n++) {
+//             if (n != E_ID) ndens += qtempl[R_P] * Xstar[n] / (kB * Ttemp);
+//           }
+//           // Use the number density to calculate the reduced electric field strength
+//           EoN = (E[0]*E[0] + E[1]*E[1] + E[2]*E[2]) / ndens;
+//           // Use EoN to get Te for electron flux at the boundary
+//           ExtrapTe(EoN, &Te);
+//           for(int n=0; n<NUM_SPECIES; n++){
+//             if(n == E_ID){
+//               flx[dir](i, j, k, UFS + n) = 0.5 * spl[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+//               // printf("flx[%i](%i, %i, %i, %i) = %.6e\n", dir, i, j, k, n, flx[dir](i, j, k, UFS + n));
+//               // printf("factor(%i, %i, %i, %i) = %.6e\n", i, j, k, n, pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) );
+//               // printf("spl(%i, %i, %i, %i) = %.6e\n", i, j, k, n, spl[n]);
+//             }
+//             else{
+//               flx[dir](i, j, k, UFS + n) = 0.5 * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+//               printf("flx[%i](%i, %i, %i, %i) = %.6e\n", dir, i, j, k, n, flx[dir](i, j, k, UFS + n));
+//             }
+//           }
+//         }
 #endif
       });
   }
@@ -416,14 +487,14 @@ pc_compute_hyp_mol_flux(
     }
 
     if (is_inside(i, j, k, lo, hi, nextra - 1)) {
-      amrex::Real tmp0, tmp1, tmp2, tmp3, tmp4, ustar = 0.0;
+      amrex::Real tmp0, tmp1, tmp2, tmp3, tmp4, tmp5, ustar = 0.0;
       riemann(
         qtempl[R_RHO], qtempl[R_UN], qtempl[R_UT1], qtempl[R_UT2], qtempl[R_P],
         rhoe_l, spl, gamc_l, qtempl[R_RHO], qtempr[R_UN], qtempl[R_UT1],
         qtempl[R_UT2], qtempl[R_P], rhoe_l, spl, gamc_l, bc_test_val, csmall,
         cavg, ustar, flux_tmp[URHO], flux_tmp[UMX], flux_tmp[UMY],
         flux_tmp[UMZ], flux_tmp[UEDEN], flux_tmp[UEINT], tmp0, tmp1, tmp2, tmp3,
-        tmp4);
+        tmp4, tmp5);
 
       flux_tmp[UMY] = -flux_tmp[UMX] * ebnorm[1];
       flux_tmp[UMZ] = -flux_tmp[UMX] * ebnorm[2];

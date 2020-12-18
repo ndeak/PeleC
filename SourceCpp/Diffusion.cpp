@@ -482,7 +482,6 @@ PeleC::getMOLSrcTerm(
             d_sv_eb_bndry_geom, Ncut, d_eb_flux_thdlocal, nFlux
 #endif
           );
-          exit(1);
         }
 
         // Filter hydro source term and fluxes here
@@ -727,6 +726,7 @@ PeleC::getMOLSrcTerm(
       }
 
       copy_array4(vbox, NVAR, Dterm, MOLSrc);
+
 
 #ifdef PELEC_USE_EB
       if (do_mol_load_balance) {

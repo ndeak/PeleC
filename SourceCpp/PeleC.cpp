@@ -814,6 +814,8 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 {
   BL_PROFILE("PeleC::estTimeStep()");
 
+  // TODO: modify estimate to take into account drift velocity
+
   if (fixed_dt > 0.0)
     return fixed_dt;
 
