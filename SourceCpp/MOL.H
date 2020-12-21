@@ -114,7 +114,8 @@ void pc_compute_hyp_mol_flux(
 #ifdef PELEC_USE_PLASMA
   ,
   const amrex::Array4<const amrex::Real>& K_cc,
-  const amrex::Array4<const amrex::Real>& E_cc,
+  const amrex::Array4<const amrex::Real>& E_cc,   
+  const amrex::Array4<amrex::Real>& drift_cc,
   const int* bcr,
   const amrex::Geometry& geom,
   const int do_harmonic

@@ -19,6 +19,9 @@ pc_estdt_hydro(
 #ifdef PELEC_USE_EB
   const amrex::Array4<const amrex::EBCellFlag>& flags,
 #endif
+#ifdef PELEC_USE_PLASMA
+  const amrex::Array4<const amrex::Real>& drift,
+#endif
   AMREX_D_DECL(
     const amrex::Real& dx,
     const amrex::Real& dy,
@@ -38,6 +41,21 @@ pc_estdt_hydro(
       for (int n = 0; n < NUM_SPECIES; ++n)
         massfrac[n] = u(i, j, k, UFS + n) * rhoInv;
       EOS::RTY2Cs(rho, T, massfrac, c);
+#ifdef PELEC_USE_PLASMA
+      amrex::Real ux1 = 0.0, uy1 = 0.0, uz1 = 0.0;
+      for(int n=0; n<NUM_SPECIES; n++){
+        ux1 = amrex::max(ux1, amrex::Math::abs(u(i, j, k, UMX) * rhoInv + drift(i, j, k, NUM_E*n + 0)));
+        uy1 = amrex::max(uy1, amrex::Math::abs(u(i, j, k, UMY) * rhoInv + drift(i, j, k, NUM_E*n + 1)));
+        uz1 = amrex::max(uz1, amrex::Math::abs(u(i, j, k, UMZ) * rhoInv + drift(i, j, k, NUM_E*n + 2)));
+      }
+      AMREX_D_TERM(  const amrex::Real dt1 = dx / (c + amrex::Math::abs(ux1));
+                   dt = amrex::min(dt, dt1);
+                   , const amrex::Real dt2 = dy / (c + amrex::Math::abs(uy1));
+                   dt = amrex::min(dt, dt2);
+                   , const amrex::Real dt3 = dz / (c + amrex::Math::abs(uz1));
+                   dt = amrex::min(dt, dt3);
+                   );
+#else
       AMREX_D_TERM(const amrex::Real ux = u(i, j, k, UMX) * rhoInv;
                    const amrex::Real dt1 = dx / (c + amrex::Math::abs(ux));
                    dt = amrex::min(dt, dt1);
@@ -47,6 +65,7 @@ pc_estdt_hydro(
                    , const amrex::Real uz = u(i, j, k, UMZ) * rhoInv;
                    const amrex::Real dt3 = dz / (c + amrex::Math::abs(uz));
                    dt = amrex::min(dt, dt3););
+#endif
 #ifdef PELEC_USE_EB
     }
 #endif

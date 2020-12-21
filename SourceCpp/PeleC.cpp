@@ -476,6 +476,7 @@ PeleC::PeleC(
   redEfield.define(grids, dmap, 1, NUM_GROW, amrex::MFInfo(), Factory());
   KSpec_old.define(grids,dmap,NUM_SPECIES,1); 
   KSpec_new.define(grids,dmap,NUM_SPECIES,1); 
+  spec_drift.define(grids,dmap,NUM_E*NUM_SPECIES,NUM_GROW); 
   coeffs_old.define(grids,dmap,NUM_SPECIES+3,1); 
   Q_ext.define(grids,dmap,NQ,1); 
   Qaux_ext.define(grids,dmap,NQAUX,1); 
@@ -814,8 +815,6 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 {
   BL_PROFILE("PeleC::estTimeStep()");
 
-  // TODO: modify estimate to take into account drift velocity
-
   if (fixed_dt > 0.0)
     return fixed_dt;
 
@@ -856,6 +855,9 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #ifdef PELEC_USE_EB
         flags,
 #endif
+#ifdef PELEC_USE_PLASMA
+        spec_drift,
+#endif
         0,
         [=] AMREX_GPU_HOST_DEVICE(
           amrex::Box const& bx, const amrex::Array4<const amrex::Real>& fab_arr
@@ -863,11 +865,18 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
           ,
           const amrex::Array4<const amrex::EBCellFlag>& flag_arr
 #endif
+#ifdef PELEC_USE_PLASMA
+          ,
+          const amrex::Array4<const amrex::Real>& drift_arr
+#endif
           ) noexcept -> amrex::Real {
           return pc_estdt_hydro(
             bx, fab_arr,
 #ifdef PELEC_USE_EB
             flag_arr,
+#endif
+#ifdef PELEC_USE_PLASMA
+            drift_arr,
 #endif
             AMREX_D_DECL(dx1, dx2, dx3));
         });

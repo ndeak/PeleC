@@ -51,6 +51,9 @@ amrex::Real pc_estdt_hydro(
 #ifdef PELEC_USE_EB
   const amrex::Array4<const amrex::EBCellFlag>& flags,
 #endif
+#ifdef PELEC_USE_PLASMA
+  const amrex::Array4<const amrex::Real>& drift,
+#endif
   AMREX_D_DECL(
     const amrex::Real& dx,
     const amrex::Real& dy,

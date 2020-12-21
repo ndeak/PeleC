@@ -1,5 +1,5 @@
 #include "MOL.H"
-#ifdef PELEC_USE_PLASM
+#ifdef PELEC_USE_PLASMA
 #include "mechanism.h"
 #endif
 
@@ -21,6 +21,7 @@ pc_compute_hyp_mol_flux(
   ,
   const amrex::Array4<const amrex::Real>& K_cc,
   const amrex::Array4<const amrex::Real>& E_cc,
+   const amrex::Array4<amrex::Real>& drift_cc,
   const int* bcr,
   const amrex::Geometry& geom,
   const int do_harmonic
@@ -183,6 +184,8 @@ pc_compute_hyp_mol_flux(
         // ndeak note - because ebox is contracted in the dir direction,
         // we do not index out when we access i-1, j-1, etc. 
   
+        int iv[3] = {i,j,k};
+
         // get cell-edge mobilities for each species (includes charge sign)
         amrex::Real c[NUM_SPECIES];
         for(int n=0; n<NUM_SPECIES; n++)
@@ -195,8 +198,16 @@ pc_compute_hyp_mol_flux(
           E[n] = 0.5 * (E_cc(i,j,k,n) + E_cc(ii,jj,kk,n));
           // pc_move_transcoefs_to_ec(i, j, k, n, E_cc, c, dir, true);
       
+        // Calculate the cell-edge drift velocity
         for(int n=0; n<NUM_SPECIES; n++){
           drift_tmp[n] = c[n] * E[dir];
+        }
+
+        // Store cell-center drift velocity for time step estimation
+        for(int n=0; n<NUM_SPECIES; n++){
+          drift_cc(i, j, k, NUM_E*n + 0) = K_cc(i, j, k, n) * E_cc(i, j, k, 0);
+          drift_cc(i, j, k, NUM_E*n + 1) = K_cc(i, j, k, n) * E_cc(i, j, k, 1);
+          drift_cc(i, j, k, NUM_E*n + 2) = K_cc(i, j, k, n) * E_cc(i, j, k, 2);
         }
 #endif
         amrex::Real flux_tmp[NVAR] = {0.0};

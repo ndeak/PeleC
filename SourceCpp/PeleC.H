@@ -683,6 +683,7 @@ protected:
   amrex::MultiFab     redEfield;
   amrex::MultiFab     KSpec_old;     // Need both old and new since adv is at t^n+1/2
   amrex::MultiFab     KSpec_new;
+  amrex::MultiFab     spec_drift;
   amrex::MultiFab     coeffs_old;         // Species diffusivities (used to calculate mobilities)
   amrex::MultiFab     Q_ext;  
   amrex::MultiFab     Qaux_ext;  

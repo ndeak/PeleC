@@ -325,6 +325,7 @@ PeleC::getMOLSrcTerm(
 #ifdef PELEC_USE_PLASMA
       auto const& K_cc = KSpec_old.array(mfi);
       auto const& E_cc = Efield.array(mfi);
+      auto const& drift_cc = spec_drift.array(mfi);
 #endif
       const amrex::GpuArray<
         const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
@@ -474,7 +475,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, a, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            K_cc, E_cc, PhiVbc, geom, do_harmonic
+            K_cc, E_cc, drift_cc, PhiVbc, geom, do_harmonic
 #endif
 #ifdef PELEC_USE_EB
             ,
