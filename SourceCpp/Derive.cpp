@@ -880,7 +880,13 @@ pc_derredEfield(
   int level)
 {
 
-  auto const dat = datfab.array(UFX);
+  // TODO: fix issue with BCrec not being filled prior to the initial evaluation of derived 
+  // quantities (before first MOL advance), leading to incorrect values at boundary for plotfile 0
+
+  auto const dat = datfab.array();
+  auto const phidat = datfab.array(UFX);
+  auto const Tdat = datfab.array(URHO);
+  auto const Rdat = datfab.array(UTEMP);
   auto redEfield = derfab.array();
   const auto dxinv = geomdata.InvCellSizeArray(); 
   const auto domain = geomdata.Domain();
@@ -891,31 +897,44 @@ pc_derredEfield(
   // Calculate reduced electric field strength (Td).
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     // Calculate E_x (repetitive...)
-    amrex::Real ef_x = factorx * (dat(i+1, j, k) - dat(i-1, j, k));
+    amrex::Real ef_x = factorx * (phidat(i+1, j, k) - phidat(i-1, j, k));
     bool on_lo = ( ( bcrec[0] == amrex::BCType::ext_dir ) && i <= domain.smallEnd(0) );
     bool on_hi = ( ( bcrec[AMREX_SPACEDIM+0] == amrex::BCType::ext_dir ) && i >= domain.bigEnd(0) );
-    if ( on_lo ) ef_x = factorx * ( dat(i+1,j,k) + dat(i,j,k) - 2.0 * dat(i-1,j,k) );
-    if ( on_hi ) ef_x = factorx * ( 2.0 * dat(i+1,j,k) - dat(i,j,k) - dat(i-1,j,k) );
+    if ( on_lo ) ef_x = factorx * ( phidat(i+1,j,k) + phidat(i,j,k) - 2.0 * phidat(i-1,j,k) );
+    if ( on_hi ) ef_x = factorx * ( 2.0 * phidat(i+1,j,k) - phidat(i,j,k) - phidat(i-1,j,k) );
 
     // Calculate E_y
-    amrex::Real ef_y = factory * (dat(i, j+1, k) - dat(i, j-1, k));
+    amrex::Real ef_y = factory * (phidat(i, j+1, k) - phidat(i, j-1, k));
     on_lo = ( ( bcrec[1] == amrex::BCType::ext_dir ) && j <= domain.smallEnd(1) );
     on_hi = ( ( bcrec[AMREX_SPACEDIM+1] == amrex::BCType::ext_dir ) && j >= domain.bigEnd(1) );
-    if ( on_lo ) ef_y = factory * ( dat(i,j+1,k) + dat(i,j,k) - 2.0 * dat(i,j-1,k) );
-    if ( on_hi ) ef_y = factory * ( 2.0 * dat(i,j+1,k) - dat(i,j,k) - dat(i,j-1,k) );
+    if ( on_lo ) ef_y = factory * ( phidat(i,j+1,k) + phidat(i,j,k) - 2.0 * phidat(i,j-1,k) );
+    if ( on_hi ) ef_y = factory * ( 2.0 * phidat(i,j+1,k) - phidat(i,j,k) - phidat(i,j-1,k) );
 #if AMREX_SPACEDIM == 3
     // Calculate E_z
-    amrex::Real ef_z = factorz * (dat(i, j, k+1) - dat(i, j, k-1));
+    amrex::Real ef_z = factorz * (phidat(i, j, k+1) - phidat(i, j, k-1));
     on_lo = ( ( bcrec[2] == amrex::BCType::ext_dir ) && k <= domain.smallEnd(2) );
     on_hi = ( ( bcrec[AMREX_SPACEDIM+2] == amrex::BCType::ext_dir ) && k >= domain.bigEnd(2) );
-    if ( on_lo ) ef_z = factorz * ( dat(i,j,k+1) + dat(i,j,k) - 2.0 * dat(i,j,k-1) );
-    if ( on_hi ) ef_z = factorz * ( 2.0 * dat(i,j,k+1) - dat(i,j,k) - dat(i,j,k-1) );
+    if ( on_lo ) ef_z = factorz * ( phidat(i,j,k+1) + phidat(i,j,k) - 2.0 * phidat(i,j,k-1) );
+    if ( on_hi ) ef_z = factorz * ( 2.0 * phidat(i,j,k+1) - phidat(i,j,k) - phidat(i,j,k-1) );
 #endif
     // Calculate E magnitude
     redEfield(i, j, k, 0) = std::sqrt( AMREX_D_TERM(  ef_x * ef_x,
                                                     + ef_y * ef_y,
                                                     + ef_z * ef_z));
+
+    // TODO: Divide by number density and add conversion to Td factor
+    amrex::Real X[NUM_SPECIES];
+    amrex::Real Y[NUM_SPECIES];
+    amrex::Real pres, ndens;
+    amrex::Real kB = 1.380649e-16; // erg/K
+    for(int n=0; n<NUM_SPECIES; n++) Y[n] = dat(i, j, k, UFS + n) / dat(i, j, k, URHO);
+    EOS::Y2X(Y, X);  
+    EOS::RTY2P(dat(i, j, k, URHO), dat(i, j, k, UTEMP), Y, pres);
+    for(int n=0; n<NUM_SPECIES; n++) {
+      if (n != E_ID) ndens += pres * X[n] / (kB * dat(i, j, k, UTEMP));
+    }
+    redEfield(i, j, k, 0) = redEfield(i, j, k, 0) / ndens * 1.0e17;
+
   });
-// TODO: Divide by number density and add conversion to Td factor
 }
 #endif

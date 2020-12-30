@@ -99,6 +99,9 @@ PeleC::react_state(
 
       // new state
       auto const& snew_arr = S_new.array(mfi);
+#ifdef PELEC_USE_PLASMA
+      auto const& eon = redEfield.array(mfi);
+#endif
       auto const& nonrs_arr = non_react_src->array(mfi);
       auto const& I_R = react_src.array(mfi);
 
@@ -133,7 +136,14 @@ PeleC::react_state(
           amrex::ParallelFor(
             bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
               pc_expl_reactions(
-                i, j, k, sold_arr, snew_arr, nonrs_arr, I_R, dt, nsubsteps_min,
+                i, j, k, 
+                sold_arr, 
+                snew_arr, 
+                nonrs_arr, 
+#ifdef PELEC_USE_PLASMA
+                eon,
+#endif
+                I_R, dt, nsubsteps_min,
                 nsubsteps_max, nsubsteps_guess, errtol, do_update);
             });
         } else if (chem_integrator == 2) {
@@ -168,6 +178,9 @@ PeleC::react_state(
           rY_src_in = new amrex::Real[ncells * (NUM_SPECIES)];
           re_in = new amrex::Real[ncells];
           re_src_in = new amrex::Real[ncells];
+#ifdef PELEC_USE_PLASMA
+          amrex::Real* eon_in = new amrex::Real[ncells];
+#endif
 
           int ode_ncells = 1;
 #endif
@@ -211,6 +224,9 @@ PeleC::react_state(
                 sold_arr(i, j, k, UTEMP);
               re_in[offset] = rho_old * e_old;
               re_src_in[offset] = rhoedot_ext;
+#ifdef PELEC_USE_PLASMA
+              eon_in[offset] = eon(i, j, k, 0);
+#endif
             });
 
 #ifdef AMREX_USE_CUDA
@@ -227,7 +243,11 @@ PeleC::react_state(
 #else
             chemintg_cost += react(
               rY_in + i * (NUM_SPECIES + 1), rY_src_in + i * NUM_SPECIES,
-              re_in + i, re_src_in + i, dt, current_time);
+              re_in + i, re_src_in + i, dt, current_time
+#ifdef PELEC_USE_PLASMA
+              , eon_in[i]
+#endif
+);
 #endif
           }
           chemintg_cost = chemintg_cost / ncells;

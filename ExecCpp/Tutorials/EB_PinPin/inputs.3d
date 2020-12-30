@@ -1,6 +1,6 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
-max_step = 1000
-stop_time = 6.0
+max_step = 100
+stop_time = 100.0
 
 # PROBLEM SIZE & GEOMETRY
 geometry.is_periodic =  1   0  1
@@ -23,11 +23,13 @@ pelec.hi_bc       =  "Interior" "SlipWall" "Interior"
 # Problem setup
 pelec.eb_boundary_T = 300.
 pelec.eb_isothermal = 1
+pelec.chem_integrator = 2
+ode.implicit_solve = 1
 
 # WHICH PHYSICS
-pelec.do_hydro = 1
+pelec.do_hydro = 0
 pelec.do_mol = 1
-pelec.do_react = 0
+pelec.do_react = 1
 pelec.diffuse_temp = 0
 pelec.diffuse_vel  = 0
 pelec.diffuse_spec = 0
@@ -38,6 +40,7 @@ pelec.dt_cutoff      = 5.e-20  # level 0 timestep below which we halt
 pelec.cfl            = 0.3     # cfl number for hyperbolic system
 pelec.init_shrink    = 0.8    # scale back initial timestep
 pelec.change_max     = 1.05     # maximum increase in dt over successive steps
+pelec.max_dt = 1.0e-9
 
 # DIAGNOSTICS & VERBOSITY
 pelec.sum_interval   = 1       # timesteps between computing mass
@@ -60,8 +63,9 @@ amr.check_int       = -1       # number of timesteps between checkpoints
 # PLOTFILES
 amr.plot_files_output = 1
 amr.plot_file       = plt
-amr.plot_int        = 100
+amr.plot_int        = 1
 amr.derive_plot_vars=ALL
+pelec.plot_massfrac = true
 
 #extruded triangles lets the user create a maximum of 5 triangles 
 #in 2D that will be extruded in the z direction
@@ -86,12 +90,12 @@ ebd.boundary_grad_stencil_type = 0
 #
 
 prob.p = 1013250.0
-prob.rho = 0.00116
-prob.vx_in =  0.01
-prob.vy_in =  0.01
+prob.rho = 0.0011719
+prob.vx_in =  0.0
+prob.vy_in =  0.0
 prob.Re_L = 1.0
 prob.Pr = 0.7
-prob.phiV_top = 1.0
+prob.phiV_top = 24463.0
 
 #fabarray.mfiter_tile_size = 1024 1024 1024
 amrex.fpe_trap_invalid = 1

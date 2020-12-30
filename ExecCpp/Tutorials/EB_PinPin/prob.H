@@ -37,9 +37,17 @@ pc_initdata(
   amrex::Real mfs[NUM_SPECIES];
   amrex::Real tempT, tempE;
   for (int n = 0; n < NUM_SPECIES; n++)
-    mfs[n] = ProbParm::massfrac[n];
-  mfs[6] = 5.0e-3 * exp(-pow((x - 0.5) / 0.1, 2)) * exp(-pow((y - 0.5) / 0.1, 2));
-  mfs[2]  = ProbParm::massfrac[2] - mfs[6];
+    mfs[n] = 0.0;
+
+  mfs[1] = 0.233;
+  mfs[2] = 0.767;
+  mfs[0] = 1.902e-20;     // 1.902e-20 corresponds with 1e-15 mole frac of E in air
+  mfs[6] = 2.219e-15;     // 2.219e-15 corresponds with 1e-15 mole frac of O4+ in air
+  mfs[2] -= (mfs[0] + mfs[6]);
+
+    // mfs[n] = ProbParm::massfrac[n];
+  // mfs[9] = 5.0e-3 * exp(-pow((x - 0.5) / 0.1, 2)) * exp(-pow((y - 0.5) / 0.1, 2));
+  // mfs[2]  = ProbParm::massfrac[2] - mfs[9];
   // EOS::PYT2RE(ProbParm::p, mfs, ProbParm::T, tempR, tempE);
   EOS::RYP2E(ProbParm::rho, mfs, ProbParm::p, tempE);
   EOS::EY2T(tempE, mfs, tempT);

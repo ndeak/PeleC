@@ -248,6 +248,7 @@ PeleC::do_mol_advance(
   
   // Copy back into Sborder? (probably better way to do this...)
   Sborder.copy(Phiborder, 0, PhiV, 1, 1, 1); 
+  FillPatch(*this, Sborder, nGrowTr, time, State_Type, 0, NVAR);
  
   // Print the potential to verify BCs
   // for (amrex::MFIter mfi(Phiborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
@@ -261,6 +262,7 @@ PeleC::do_mol_advance(
   //     });
   // }
 
+  // Calculate derived quantities (efield components and magnitude)
   for (amrex::MFIter mfi(S_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
     const amrex::Box& tbox = mfi.tilebox();
     const auto datbox = S_old[mfi].box();
@@ -273,15 +275,17 @@ PeleC::do_mol_advance(
     pc_derredEfield(datbox, redEfield[mfi], 0, PhiV, Sborder[mfi], geom, time, phiVbc, level);
   }
 
-  // Testing for efield bc fill
+  // Setting efield to zero while testing reactions
   for (amrex::MFIter mfi(S_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
     const amrex::Box& tbox = mfi.tilebox();
     const auto Efab = Efield.array(mfi);
+    const auto redEfab = redEfield.array(mfi);
     amrex::ParallelFor(
       tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        Efab(i,j,k,0) = 25.0;
+        Efab(i,j,k,0) = 0.0;
         Efab(i,j,k,1) = 0.0;
         Efab(i,j,k,2) = 0.0;
+        redEfab(i,j,k,0) = 0.0;
       });
   }
 
@@ -301,13 +305,14 @@ PeleC::do_mol_advance(
   //    int ng = Phiborder.nGrow();
   //    const amrex::Box gbox = amrex::grow(tbox, ng);
   //    const auto Efab = Efield.array(mfi);
+  //    const auto redEfab = redEfield.array(mfi);
   //    amrex::ParallelFor(
   //      gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
   //        printf("Efield(%i, %i, 0) = %.6e\n", i, j, Efab(i,j,k,0));
   //        printf("Efield(%i, %i, 1) = %.6e\n", i, j, Efab(i,j,k,1));
+  //        printf("redEfield(%i, %i) = %.6e\n", i, j, redEfab(i,j,k));
   //      });
   // }
-
 #endif
 
   // Compute S^{n} = MOLRhs(U^{n})
@@ -402,7 +407,6 @@ PeleC::do_mol_advance(
     react_state(time, dt, false, &molSrc);
   }
 #endif
-
   computeTemp(S_new, 0);
 
 #ifdef PELEC_USE_REACTIONS

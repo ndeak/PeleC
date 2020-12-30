@@ -75,6 +75,9 @@ pc_expl_reactions(
   amrex::Array4<const amrex::Real> const& sold,
   amrex::Array4<amrex::Real> const& snew,
   amrex::Array4<const amrex::Real> const& nr_src,
+#ifdef PELEC_USE_PLASMA
+  amrex::Array4<const amrex::Real> const& eon,
+#endif
   amrex::Array4<amrex::Real> const& IR,
   const amrex::Real dt_react,
   const int nsteps_min,
@@ -182,7 +185,11 @@ pc_expl_reactions(
         massfrac[n] = urk[UFS + n] * rhoInv;
       }
 
+#ifdef PELEC_USE_PLASMA
+      EOS::RTY2WDOT(urk[URHO], urk[UTEMP], massfrac, wdot, eon(i,j,k,0));
+#else
       EOS::RTY2WDOT(urk[URHO], urk[UTEMP], massfrac, wdot);
+#endif
 
       amrex::Real Temp_rk;
       EOS::EY2T(rhoe_rk / urk[URHO], massfrac, Temp_rk);

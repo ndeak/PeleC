@@ -249,6 +249,14 @@ pc_compute_hyp_mol_flux(
         //                                  tmp4 = 
 
         // Calculate new species and u momentum fluxes
+        amrex::Real Xstar[NUM_SPECIES];
+        amrex::Real ndens = 0.0;
+        amrex::Real kB = 1.380649e-16; // erg/K
+        amrex::Real NA = 6.0221409e23; // 1/mol
+        amrex::Real Ttemp;
+        double EoN, Te;
+        amrex::Real mwt[NUM_SPECIES];
+        EOS::molecular_weight(mwt);
         amrex::Real mfgd[NUM_SPECIES];
         amrex::Real uflux_tmp = 0.0;
         flux_tmp[f_idx[0]] = 0.0;
@@ -310,16 +318,7 @@ pc_compute_hyp_mol_flux(
 //         // assumes Y_k at ghost cell is equal to interior value at ext_dir boundary,
 //         // so doesn't matter which species array we take from for now
 //         // TODO: make sure calculation of EoN is in units of Td
-//         // TODO: Make sure other flux values are updated as well
-//         amrex::Real Xstar[NUM_SPECIES];
-//         amrex::Real ndens = 0.0;
-//         amrex::Real kB = 1.380649e-16; // erg/K
-//         amrex::Real NA = 6.0221409e23; // 1/mol
-//         amrex::Real Ttemp;
-//         double EoN, Te;
-//         amrex::Real mwt[NUM_SPECIES];
-//         EOS::molecular_weight(mwt);
-//         int iv[3] = {i,j,k};
+//         // TODO: Make sure other flux values are updated as well, if necessary
 // 
 //         // overwrite fluxes on all ext_dir boundaries
 //         if ((bcr[dir] == amrex::BCType::ext_dir) and (iv[dir] == domlo[dir])) {
@@ -333,17 +332,17 @@ pc_compute_hyp_mol_flux(
 //           EoN = (E[0]*E[0] + E[1]*E[1] + E[2]*E[2]) / ndens;
 //           // Use EoN to get Te for electron flux at the boundary
 //           ExtrapTe(EoN, &Te);
+//           flx[dir](i, j, k, URHO) = 0.0;
 //           for(int n=0; n<NUM_SPECIES; n++){
 //             if(n == E_ID){
-//               flx[dir](i, j, k, UFS + n) = -0.5 * spr[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-//               // printf("flx[%i](%i, %i, %i, %i) = %.6e\n", dir, i, j, k, n, flx[dir](i, j, k, UFS + n));
+//               flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
 //               // printf("factor(%i, %i, %i, %i) = %.6e\n", i, j, k, n, pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) );
 //               // printf("spr(%i, %i, %i, %i) = %.6e\n", i, j, k, n, spr[n]);
 //             }
-//             else{
-//               flx[dir](i, j, k, UFS + n) = -0.5 * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-//               printf("flx[%i](%i, %i, %i, %i) = %.6e\n", dir, i, j, k, n, flx[dir](i, j, k, UFS + n));
+//             if(n != E_ID && K_cc(i,j,k,n) != 0){
+//               flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
 //             }
+//             flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
 //           }
 //         }
 //         if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
@@ -354,20 +353,21 @@ pc_compute_hyp_mol_flux(
 //             if (n != E_ID) ndens += qtempl[R_P] * Xstar[n] / (kB * Ttemp);
 //           }
 //           // Use the number density to calculate the reduced electric field strength
+//           // TODO fix, replace with derived quantity
 //           EoN = (E[0]*E[0] + E[1]*E[1] + E[2]*E[2]) / ndens;
 //           // Use EoN to get Te for electron flux at the boundary
 //           ExtrapTe(EoN, &Te);
+//           flx[dir](i, j, k, URHO) = 0.0;
 //           for(int n=0; n<NUM_SPECIES; n++){
 //             if(n == E_ID){
-//               flx[dir](i, j, k, UFS + n) = 0.5 * spl[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-//               // printf("flx[%i](%i, %i, %i, %i) = %.6e\n", dir, i, j, k, n, flx[dir](i, j, k, UFS + n));
+//               flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
 //               // printf("factor(%i, %i, %i, %i) = %.6e\n", i, j, k, n, pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) );
 //               // printf("spl(%i, %i, %i, %i) = %.6e\n", i, j, k, n, spl[n]);
 //             }
-//             else{
-//               flx[dir](i, j, k, UFS + n) = 0.5 * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-//               printf("flx[%i](%i, %i, %i, %i) = %.6e\n", dir, i, j, k, n, flx[dir](i, j, k, UFS + n));
+//             if(n != E_ID && K_cc(i,j,k,n) != 0){
+//               flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
 //             }
+//             flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
 //           }
 //         }
 #endif
