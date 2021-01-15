@@ -74,6 +74,8 @@ int  PeleC::ef_GMRES_size = 10;
 int  PeleC::ef_GMRES_maxRst = 1;
 amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
 int  PeleC::ef_GMRES_verbose = 0;
+int PeleC::ion_bc_type = 0;
+amrex::Real PeleC::secondary_em_coef = 0.0;
 #endif
 
 #include "pelec_defaults.H"
@@ -350,6 +352,11 @@ PeleC::read_params()
   }
 #endif
 
+#ifdef PELEC_USE_PLASMA
+  pp.query("ion_bc_type", ion_bc_type);
+  pp.query("secondary_em_coef", secondary_em_coef);
+#endif
+
   // Read tagging parameters
   read_tagging_params();
 
@@ -474,12 +481,12 @@ PeleC::PeleC(
 #ifdef PELEC_USE_PLASMA
   Efield.define(grids, dmap, NUM_E, NUM_GROW, amrex::MFInfo(), Factory());
   redEfield.define(grids, dmap, 1, NUM_GROW, amrex::MFInfo(), Factory());
-  KSpec_old.define(grids,dmap,NUM_SPECIES,1); 
-  KSpec_new.define(grids,dmap,NUM_SPECIES,1); 
+  KSpec_old.define(grids,dmap,NUM_SPECIES, NUM_GROW); 
+  KSpec_new.define(grids,dmap,NUM_SPECIES, NUM_GROW); 
   spec_drift.define(grids,dmap,NUM_E*NUM_SPECIES,NUM_GROW); 
-  coeffs_old.define(grids,dmap,NUM_SPECIES+3,1); 
-  Q_ext.define(grids,dmap,NQ,1); 
-  Qaux_ext.define(grids,dmap,NQAUX,1); 
+  coeffs_old.define(grids,dmap,NUM_SPECIES+3, NUM_GROW); 
+  Q_ext.define(grids,dmap,NQ,NUM_GROW); 
+  Qaux_ext.define(grids,dmap,NQAUX,NUM_GROW); 
 #endif
 
   // Don't need this in pure C++?

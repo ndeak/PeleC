@@ -21,10 +21,13 @@ pc_compute_hyp_mol_flux(
   ,
   const amrex::Array4<const amrex::Real>& K_cc,
   const amrex::Array4<const amrex::Real>& E_cc,
-   const amrex::Array4<amrex::Real>& drift_cc,
+  const amrex::Array4<amrex::Real>& drift_cc,
+  const amrex::Array4<amrex::Real>& eon,
   const int* bcr,
   const amrex::Geometry& geom,
-  const int do_harmonic
+  const int do_harmonic,
+  const int ion_bc_type,
+  const amrex::Real secondary_em_coef
 #endif
 #ifdef PELEC_USE_EB
   ,
@@ -184,7 +187,6 @@ pc_compute_hyp_mol_flux(
         // ndeak note - because ebox is contracted in the dir direction,
         // we do not index out when we access i-1, j-1, etc. 
   
-        int iv[3] = {i,j,k};
 
         // get cell-edge mobilities for each species (includes charge sign)
         amrex::Real c[NUM_SPECIES];
@@ -313,63 +315,83 @@ pc_compute_hyp_mol_flux(
         }
 
 #ifdef PELEC_USE_PLASMA 
-//         // Overwrite species fluxes at the electrode boundaries
-//         // Calculate number density at the interior cell (0th order approx for now)
-//         // assumes Y_k at ghost cell is equal to interior value at ext_dir boundary,
-//         // so doesn't matter which species array we take from for now
-//         // TODO: make sure calculation of EoN is in units of Td
-//         // TODO: Make sure other flux values are updated as well, if necessary
-// 
-//         // overwrite fluxes on all ext_dir boundaries
-//         if ((bcr[dir] == amrex::BCType::ext_dir) and (iv[dir] == domlo[dir])) {
-//           // Calculate number density at cell edge, assuming for now it is equal to the interior cell value
-//           EOS::Y2X(spr, Xstar);
-//           EOS::RYP2T(qtempr[R_RHO], spr, qtempr[R_P], Ttemp);
-//           for(int n=0; n<NUM_SPECIES; n++) {
-//             if (n != E_ID) ndens += qtempr[R_P] * Xstar[n] / (kB * Ttemp);
-//           }
-//           // Use the number density to calculate the reduced electric field strength
-//           EoN = (E[0]*E[0] + E[1]*E[1] + E[2]*E[2]) / ndens;
-//           // Use EoN to get Te for electron flux at the boundary
-//           ExtrapTe(EoN, &Te);
-//           flx[dir](i, j, k, URHO) = 0.0;
-//           for(int n=0; n<NUM_SPECIES; n++){
-//             if(n == E_ID){
-//               flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-//               // printf("factor(%i, %i, %i, %i) = %.6e\n", i, j, k, n, pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) );
-//               // printf("spr(%i, %i, %i, %i) = %.6e\n", i, j, k, n, spr[n]);
-//             }
-//             if(n != E_ID && K_cc(i,j,k,n) != 0){
-//               flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-//             }
-//             flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
-//           }
-//         }
-//         if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
-//           // Calculate number density at cell edge, assuming for now it is equal to the interior cell value
-//           EOS::Y2X(spl, Xstar);
-//           EOS::RYP2T(qtempl[R_RHO], spl, qtempl[R_P], Ttemp);
-//           for(int n=0; n<NUM_SPECIES; n++) {
-//             if (n != E_ID) ndens += qtempl[R_P] * Xstar[n] / (kB * Ttemp);
-//           }
-//           // Use the number density to calculate the reduced electric field strength
-//           // TODO fix, replace with derived quantity
-//           EoN = (E[0]*E[0] + E[1]*E[1] + E[2]*E[2]) / ndens;
-//           // Use EoN to get Te for electron flux at the boundary
-//           ExtrapTe(EoN, &Te);
-//           flx[dir](i, j, k, URHO) = 0.0;
-//           for(int n=0; n<NUM_SPECIES; n++){
-//             if(n == E_ID){
-//               flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-//               // printf("factor(%i, %i, %i, %i) = %.6e\n", i, j, k, n, pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) );
-//               // printf("spl(%i, %i, %i, %i) = %.6e\n", i, j, k, n, spl[n]);
-//             }
-//             if(n != E_ID && K_cc(i,j,k,n) != 0){
-//               flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
-//             }
-//             flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
-//           }
-//         }
+        // Overwrite species fluxes at the electrode boundaries
+        // Calculate number density at the interior cell (0th order approx for now)
+        // assumes Y_k at ghost cell is equal to interior value at ext_dir boundary,
+        // so doesn't matter which species array we take from for now
+        // TODO: make sure calculation of EoN is in units of Td
+        // TODO: Make sure other flux values are updated as well, if necessary
+
+        int iv[3] = {i,j,k};
+        amrex::Real ionFlux = 0.0;
+
+        // overwrite fluxes on all ext_dir boundaries
+        if ((bcr[dir] == amrex::BCType::ext_dir) and (iv[dir] == domlo[dir])) {
+          // Use EoN to get Te for electron flux at the boundary
+          ExtrapTe(eon(i, j, k, 0), &Te);
+          flx[dir](i, j, k, URHO) = 0.0;
+          for(int n=0; n<NUM_SPECIES; n++){
+            flx[dir](i, j, k, UFS + n) = 0.0;
+            if(n == E_ID){
+              flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+            }
+            if(n != E_ID && K_cc(i,j,k,n) != 0){
+              if(ion_bc_type == 0){
+                flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+              }
+              else if(ion_bc_type == 1){
+                if((K_cc(i,j,k,n) < 0 && E[dir] > 0) || (K_cc(i,j,k,n) > 0 && E[dir] < 0)){
+                  flx[dir](i, j, k, UFS + n) = qtempr[R_RHO] * spr[n] * c[n] * E[dir] * a[dir](i, j, k);
+                }
+                else{
+                  flx[dir](i, j, k, UFS + n) = 0.0;
+                }
+              }
+              else{
+                printf("Ion BC type not supported!\n");
+                exit(1);
+              }
+              // Save ion flux for secondary electron emissions and convert to number density
+              ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+            }
+            flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
+          }
+          flx[dir](i, j, k, UFS + E_ID) += 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+        }
+        if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
+          ExtrapTe(eon(ii, jj, kk, 0), &Te);
+          flx[dir](i, j, k, URHO) = 0.0;
+          for(int n=0; n<NUM_SPECIES; n++){
+            flx[dir](i, j, k, UFS + n) = 0.0;
+            if(n == E_ID){
+              flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+            }
+            if(n != E_ID && K_cc(i,j,k,n) != 0){
+              if(ion_bc_type == 0){
+                flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
+              }
+              else if(ion_bc_type == 1){
+                if((K_cc(i,j,k,n) < 0 && E[dir] < 0) || (K_cc(i,j,k,n) > 0 && E[dir] > 0)){
+                  flx[dir](i, j, k, UFS + n) = qtempl[R_RHO] * spl[n] * c[n] * E[dir] * a[dir](i, j, k);
+                }
+                else{
+                  flx[dir](i, j, k, UFS + n) = 0.0;
+                }
+              }
+              else{
+                printf("Ion BC type not supported!\n");
+                exit(1);
+              }
+              // Save ion flux for secondary electron emissions and convert to number density
+              ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+            }
+            flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
+          }
+
+          // Add on secondary electron emission based on ion fluxes
+          // It is assumed that electrode boundary is an absolutely absorbing wall
+          flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+        }
 #endif
       });
   }

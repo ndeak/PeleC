@@ -1,5 +1,5 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
-max_step = 100
+max_step = 10000
 stop_time = 100.0
 
 # PROBLEM SIZE & GEOMETRY
@@ -8,8 +8,9 @@ geometry.coord_sys   =  0       # 0 => cart
 geometry.prob_lo     =  0    0    0 
 geometry.prob_hi     =  1.0  1.0  1.0
 amr.n_cell           =  256 256 256
-amr.n_cell           =  128 128 128
-amr.n_cell           =  64 64 64
+#amr.n_cell           =  256 256 256
+#amr.n_cell           =  128 128 128
+#amr.n_cell           =  16 16 16
 #amr.n_cell           =  32 32 32
 #amr.n_cell           =  64   80   64
 
@@ -25,22 +26,30 @@ pelec.eb_boundary_T = 300.
 pelec.eb_isothermal = 1
 pelec.chem_integrator = 2
 ode.implicit_solve = 1
+#ode.iverbose = 4
+ode.analytical_jacobian = 0
+#cvode.solve_type = "dense"
+cvode.solve_type = "GMRES"
+
+# Plasma variables
+pelec.ion_bc_type = 1
+pelec.secondary_em_coef = 0.05
 
 # WHICH PHYSICS
-pelec.do_hydro = 0
+pelec.do_hydro = 1
 pelec.do_mol = 1
 pelec.do_react = 1
-pelec.diffuse_temp = 0
-pelec.diffuse_vel  = 0
-pelec.diffuse_spec = 0
-pelec.diffuse_enth = 0
+pelec.diffuse_temp = 1
+pelec.diffuse_vel  = 1
+pelec.diffuse_spec = 1
+pelec.diffuse_enth = 1
 
 # TIME STEP CONTROL
 pelec.dt_cutoff      = 5.e-20  # level 0 timestep below which we halt
 pelec.cfl            = 0.3     # cfl number for hyperbolic system
 pelec.init_shrink    = 0.8    # scale back initial timestep
 pelec.change_max     = 1.05     # maximum increase in dt over successive steps
-pelec.max_dt = 1.0e-9
+pelec.max_dt = 1.0e-11
 
 # DIAGNOSTICS & VERBOSITY
 pelec.sum_interval   = 1       # timesteps between computing mass
@@ -63,7 +72,7 @@ amr.check_int       = -1       # number of timesteps between checkpoints
 # PLOTFILES
 amr.plot_files_output = 1
 amr.plot_file       = plt
-amr.plot_int        = 1
+amr.plot_int        = 1000
 amr.derive_plot_vars=ALL
 pelec.plot_massfrac = true
 
@@ -95,7 +104,7 @@ prob.vx_in =  0.0
 prob.vy_in =  0.0
 prob.Re_L = 1.0
 prob.Pr = 0.7
-prob.phiV_top = 24463.0
+prob.phiV_bottom = 24463.0
 
 #fabarray.mfiter_tile_size = 1024 1024 1024
 amrex.fpe_trap_invalid = 1

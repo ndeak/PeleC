@@ -107,16 +107,18 @@ PeleC::getMOLSrcTerm(
 //    step 1b: Use primitive variables to calculate ion diffusivities
 //    step 1c: Leave electron diffusivity alone, it is handled in ef transport fcn
 // step 2: Call the ef transport fcn
-  for (amrex::MFIter mfi(S, amrex::TilingIfNotGPU()); mfi.isValid();
+  for (amrex::MFIter mfi(MOLSrcTerm, amrex::TilingIfNotGPU()); mfi.isValid();
          ++mfi) {
     const amrex::Box& tbox = mfi.tilebox();
+    int ng = S.nGrow();
+    const amrex::Box gbox = amrex::grow(tbox, ng);
     auto const& s = S.array(mfi);
     auto const& q = Q_ext.array(mfi);
     auto const& qaux = Qaux_ext.array(mfi);
     {
         BL_PROFILE("PeleC::ctoprim()");
         amrex::ParallelFor(
-          tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             pc_ctoprim(i, j, k, s, q, qaux);
         });
     }
@@ -136,7 +138,7 @@ PeleC::getMOLSrcTerm(
       get_transport_coeffs(tbox, qar_yin, qar_Tin, qar_rhoin, coe_rhoD, coe_mu, coe_xi,coe_lambda);
     });
   }
-  
+
   // Get the cc species transport properties
   ef_calc_transport(S, time); 
 
@@ -178,7 +180,6 @@ PeleC::getMOLSrcTerm(
   //     printf("Ks(%i,%i,%i,O2-) = %.6e\n", i,j,k, Ks(i,j,k,9));
   //   });
   // }
-  // exit(1);
   
   // Obtain potential BCRec to use late
   const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
@@ -326,6 +327,7 @@ PeleC::getMOLSrcTerm(
       auto const& K_cc = KSpec_old.array(mfi);
       auto const& E_cc = Efield.array(mfi);
       auto const& drift_cc = spec_drift.array(mfi);
+      auto const& eon = redEfield.array(mfi);
 #endif
       const amrex::GpuArray<
         const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
@@ -475,7 +477,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, a, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            K_cc, E_cc, drift_cc, PhiVbc, geom, do_harmonic
+            K_cc, E_cc, drift_cc, eon, PhiVbc, geom, do_harmonic, ion_bc_type, secondary_em_coef
 #endif
 #ifdef PELEC_USE_EB
             ,

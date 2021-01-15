@@ -347,6 +347,8 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   for (MFIter mfi(S, TilingIfNotGPU()); mfi.isValid(); ++mfi)
   {
      const amrex::Box& tbox = mfi.tilebox();
+     int ng = S.nGrow();
+     const amrex::Box gbox = amrex::grow(tbox, ng);
      auto const& rhoY = S.array(mfi,UFS);
      auto const& T    = Q_ext.array(mfi,QTEMP);
      auto const& rhoD = coeffs_old.array(mfi,dComp_rhoD);
@@ -354,7 +356,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      // auto const& De   = De_cc.array(mfi);
      auto const& Ks   = KSpec_old.array(mfi);
      Real factor = EFConst::PP_RU_MKS / ( EFConst::Na * EFConst::elemCharge );
-     amrex::ParallelFor(tbox, [rhoY, T, factor, Ks, rhoD]
+     amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rhoD]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
         getKappaE(i,j,k,E_ID,Ks);
@@ -362,7 +364,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      });
      Real mwt[NUM_SPECIES];
      EOS::molecular_weight(mwt);
-     amrex::ParallelFor(tbox, [rhoY, rhoD, T, Ks, mwt]
+     amrex::ParallelFor(gbox, [rhoY, rhoD, T, Ks, mwt]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
         getKappaSp(i,j,k, mwt, zk, rhoY, rhoD, T, Ks);

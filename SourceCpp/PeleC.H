@@ -817,6 +817,11 @@ protected:
   amrex::MultiFab mms_source;
 #endif
 
+#ifdef PELEC_USE_PLASMA
+  static int ion_bc_type;
+  static amrex::Real secondary_em_coef;
+#endif
+
   // bool FillPatchedOldState_ok;
 
   // There can be only one Diffusion object, it covers all levels:

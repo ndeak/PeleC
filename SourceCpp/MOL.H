@@ -116,9 +116,12 @@ void pc_compute_hyp_mol_flux(
   const amrex::Array4<const amrex::Real>& K_cc,
   const amrex::Array4<const amrex::Real>& E_cc,   
   const amrex::Array4<amrex::Real>& drift_cc,
+  const amrex::Array4<amrex::Real>& eon,
   const int* bcr,
   const amrex::Geometry& geom,
-  const int do_harmonic
+  const int do_harmonic,
+  const int ion_bc_type,
+  const amrex::Real secondary_em_coef
 #endif
 #ifdef PELEC_USE_EB
   ,

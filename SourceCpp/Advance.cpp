@@ -276,18 +276,18 @@ PeleC::do_mol_advance(
   }
 
   // Setting efield to zero while testing reactions
-  for (amrex::MFIter mfi(S_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-    const amrex::Box& tbox = mfi.tilebox();
-    const auto Efab = Efield.array(mfi);
-    const auto redEfab = redEfield.array(mfi);
-    amrex::ParallelFor(
-      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        Efab(i,j,k,0) = 0.0;
-        Efab(i,j,k,1) = 0.0;
-        Efab(i,j,k,2) = 0.0;
-        redEfab(i,j,k,0) = 0.0;
-      });
-  }
+  // for (amrex::MFIter mfi(S_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+  //   const amrex::Box& tbox = mfi.tilebox();
+  //   const auto Efab = Efield.array(mfi);
+  //   const auto redEfab = redEfield.array(mfi);
+  //   amrex::ParallelFor(
+  //     tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //       Efab(i,j,k,0) = 0.0;
+  //       Efab(i,j,k,1) = 0.0;
+  //       Efab(i,j,k,2) = 0.0;
+  //       redEfab(i,j,k,0) = 0.0;
+  //     });
+  // }
 
   // Fill ghost cells in same way as in SolveEfield.cpp for now (probably better way to do this?)
   Efield.FillBoundary(geom.periodicity());
@@ -322,6 +322,7 @@ PeleC::do_mol_advance(
   FillPatch(*this, Sborder, nGrowTr, time, State_Type, 0, NVAR);
   amrex::Real flux_factor = 0;
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
+
 
   // Build other (neither spray nor diffusion) sources at t_old
   for (int n = 0; n < src_list.size(); ++n) {
