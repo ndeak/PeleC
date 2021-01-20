@@ -692,6 +692,7 @@ protected:
   static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;    // Species charges
 
 // Non-linear solve data
+  amrex::Real                nl_dt;
   amrex::Real                nl_stateNorm;
   amrex::Real                nl_residNorm;
   amrex::MultiFab            nl_state;
