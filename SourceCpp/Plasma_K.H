@@ -1,5 +1,5 @@
-#ifndef PeleLM_EF_K_H_
-#define PeleLM_EF_K_H_
+#ifndef Plasma_K_H_
+#define Plasma_K_H_
 
 #include <AMReX_REAL.H>
 
