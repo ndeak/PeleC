@@ -1619,6 +1619,10 @@ PeleC::errorEst(
 #ifdef PELEC_USE_EB
       const auto vfrac_arr = vfrac.array(mfi);
 #endif
+#ifdef PELEC_USE_PLASMA
+      const auto redEfield_arr = redEfield.array(mfi);
+      const auto ne_arr = S_data.array(mfi, UFS + E_ID);
+#endif
 
       amrex::FArrayBox S_derData(datbox, 1);
       amrex::Elixir S_derData_eli = S_derData.elixir();
@@ -1794,6 +1798,25 @@ PeleC::errorEst(
         amrex::ParallelFor(
           tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             tag_error_bounds(i, j, k, tag_arr, vfrac_arr, 0.0, 1.0, tagval);
+          });
+      }
+#endif
+
+#ifdef PELEC_USE_PLASMA
+      // Tagging reduced efield strength
+      if (level < TaggingParm::max_efield_lev) {
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_abserror(i, j, k, tag_arr, redEfield_arr, TaggingParm::efielderr, tagval);
+          });
+      }
+
+      // Tagging electron number density gradient
+      if (level < TaggingParm::max_negrad_lev) {
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_graderror(
+              i, j, k, tag_arr, ne_arr, TaggingParm::negraderr, tagval);
           });
       }
 #endif
