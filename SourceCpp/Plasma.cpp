@@ -58,16 +58,18 @@ PeleC::plasma_init()
 }
 
 void PeleC::plasma_define_data() {
-   nl_state.define(grids,dmap,2,2);
-   nl_resid.define(grids,dmap,2,2);
-   bg_charge.define(grids,dmap,1,1);
-   ef_state_old.define(grids,dmap,2,1);
+   if (ef_use_NLsolve) {
+      nl_state.define(grids,dmap,2,2);
+      nl_resid.define(grids,dmap,2,2);
+      bg_charge.define(grids,dmap,1,1);
+      ef_state_old.define(grids,dmap,2,1);
 
-   // Transport coefficients
-   diff_e.define(this);
-   De_ec = diff_e.get();
-   mob_e.define(this);
-   Ke_ec = mob_e.get();
+      // Transport coefficients
+      diff_e.define(this);
+      De_ec = diff_e.get();
+      mob_e.define(this);
+      Ke_ec = mob_e.get();
+   }
 }
 
 void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
@@ -111,54 +113,6 @@ void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
    }
 }
 
-// Setup BC conditions for linear Poisson solve on PhiV. Directly copied from the diffusion one ...
-void PeleC::setBCPhiV(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
-                      std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_hi) {
-
-   const BCRec& bc = get_desc_lst()[State_Type].getBC(PhiV);
-
-   for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
-   {
-      if (Geom().isPeriodic(idim))
-      {    
-         linOp_bc_lo[idim] = linOp_bc_hi[idim] = LinOpBCType::Periodic;
-      }    
-      else 
-      {
-         int pbc = bc.lo(idim);  
-         if (pbc == EXT_DIR)
-         {    
-            linOp_bc_lo[idim] = LinOpBCType::Dirichlet;
-         } 
-         else if (pbc == FOEXTRAP    ||
-                  pbc == REFLECT_EVEN )
-         {   
-            linOp_bc_lo[idim] = LinOpBCType::Neumann;
-         }   
-         else
-         {   
-            linOp_bc_lo[idim] = LinOpBCType::bogus;
-         }   
-         
-         pbc = bc.hi(idim);  
-         if (pbc == EXT_DIR)
-         {    
-            linOp_bc_hi[idim] = LinOpBCType::Dirichlet;
-         } 
-         else if (pbc == FOEXTRAP    ||
-                  pbc == REFLECT_EVEN )
-         {   
-            linOp_bc_hi[idim] = LinOpBCType::Neumann;
-         }   
-         else
-         {   
-            linOp_bc_hi[idim] = LinOpBCType::bogus;
-         }   
-      }
-   }
-
-}
-
 void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time) {
   BL_PROFILE("PeleC::ef_calc_transport()");
  
@@ -175,8 +129,8 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   // MultiFab& Kspec = (whichTime == AmrOldTime) ? KSpec_old : KSpec_new;
 
   // Get the cc transport coeffs. These are temporary.
-  MultiFab Ke_cc(grids,dmap,1,1);
-  MultiFab De_cc(grids,dmap,1,1);
+  //MultiFab Ke_cc(grids,dmap,1,1);
+  //MultiFab De_cc(grids,dmap,1,1);
 
   // Fillpatch the state 
   // ndeak note - not needed since S with boundary cells is provided as input
@@ -196,8 +150,8 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      auto const& rhoY = S.array(mfi,UFS);
      auto const& T    = Q_ext.array(mfi,QTEMP);
      auto const& rhoD = coeffs_old.array(mfi,dComp_rhoD);
-     auto const& Ke   = Ke_cc.array(mfi);
-     auto const& De   = De_cc.array(mfi);
+     //auto const& Ke   = Ke_cc.array(mfi);
+     //auto const& De   = De_cc.array(mfi);
      auto const& Ks   = KSpec_old.array(mfi);
      Real factor = EFConst::PP_RU_MKS / ( EFConst::Na * EFConst::elemCharge );
      amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rhoD]
@@ -362,4 +316,51 @@ void PeleC::ef_set_neBC(std::array<LinOpBCType,AMREX_SPACEDIM> &mlmg_lobc,
             }
         }
     }
+}
+
+// Setup BC conditions for linear Poisson solve on PhiV. Directly copied from the diffusion one ...
+void PeleC::setBCPhiV(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
+                      std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_hi) {
+
+   const BCRec& bc = get_desc_lst()[State_Type].getBC(PhiV);
+
+   for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
+   {
+      if (Geom().isPeriodic(idim))
+      {    
+         linOp_bc_lo[idim] = linOp_bc_hi[idim] = LinOpBCType::Periodic;
+      }    
+      else 
+      {
+         int pbc = bc.lo(idim);  
+         if (pbc == EXT_DIR)
+         {    
+            linOp_bc_lo[idim] = LinOpBCType::Dirichlet;
+         } 
+         else if (pbc == FOEXTRAP    ||
+                  pbc == REFLECT_EVEN )
+         {   
+            linOp_bc_lo[idim] = LinOpBCType::Neumann;
+         }   
+         else
+         {   
+            linOp_bc_lo[idim] = LinOpBCType::bogus;
+         }   
+         
+         pbc = bc.hi(idim);  
+         if (pbc == EXT_DIR)
+         {    
+            linOp_bc_hi[idim] = LinOpBCType::Dirichlet;
+         } 
+         else if (pbc == FOEXTRAP    ||
+                  pbc == REFLECT_EVEN )
+         {   
+            linOp_bc_hi[idim] = LinOpBCType::Neumann;
+         }   
+         else
+         {   
+            linOp_bc_hi[idim] = LinOpBCType::bogus;
+         }   
+      }
+   }
 }
