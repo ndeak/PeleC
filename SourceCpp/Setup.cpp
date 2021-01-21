@@ -179,7 +179,7 @@ PeleC::variableSetUp()
 #endif
 
 #ifdef PELEC_USE_PLASMA
-  ef_init();
+  plasma_init();
 #endif
 
   //

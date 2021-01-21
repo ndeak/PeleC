@@ -58,24 +58,30 @@ int PeleC::pstateDia = -1;
 int PeleC::pstateRho = -1;
 int PeleC::pstateY = -1;
 int PeleC::pstateNum = 0;
+
 #ifdef PELEC_USE_PLASMA
 int PeleC::PhiV = -1;
 int PeleC::nE = -1;
 int PeleC::ef_verbose = 0;
 int PeleC::ef_debug = 0;
-amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
-bool PeleC::def_harm_avg_cen2edge  = false;
-int  PeleC::ef_use_PETSC_direct = 0;
-amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
-int  PeleC::ef_diffT_jfnk = 1;
-int  PeleC::ef_maxNewtonIter = 10;
-amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
-int  PeleC::ef_GMRES_size = 10;
-int  PeleC::ef_GMRES_maxRst = 1;
-amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
-int  PeleC::ef_GMRES_verbose = 0;
+int PeleC::ef_use_NLsolve = 0;
+int PeleC::ef_use_PETSC_direct = 0;
+int PeleC::ef_diffT_jfnk = 1;
+int PeleC::ef_maxNewtonIter = 10;
+int PeleC::ef_GMRES_size = 10;
+int PeleC::ef_GMRES_maxRst = 1;
+int PeleC::ef_GMRES_verbose = 0;
+int PeleC::ef_PoissonVerbose = 0;
+int PeleC::ef_PoissonMaxOrder = 2;
+int PeleC::ef_PoissonMaxIter = 100;
 int PeleC::ion_bc_type = 0;
+bool PeleC::def_harm_avg_cen2edge  = false;
+amrex::Real PeleC::ef_PoissonTol = 1.0e-12;
+amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
+amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
+amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
 amrex::Real PeleC::secondary_em_coef = 0.0;
+amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
 #endif
 
 #include "pelec_defaults.H"
@@ -508,6 +514,11 @@ PeleC::PeleC(
   if (use_explicit_filter) {
     init_filters();
   }
+
+#ifdef PELEC_USE_PLASMA
+  // Define data specific to Plasma
+  plasma_define_data();
+#endif
 }
 
 PeleC::~PeleC() {}
@@ -708,8 +719,8 @@ PeleC::initData()
   enforce_consistent_e(S_new);
 
 #ifdef PELEC_USE_PLASMA
-  // Compute PhiV
-   amrex::Real cur_time = state[State_Type].curTime();
+  // Compute initial PhiV
+  amrex::Real cur_time = state[State_Type].curTime();
   solveEF( cur_time, 0.0 );
 #endif
 
