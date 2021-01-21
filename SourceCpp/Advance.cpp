@@ -8,6 +8,7 @@
 #include "prob.H"
 #ifdef PELEC_USE_PLASMA
 #include <PlasmaBCFill.H>
+#include <FluxBoxes.H>
 #endif
 
 amrex::Real
@@ -115,6 +116,15 @@ PeleC::do_mol_advance(
   // Copy back into Sborder? (probably better way to do this...)
   Sborder.copy(Phiborder, 0, PhiV, 1, 1, 1); 
   FillPatch(*this, Sborder, nGrowTr, time, State_Type, 0, NVAR);
+
+  // ---------------------------------
+  // LE : example using ef_calcGradPhiV
+  // FluxBoxes gphi(this,1,0);
+  // MultiFab** gradPhiV = gphi.get();
+
+  // ef_calcGradPhiV(time, Phiborder, gradPhiV);
+  // if (level == 1 ) amrex::Abort("There");
+  // ---------------------------------
  
   // Print the potential to verify BCs
   // for (amrex::MFIter mfi(Phiborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {

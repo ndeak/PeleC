@@ -93,10 +93,11 @@ void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
 
    MultiFab phiV_crse;
    if (level > 0) {
-      amrex::Abort("ef_calcGradPhiV need to be modified for ML");
       auto& crselev = getLevel(level-1);
       phiV_crse.define(crselev.grids, crselev.dmap, 1, 0, MFInfo(), crselev.Factory());
-      FillPatch(crselev,phiV_crse,0,time_lcl, State_Type, PhiV, 1, 0);
+      MultiFab state_c(crselev.grids, crselev.dmap, NVAR, 0);
+      FillPatch(crselev,state_c,0,time_lcl, State_Type, 0, NVAR, 0);
+      MultiFab::Copy(phiV_crse,state_c,PhiV,0,1,0);
       poisson.setCoarseFineBC(&phiV_crse, crse_ratio[0]);
    }
    poisson.setLevelBC(0, &a_phiv);
