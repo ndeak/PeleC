@@ -46,6 +46,7 @@ PeleC::solveEF ( Real time,
 #ifdef _OPENMP
 #pragma omp parallel
 #endif
+   // TODO set charge to be equal to sum of ion/electron num densities
    for (MFIter mfi(chargeDistib,true); mfi.isValid(); ++mfi)
    {   
        const Box& bx = mfi.tilebox();
@@ -161,8 +162,6 @@ PeleC::solveEF ( Real time,
 // Setup a MG solver
 /////////////////////////////////////   
    MLMG mlmg(poissonOP);
-   // ndeak add
-   printf("finished MLMH setup!\n");
 
    // relative and absolute tolerances for linear solve
    const Real tol_rel = 1.e-8;
@@ -173,8 +172,27 @@ PeleC::solveEF ( Real time,
    // Solve linear system
    //phiV_alias.setVal(0.0); // initial guess for phi
    mlmg.solve({&phiV_alias}, {&chargeDistib}, tol_rel, tol_abs);
-   // ndeak add
-   printf("finished MLMH solve!\n");
 
+   // Copy solution into interior of border array
+   for (MFIter mfi(phiV_alias,true); mfi.isValid(); ++mfi)
+   {
+       const Box& bx = mfi.tilebox();
+       const auto& phiValias_ar = phiV_alias.array(mfi);
+       const auto& phiVborders_ar = phiV_borders.array(mfi);
+       amrex::ParallelFor(bx,
+       [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+       {
+         phiVborders_ar(i, j, k) = phiValias_ar(i, j, k);
+       });
+   }
+
+   // Calculate efield components
+   gphi.clear();
+   gphi.define(this,1,NUM_GROW);
+   gradPhiV = gphi.get();
+
+   ef_calcGradPhiV(time, phiV_borders, gradPhiV);
+   Efield_edge = {AMREX_D_DECL(gradPhiV[0], gradPhiV[1], gradPhiV[2])};
+   average_face_to_cellcenter(Efield, 0, Efield_edge);
 }
 

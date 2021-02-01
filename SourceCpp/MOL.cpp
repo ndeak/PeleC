@@ -23,6 +23,7 @@ pc_compute_hyp_mol_flux(
   const amrex::Array4<const amrex::Real>& E_cc,
   const amrex::Array4<amrex::Real>& drift_cc,
   const amrex::Array4<amrex::Real>& eon,
+  std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge,
   const int* bcr,
   const amrex::Geometry& geom,
   const int do_harmonic,
@@ -192,17 +193,12 @@ pc_compute_hyp_mol_flux(
         amrex::Real c[NUM_SPECIES];
         for(int n=0; n<NUM_SPECIES; n++)
           c[n] = 0.5 * (K_cc(i,j,k,n) + K_cc(ii,jj,kk,n));
-          // pc_move_transcoefs_to_ec(i, j, k, n, K_cc, c, dir, true);
-
-        // Get cell-edge electric field components
-        amrex::Real E[NUM_E];
-        for(int n=0; n<NUM_E; n++)
-          E[n] = 0.5 * (E_cc(i,j,k,n) + E_cc(ii,jj,kk,n));
-          // pc_move_transcoefs_to_ec(i, j, k, n, E_cc, c, dir, true);
-      
+        
         // Calculate the cell-edge drift velocity
         for(int n=0; n<NUM_SPECIES; n++){
-          drift_tmp[n] = c[n] * E[dir];
+          drift_tmp[n] = 0.0;
+          // TODO terrible way to filter out extra ghost nodes, find way to expand E_edge MFs
+          drift_tmp[n] = c[n] * E_edge[dir](i,j,k);
         }
 
         // Store cell-center drift velocity for time step estimation
@@ -284,7 +280,7 @@ pc_compute_hyp_mol_flux(
 
 
           // Re-evaluate species mass fractions based on corrections          
-          mfgd[n] = flux_tmp[UFS + n] / (tmp5 * (tmp0 + drift_tmp[n]));
+          // mfgd[n] = flux_tmp[UFS + n] / (tmp5 * (tmp0 + drift_tmp[n]));
         }
       
         // TODO: should the Godunov states (density pressure velocity) be re-evaluated as well? 
@@ -340,8 +336,8 @@ pc_compute_hyp_mol_flux(
                 flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
               }
               else if(ion_bc_type == 1){
-                if((K_cc(i,j,k,n) < 0 && E[dir] > 0) || (K_cc(i,j,k,n) > 0 && E[dir] < 0)){
-                  flx[dir](i, j, k, UFS + n) = qtempr[R_RHO] * spr[n] * c[n] * E[dir] * a[dir](i, j, k);
+                if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) > 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) < 0)){
+                  flx[dir](i, j, k, UFS + n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](i,j,k) * a[dir](i, j, k);
                 }
                 else{
                   flx[dir](i, j, k, UFS + n) = 0.0;
@@ -371,8 +367,8 @@ pc_compute_hyp_mol_flux(
                 flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
               }
               else if(ion_bc_type == 1){
-                if((K_cc(i,j,k,n) < 0 && E[dir] < 0) || (K_cc(i,j,k,n) > 0 && E[dir] > 0)){
-                  flx[dir](i, j, k, UFS + n) = qtempl[R_RHO] * spl[n] * c[n] * E[dir] * a[dir](i, j, k);
+                if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) < 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) > 0)){
+                  flx[dir](i, j, k, UFS + n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](i,j,k) * a[dir](i, j, k);
                 }
                 else{
                   flx[dir](i, j, k, UFS + n) = 0.0;
@@ -393,6 +389,7 @@ pc_compute_hyp_mol_flux(
           flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
         }
 #endif
+
       });
   }
 

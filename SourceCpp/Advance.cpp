@@ -100,95 +100,41 @@ PeleC::do_mol_advance(
   // Compute PhiV
   solveEF( time, dt );
 
-  // Fill potential ghost cells in same way as in SolveEfield.cpp for now (probably better way to do this?)
-  amrex::MultiFab Phiborder(grids, dmap, 1, 1, amrex::MFInfo(), Factory());
-  Phiborder.copy(S_old,PhiV,0,1,0,0);
-  Phiborder.FillBoundary(geom.periodicity());
-  const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
-  const int* phiVbc = bcphiV.data();
-  const amrex::Vector<amrex::BCRec>& bc = {bcphiV};
-  if (not geom.isAllPeriodic()) {
-    amrex::GpuBndryFuncFab<PhiVFill> bf(PhiVFill{});
-    amrex::PhysBCFunct<amrex::GpuBndryFuncFab<PhiVFill> > phiVf(geom, bc, bf);
-    phiVf(Phiborder, 0, 1, Phiborder.nGrowVect(), time, 0);
-  }
-
-  // Copy back into Sborder? (probably better way to do this...)
-  Sborder.copy(Phiborder, 0, PhiV, 1, 1, 1); 
-  FillPatch(*this, Sborder, nGrowTr, time, State_Type, 0, NVAR);
-
-  // ---------------------------------
-  // LE : example using ef_calcGradPhiV
-  // FluxBoxes gphi(this,1,0);
-  // MultiFab** gradPhiV = gphi.get();
-
-  // ef_calcGradPhiV(time, Phiborder, gradPhiV);
-  // if (level == 1 ) amrex::Abort("There");
-  // ---------------------------------
- 
   // Print the potential to verify BCs
-  // for (amrex::MFIter mfi(Phiborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-  //   const amrex::Box& tbox = mfi.tilebox();
-  //   int ng = Phiborder.nGrow();
-  //   const amrex::Box gbox = amrex::grow(tbox, ng);
-  //   const auto Ufab = Sborder.array(mfi);
-  //   amrex::ParallelFor(
-  //     gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //       printf("PhiV(%i, %i, %i) = %.6e\n", i, j, k, Ufab(i, j, k, PhiV));
-  //     });
-  // }
-
-  // Calculate derived quantities (efield components and magnitude)
-  for (amrex::MFIter mfi(S_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-    const amrex::Box& tbox = mfi.tilebox();
-    const auto datbox = S_old[mfi].box();
-
-    pc_derEfieldx(datbox, Efield[mfi], 0, PhiV, Sborder[mfi], geom, time, phiVbc, level);
-    pc_derEfieldy(datbox, Efield[mfi], 1, PhiV, Sborder[mfi], geom, time, phiVbc, level);
-#if AMREX_SPACEDIM == 3
-    pc_derEfieldz(datbox, Efield[mfi], 2, PhiV, Sborder[mfi], geom, time, phiVbc, level);
-#endif
-    pc_derredEfield(datbox, redEfield[mfi], 0, PhiV, Sborder[mfi], geom, time, phiVbc, level);
-  }
-
-  // Setting efield to zero while testing reactions
-  // for (amrex::MFIter mfi(S_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-  //   const amrex::Box& tbox = mfi.tilebox();
-  //   const auto Efab = Efield.array(mfi);
-  //   const auto redEfab = redEfield.array(mfi);
-  //   amrex::ParallelFor(
-  //     tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //       Efab(i,j,k,0) = 0.0;
-  //       Efab(i,j,k,1) = 0.0;
-  //       Efab(i,j,k,2) = 0.0;
-  //       redEfab(i,j,k,0) = 0.0;
-  //     });
-  // }
-
-  // Fill ghost cells in same way as in SolveEfield.cpp for now (probably better way to do this?)
-  Efield.FillBoundary(geom.periodicity());
-  const amrex::BCRec& bcEfield = get_desc_lst()[State_Type].getBC(PhiV);    // Valid to use same BCRec as PhiV?
-  // const int* Efieldbc = bcEfield.data();
-  const amrex::Vector<amrex::BCRec>& Ebc = {bcEfield};
-  if (not geom.isAllPeriodic()) {
-    amrex::GpuBndryFuncFab<EfieldFillExtDir> Ebf(EfieldFillExtDir{});
-    amrex::PhysBCFunct<amrex::GpuBndryFuncFab<EfieldFillExtDir> > Efieldf(geom, Ebc, Ebf);
-    Efieldf(Efield, 0, NUM_E, Efield.nGrowVect(), time, 0);
-  }
-
   // for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-  //    const amrex::Box& tbox = mfi.tilebox();
-  //    int ng = Phiborder.nGrow();
-  //    const amrex::Box gbox = amrex::grow(tbox, ng);
-  //    const auto Efab = Efield.array(mfi);
-  //    const auto redEfab = redEfield.array(mfi);
-  //    amrex::ParallelFor(
-  //      gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //        printf("Efield(%i, %i, 0) = %.6e\n", i, j, Efab(i,j,k,0));
-  //        printf("Efield(%i, %i, 1) = %.6e\n", i, j, Efab(i,j,k,1));
-  //        printf("redEfield(%i, %i) = %.6e\n", i, j, redEfab(i,j,k));
-  //      });
+  //   const amrex::Box& tbox = mfi.tilebox();
+  //   int ng = Sborder.nGrow();
+  //   const amrex::Box gbox = amrex::grow(tbox, ng);
+  //   std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge_arr = {AMREX_D_DECL(Efield_edge[0]->array(mfi), Efield_edge[1]->array(mfi), Efield_edge[2]->array(mfi))} ;
+  //   for(int d=0; d<AMREX_SPACEDIM; d++){
+  //     // const auto Eedge = Efield_edge[d]->array(mfi);
+  //     amrex::ParallelFor(
+  //       gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //         printf("edge efield(%i, %i, %i, %i) = %.6e\n", i, j, k, d, E_edge_arr[d](i, j, k, 0));
+  //       });
+  //   }
   // }
+
+  amrex::Real mwt[NUM_SPECIES];
+  EOS::molecular_weight(mwt);
+  amrex::Real NA = 6.0221409e23; // 1/mol
+
+  // Calculate the reduced electric field strength
+  FillPatch(*this, Sborder, nGrowTr, time, State_Type, 0, NVAR);
+  for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+     const amrex::Box& tbox = mfi.tilebox();
+     int ng = Sborder.nGrow();
+     const amrex::Box gbox = amrex::grow(tbox, NUM_GROW);
+     const auto Efab = Efield.array(mfi);
+     const auto redEfab = redEfield.array(mfi);
+     const auto Sfab = Sborder.array(mfi);
+     amrex::ParallelFor(
+       gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         amrex::Real ndens = 0.0;
+         for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * NA;
+         redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Efab(i,j,k,0)*Efab(i,j,k,0), + Efab(i,j,k,1)*Efab(i,j,k,1), + Efab(i,j,k,2)*Efab(i,j,k,2))) / ndens * 1e17;
+       });
+  }
 #endif
 
   // Compute S^{n} = MOLRhs(U^{n})

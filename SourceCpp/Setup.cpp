@@ -682,11 +682,11 @@ PeleC::variableSetUp()
   derive_lst.add(
     "Efieldy", amrex::IndexType::TheCellType(), 1, pc_derEfieldy, grow_box_by_one);
   derive_lst.addComponent("Efieldy", desc_lst, State_Type, Density, NVAR);
-
+#if AMREX_SPACEDIM == 3
   derive_lst.add(
     "Efieldz", amrex::IndexType::TheCellType(), 1, pc_derEfieldz, grow_box_by_one);
   derive_lst.addComponent("Efieldz", desc_lst, State_Type, Density, NVAR);
-
+#endif
   derive_lst.add(
     "redEfield", amrex::IndexType::TheCellType(), 1, pc_derredEfield, grow_box_by_one);
   derive_lst.addComponent("redEfield", desc_lst, State_Type, Density, NVAR);
