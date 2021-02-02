@@ -107,6 +107,9 @@ set_z_vel_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
 static int phiV_bc[] = {INT_DIR,      EXT_DIR,      FOEXTRAP, REFLECT_EVEN,
                         EXT_DIR, REFLECT_EVEN, EXT_DIR};
 
+static int ne_bc[] =   {INT_DIR,      EXT_DIR,      FOEXTRAP, REFLECT_EVEN,
+                        FOEXTRAP, REFLECT_EVEN, EXT_DIR};
+
 static void
 set_phiV_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
 {
@@ -115,6 +118,17 @@ set_phiV_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
   for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
     bc.setLo(dir, phiV_bc[lo_bc[dir]]);
     bc.setHi(dir, phiV_bc[hi_bc[dir]]);
+  }
+}
+
+static void
+set_nE_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
+{
+  const int* lo_bc = phys_bc.lo();
+  const int* hi_bc = phys_bc.hi();
+  for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
+    bc.setLo(dir, ne_bc[lo_bc[dir]]);
+    bc.setHi(dir, ne_bc[hi_bc[dir]]);
   }
 }
 #endif
@@ -389,7 +403,7 @@ PeleC::variableSetUp()
   name[cnt] = "phiV";
   // Add nE. TODO: for now assumes nE has same physical BC as regular species
   cnt++;
-  set_scalar_bc(bc, phys_bc);
+  set_nE_bc(bc, phys_bc);
   bcs[cnt] = bc;
   name[cnt] = "nE";
 
@@ -683,9 +697,11 @@ PeleC::variableSetUp()
     "Efieldy", amrex::IndexType::TheCellType(), 1, pc_derEfieldy, grow_box_by_one);
   derive_lst.addComponent("Efieldy", desc_lst, State_Type, Density, NVAR);
 
+#if (AMREX_SPACEDIM == 3)
   derive_lst.add(
     "Efieldz", amrex::IndexType::TheCellType(), 1, pc_derEfieldz, grow_box_by_one);
   derive_lst.addComponent("Efieldz", desc_lst, State_Type, Density, NVAR);
+#endif
 
   derive_lst.add(
     "redEfield", amrex::IndexType::TheCellType(), 1, pc_derredEfield, grow_box_by_one);
