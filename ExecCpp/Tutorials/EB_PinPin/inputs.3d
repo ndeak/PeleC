@@ -1,16 +1,15 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
-max_step = 10000
+max_step = 2500
 stop_time = 100.0
 
 # PROBLEM SIZE & GEOMETRY
 geometry.is_periodic =  1   0  1
 geometry.coord_sys   =  0       # 0 => cart
 geometry.prob_lo     =  0    0    0 
-geometry.prob_hi     =  1.0  1.0  1.0
-amr.n_cell           =  256 256 256
-#amr.n_cell           =  256 256 256
-#amr.n_cell           =  128 128 128
-#amr.n_cell           =  16 16 16
+geometry.prob_hi     =  0.125  1.0  0.125
+#amr.n_cell           =  32 256 32
+#amr.n_cell           =  16 128 16
+amr.n_cell           =  8 64 8
 #amr.n_cell           =  32 32 32
 #amr.n_cell           =  64   80   64
 
@@ -28,12 +27,13 @@ pelec.chem_integrator = 2
 ode.implicit_solve = 1
 #ode.iverbose = 4
 ode.analytical_jacobian = 0
-#cvode.solve_type = "dense"
-cvode.solve_type = "GMRES"
+cvode.solve_type = "dense"
+#cvode.solve_type = "GMRES"
 
 # Plasma variables
 pelec.ion_bc_type = 1
 pelec.secondary_em_coef = 0.05
+ef.use_nonLinearSolve = 0
 
 # WHICH PHYSICS
 pelec.do_hydro = 1
@@ -49,7 +49,7 @@ pelec.dt_cutoff      = 5.e-20  # level 0 timestep below which we halt
 pelec.cfl            = 0.3     # cfl number for hyperbolic system
 pelec.init_shrink    = 0.8    # scale back initial timestep
 pelec.change_max     = 1.05     # maximum increase in dt over successive steps
-pelec.max_dt = 1.0e-11
+pelec.fixed_dt = 4.0e-11
 
 # DIAGNOSTICS & VERBOSITY
 pelec.sum_interval   = 1       # timesteps between computing mass
@@ -58,11 +58,18 @@ amr.v                = 1       # verbosity in Amr.cpp
 #amr.grid_log         = grdlog  # name of grid logging file
 
 # REFINEMENT / REGRIDDING
-amr.max_level       = 1       # maximum level number allowed
+amr.max_level       = 2       # maximum level number allowed
 amr.ref_ratio       = 2 2 2 2 # refinement ratio
 amr.regrid_int      = 2       # how often to regrid
-amr.blocking_factor = 16       # block factor in grid generation
+amr.blocking_factor = 8       # block factor in grid generation
 amr.max_grid_size   = 64 
+#amr.subcycling_mode = None
+
+# TAGGING
+tagging.efielderr = 200
+tagging.max_efield_lev = 2
+tagging.negraderr = 1.0e-34
+tagging.max_negrad_lev = 2
 
 # CHECKPOINT FILES
 amr.checkpoint_files_output = 0
