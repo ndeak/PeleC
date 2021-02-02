@@ -46,6 +46,9 @@
   amrex::MultiFab     coeffs_old;         // Species diffusivities (used to calculate mobilities)
   amrex::MultiFab     Q_ext;  
   amrex::MultiFab     Qaux_ext;  
+  std::array<const amrex::MultiFab* ,AMREX_SPACEDIM> Efield_edge;
+  FluxBoxes gphi;
+  amrex::MultiFab** gradPhiV;
 
   // Non-linear solve MFs/data
   // Transport

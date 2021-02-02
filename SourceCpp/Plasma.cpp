@@ -129,6 +129,11 @@ void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
    }
    poisson.setLevelBC(0, &a_phiv);
 
+   grad_phiV[0]->setVal(0.0);
+   grad_phiV[1]->setVal(0.0);
+#if AMREX_SPACEDIM == 3
+   grad_phiV[2]->setVal(0.0);
+#endif
    // Linear solver
    MLMG mlmg(poisson);
    std::array<MultiFab*,AMREX_SPACEDIM> fp{D_DECL(grad_phiV[0],grad_phiV[1],grad_phiV[2])};

@@ -34,6 +34,14 @@ AMREX_GPU_DEVICE_MANAGED int max_ftracgrad_lev = 10;
 
 AMREX_GPU_DEVICE_MANAGED amrex::Real vfracerr = 1.0e10;
 AMREX_GPU_DEVICE_MANAGED int max_vfracerr_lev = 10;
+
+#ifdef PELEC_USE_PLASMA
+AMREX_GPU_DEVICE_MANAGED amrex::Real efielderr = 1.0e10;
+AMREX_GPU_DEVICE_MANAGED int max_efield_lev = 10;
+
+AMREX_GPU_DEVICE_MANAGED amrex::Real negraderr = 1.0e10;
+AMREX_GPU_DEVICE_MANAGED int max_negrad_lev = 10;
+#endif
 } // namespace TaggingParm
 
 void
@@ -71,4 +79,12 @@ PeleC::read_tagging_params()
 
   pp.query("vfracerr", TaggingParm::vfracerr);
   pp.query("max_vfracerr_lev", TaggingParm::max_vfracerr_lev);
+
+#ifdef PELEC_USE_PLASMA
+  pp.query("efielderr", TaggingParm::efielderr);
+  pp.query("max_efield_lev", TaggingParm::max_efield_lev);
+
+  pp.query("negraderr", TaggingParm::negraderr);
+  pp.query("max_negrad_lev", TaggingParm::max_negrad_lev);
+#endif
 }

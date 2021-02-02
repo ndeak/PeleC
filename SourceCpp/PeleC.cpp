@@ -488,14 +488,15 @@ PeleC::PeleC(
 #endif
 
 #ifdef PELEC_USE_PLASMA
-  Efield.define(grids, dmap, NUM_E, NUM_GROW, amrex::MFInfo(), Factory());
-  redEfield.define(grids, dmap, 1, NUM_GROW, amrex::MFInfo(), Factory());
-  KSpec_old.define(grids,dmap,NUM_SPECIES, NUM_GROW); 
-  KSpec_new.define(grids,dmap,NUM_SPECIES, NUM_GROW); 
-  spec_drift.define(grids,dmap,NUM_E*NUM_SPECIES,NUM_GROW); 
-  coeffs_old.define(grids,dmap,NUM_SPECIES+3, NUM_GROW); 
-  Q_ext.define(grids,dmap,NQ,NUM_GROW); 
-  Qaux_ext.define(grids,dmap,NQAUX,NUM_GROW); 
+  // TODO Solve Poisson problem for potential, and fill in E components and redE after creating
+  Efield.define(grids, dmap, NUM_E, NUM_GROW, amrex::MFInfo(), Factory()); Efield.setVal(0.0);
+  redEfield.define(grids, dmap, 1, NUM_GROW, amrex::MFInfo(), Factory()); redEfield.setVal(0.0);
+  KSpec_old.define(grids,dmap,NUM_SPECIES, NUM_GROW); KSpec_old.setVal(0.0);
+  KSpec_new.define(grids,dmap,NUM_SPECIES, NUM_GROW); KSpec_new.setVal(0.0);
+  spec_drift.define(grids,dmap,NUM_E*NUM_SPECIES,NUM_GROW); spec_drift.setVal(0.0);
+  coeffs_old.define(grids,dmap,NUM_SPECIES+3, NUM_GROW); coeffs_old.setVal(0.0);
+  Q_ext.define(grids,dmap,NQ,NUM_GROW); Q_ext.setVal(0.0);
+  Qaux_ext.define(grids,dmap,NQAUX,NUM_GROW); Qaux_ext.setVal(0.0);
 #endif
 
   // Don't need this in pure C++?
@@ -809,6 +810,7 @@ PeleC::init()
 
   amrex::Real dt_old =
     (cur_time - prev_time) / (amrex::Real)parent->MaxRefRatio(level - 1);
+
 
   setTimeLevel(cur_time, dt_old, dt);
   amrex::MultiFab& S_new = get_new_data(State_Type);
@@ -1629,8 +1631,7 @@ PeleC::errorEst(
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
   {
-    for (amrex::MFIter mfi(S_data, amrex::TilingIfNotGPU()); mfi.isValid();
-         ++mfi) {
+    for (amrex::MFIter mfi(S_data , amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& tilebox = mfi.tilebox();
       const auto Sfab = S_data.array(mfi);
       auto tag_arr = tags.array(mfi);
@@ -1639,6 +1640,10 @@ PeleC::errorEst(
 
 #ifdef PELEC_USE_EB
       const auto vfrac_arr = vfrac.array(mfi);
+#endif
+#ifdef PELEC_USE_PLASMA
+      const auto redEfield_arr = redEfield.array(mfi);
+      const auto ne_arr = S_data.array(mfi, UFS + E_ID);
 #endif
 
       amrex::FArrayBox S_derData(datbox, 1);
@@ -1815,6 +1820,25 @@ PeleC::errorEst(
         amrex::ParallelFor(
           tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             tag_error_bounds(i, j, k, tag_arr, vfrac_arr, 0.0, 1.0, tagval);
+          });
+      }
+#endif
+
+#ifdef PELEC_USE_PLASMA
+      // Tagging reduced efield strength
+      if (level < TaggingParm::max_efield_lev) {
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_abserror(i, j, k, tag_arr, redEfield_arr, TaggingParm::efielderr, tagval);
+          });
+      }
+
+      // Tagging electron number density gradient
+      if (level < TaggingParm::max_negrad_lev) {
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_graderror(
+              i, j, k, tag_arr, ne_arr, TaggingParm::negraderr, tagval);
           });
       }
 #endif

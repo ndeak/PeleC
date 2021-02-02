@@ -37,6 +37,14 @@ extern AMREX_GPU_DEVICE_MANAGED int max_ftracgrad_lev;
 
 extern AMREX_GPU_DEVICE_MANAGED amrex::Real vfracerr;
 extern AMREX_GPU_DEVICE_MANAGED int max_vfracerr_lev;
+
+#ifdef PELEC_USE_PLASMA
+extern AMREX_GPU_DEVICE_MANAGED int max_efield_lev;
+extern AMREX_GPU_DEVICE_MANAGED amrex::Real efielderr;
+
+extern AMREX_GPU_DEVICE_MANAGED int max_negrad_lev;
+extern AMREX_GPU_DEVICE_MANAGED amrex::Real negraderr;
+#endif
 } // namespace TaggingParm
 
 AMREX_GPU_HOST_DEVICE
@@ -78,6 +86,7 @@ tag_graderror(
     amrex::Real az = amrex::Math::abs(field(i, j, k + 1) - field(i, j, k));
     ,
     az = amrex::max(az, amrex::Math::abs(field(i, j, k) - field(i, j, k - 1)));)
+
 #if AMREX_SPACEDIM > 1
   if (amrex::max(AMREX_D_DECL(ax, ay, az)) >= fieldgrad)
 #elif AMREX_SPACEDIM == 1

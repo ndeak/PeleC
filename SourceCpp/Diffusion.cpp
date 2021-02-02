@@ -181,7 +181,7 @@ PeleC::getMOLSrcTerm(
   //   });
   // }
   
-  // Obtain potential BCRec to use late
+  // Obtain potential BCRec to use later
   const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
   const int* PhiVbc = bcphiV.data();
 #endif
@@ -328,6 +328,7 @@ PeleC::getMOLSrcTerm(
       auto const& E_cc = Efield.array(mfi);
       auto const& drift_cc = spec_drift.array(mfi);
       auto const& eon = redEfield.array(mfi);
+      std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge_arr = {AMREX_D_DECL(Efield_edge[0]->array(mfi), Efield_edge[1]->array(mfi), Efield_edge[2]->array(mfi))} ;
 #endif
       const amrex::GpuArray<
         const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
@@ -477,7 +478,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, a, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            K_cc, E_cc, drift_cc, eon, PhiVbc, geom, do_harmonic, ion_bc_type, secondary_em_coef
+            K_cc, E_cc, drift_cc, eon, E_edge_arr, PhiVbc, geom, do_harmonic, ion_bc_type, secondary_em_coef
 #endif
 #ifdef PELEC_USE_EB
             ,
