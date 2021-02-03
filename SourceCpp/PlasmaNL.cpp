@@ -265,7 +265,7 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
       auto const& charge   = bg_charge.const_array(mfi);
       auto const& res_nE   = a_nl_resid.array(mfi,1);
       auto const& res_phiV = a_nl_resid.array(mfi,0);
-      Real scalLap         = EFConst::eps0 * EFConst::epsr / EFConst::elemCharge;
+      Real scalLap         = EFConst::eps0_cgs * EFConst::epsr / EFConst::elemCharge;
       amrex::ParallelFor(bx, [ne_curr,ne_old,lapPhiV,I_R_nE,ne_diff,ne_adv,charge,res_nE,res_phiV,dt_lcl,scalLap]
       AMREX_GPU_DEVICE (int i, int j, int k) noexcept
       {    
@@ -636,7 +636,7 @@ void PeleC::ef_setUpPrecond (const Real &dt_lcl,
 
       if ( ef_PC_approx == 1 ) {                      // Simple identity approx
          pnp_pc_Stilda->setScalars(0.0,-1.0);
-         Real scalLap = EFConst::eps0 * EFConst::epsr / EFConst::elemCharge;
+         Real scalLap = EFConst::eps0_cgs * EFConst::epsr / EFConst::elemCharge;
          for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
             neKe_ec[dir]->mult(0.5*dt_lcl,0,1);
             neKe_ec[dir]->plus(scalLap,0,1);
@@ -651,7 +651,7 @@ void PeleC::ef_setUpPrecond (const Real &dt_lcl,
          }
       } else if ( ef_PC_approx == 2 ) {               // Inverse diagonal approx
          pnp_pc_Stilda->setScalars(0.0,-1.0);
-         Real scalLap = EFConst::eps0 * EFConst::epsr / EFConst::elemCharge;
+         Real scalLap = EFConst::eps0_cgs * EFConst::epsr / EFConst::elemCharge;
          for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
             Schur_neKe_ec[dir]->plus(scalLap,0,1);
          }
