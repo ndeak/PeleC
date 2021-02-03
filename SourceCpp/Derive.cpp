@@ -223,6 +223,7 @@ pc_derspec(
     });
 }
 
+
 void
 pc_dermagvort(
   const amrex::Box& bx,
@@ -936,5 +937,31 @@ pc_derredEfield(
     redEfield(i, j, k, 0) = redEfield(i, j, k, 0) / ndens * 1.0e17;
 
   });
+}
+
+void
+pc_derspecn(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int /*dcomp*/,
+  int /*ncomp*/,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& /*geomdata*/,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  const int /*level*/)
+{
+  auto const dat = datfab.array();
+  auto specn = derfab.array();
+
+  amrex::ParallelFor(
+    bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::Real Na = 6.022e23;
+      amrex::Real mwt[NUM_SPECIES] = {0.0};
+      EOS::molecular_weight(mwt);
+      for (int n = 0; n < NUM_SPECIES; n++) {
+         specn(i, j, k, n) = dat(i, j, k, UFS + n) / mwt[n] * Na;
+      }
+    });
 }
 #endif
