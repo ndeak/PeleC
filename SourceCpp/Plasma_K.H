@@ -11,13 +11,13 @@ void
 getKappaE(int i, int j, int k, int Ecomp,
           amrex::Array4<      amrex::Real> const& Ks) noexcept
 {
-  // ndeak note - calculates mobility in units of cm2/V-s
+  // ndeak note - calculates mobility in units of cm2/erg-s
    using namespace amrex::literals;
 
    Ks(i,j,k,Ecomp) = 0.4_rt;
   
    // TODO remove after testing against 1D code
-   Ks(i,j,k,Ecomp) = -483.13744177895;
+   Ks(i,j,k,Ecomp) = -483.13744177895e-7; // CGS cm2/erg-s
 }
 
 AMREX_GPU_HOST_DEVICE
@@ -56,7 +56,7 @@ getKappaSp(int i, int j, int k,
            amrex::Array4<const amrex::Real> const& T,
            amrex::Array4<      amrex::Real> const& Ksp) noexcept
 {
-   // ndeak note - returns mobility in units of cm2/V-s
+   // ndeak note - returns mobility in units of cm2/erg-s
    // mwt in units of g/mol
    // a_zk in units of C/kg
    // PP_RU_MKS in units of J/mol-K
@@ -78,12 +78,12 @@ getKappaSp(int i, int j, int k,
    // for (int n = 0; n < NUM_SPECIES; n++) {
    //    if(n != E_ID) Ksp(i,j,k,n) = 2.738979530 * amrex::Math::copysign(1.0, a_zk[n]);
    // }
-   Ksp(i, j, k, 4) = 2.738979530;
-   Ksp(i, j, k, 5) = 2.738979530;
-   Ksp(i, j, k, 6) = 2.738979530;
-   Ksp(i, j, k, 7) = 2.738979530;
-   Ksp(i, j, k, 8) = 2.738979530;
-   Ksp(i, j, k, 9) = -2.738979530;
+   Ksp(i, j, k, 4) = 2.738979530e-7;
+   Ksp(i, j, k, 5) = 2.738979530e-7;
+   Ksp(i, j, k, 6) = 2.738979530e-7;
+   Ksp(i, j, k, 7) = 2.738979530e-7;
+   Ksp(i, j, k, 8) = 2.738979530e-7;
+   Ksp(i, j, k, 9) = -2.738979530e-7;
 
 
 }
