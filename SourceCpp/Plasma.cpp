@@ -13,13 +13,13 @@ using namespace amrex;
 
 namespace EFConst
 {
-   //amrex::Real eps0 = 8.854187817e-12;          //Free space permittivity (C/(V.m))
-   amrex::Real eps0 = 8.854187817e-12 * 1.e-9;    //CGS
+   amrex::Real eps0 = 8.854187817e-12;                //Free space permittivity (C/(V.m))
+   amrex::Real eps0_cgs = 8.854187817e-12 * 1.0e-9;   //Free space permittivity (C/(erg.cm))
    amrex::Real epsr = 1.0;
    amrex::Real elemCharge = 1.60217662e-19;     //Coulomb per charge
    amrex::Real Na = 6.022e23;                   //Avogadro's number
    amrex::Real PP_RU_MKS = 8.31446261815324;    //Universal gas constant (J/mol-K)
-   amrex::Real PP_RU_CGS = 83144626.1815324;    //CGS
+   amrex::Real PP_RU_CGS = 83144626.1815324;    // (erg/mol-K)
 }
 
 void 
@@ -55,7 +55,6 @@ PeleC::plasma_init()
     pp.query("Precond_fixedIter",ef_PC_fixedIter);
     pp.query("Precond_SchurApprox",ef_PC_approx);
 
-
     // ndeak add - hard-coding charges for now
     // zk[0] = -1.0;
     // zk[1] =  0.0;
@@ -68,11 +67,11 @@ PeleC::plasma_init()
     // zk[8] =  1.0;
     // zk[9] = -1.0;
 
-    // get charge per unit  mass (C/g)
+    // get charge per unit mass (C/g) CGS
     Real zk_temp[NUM_SPECIES];
     EOS::charge_mass(zk_temp);
     for (int k = 0; k < NUM_SPECIES; k++) {
-       zk[k] = zk_temp[k] * 0.001;
+       zk[k] = zk_temp[k];
     }
 }
 
@@ -199,7 +198,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
         }
      });
      Real mwt[NUM_SPECIES];
-     EOS::molecular_weight(mwt);
+     EOS::molecular_weight(mwt);  // Return mwt in CGS
      amrex::ParallelFor(gbox, [rhoY, rhoD, T, Ks, mwt]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
