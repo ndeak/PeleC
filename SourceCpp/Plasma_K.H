@@ -17,7 +17,7 @@ getKappaE(int i, int j, int k, int Ecomp,
    Ks(i,j,k,Ecomp) = 0.4_rt;
   
    // TODO remove after testing against 1D code
-   Ks(i,j,k,Ecomp) = -483.13744177895e-7;
+   Ks(i,j,k,Ecomp) = -483.13744177895;
 }
 
 AMREX_GPU_HOST_DEVICE
@@ -71,19 +71,19 @@ getKappaSp(int i, int j, int k,
    //   if(n != E_ID) Ksp(i,j,k,n) = rhoD(i,j,k,n) * mwt[n] * 0.001 * a_zk[n] / ( rho * PP_RU_MKS * T(i,j,k) );
    //   // if ( n == E_ID ) Ksp(i,j,k,n) = 0.0;         // Set the E species mobility to zero. Electron are treated separately.
    //   // if ( n == 0 ) Ksp(i,j,k,n) = 0.0;         // Set the E species mobility to zero. Electron are treated separately.
-       Ksp(i,j,k,n) = 0.0;
+       if(n != E_ID) Ksp(i,j,k,n) = 0.0;
    }
 
    // TODO remove after testing 1D code
    // for (int n = 0; n < NUM_SPECIES; n++) {
    //    if(n != E_ID) Ksp(i,j,k,n) = 2.738979530 * amrex::Math::copysign(1.0, a_zk[n]);
    // }
-   Ksp(i, j, k, 4) = 2.738979530e-7;
-   Ksp(i, j, k, 5) = 2.738979530e-7;
-   Ksp(i, j, k, 6) = 2.738979530e-7;
-   Ksp(i, j, k, 7) = 2.738979530e-7;
-   Ksp(i, j, k, 8) = 2.738979530e-7;
-   Ksp(i, j, k, 9) = -2.738979530e-7;
+   Ksp(i, j, k, 4) = 2.738979530;
+   Ksp(i, j, k, 5) = 2.738979530;
+   Ksp(i, j, k, 6) = 2.738979530;
+   Ksp(i, j, k, 7) = 2.738979530;
+   Ksp(i, j, k, 8) = 2.738979530;
+   Ksp(i, j, k, 9) = -2.738979530;
 
 
 }
