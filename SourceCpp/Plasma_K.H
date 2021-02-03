@@ -58,17 +58,17 @@ getKappaSp(int i, int j, int k,
 {
    // ndeak note - returns mobility in units of cm2/erg-s
    // mwt in units of g/mol
-   // a_zk in units of C/kg
-   // PP_RU_MKS in units of J/mol-K
+   // a_zk in units of C/g
+   // PP_RU_CGS in units of erg/mol-K
    // mobility already takes into account different drift direction of + and - ions due to a_zk
    using namespace amrex::literals;
    amrex::Real rho = 0.0;
-   amrex::Real PP_RU_MKS = 8.31446261815324;
+   amrex::Real PP_RU_CGS = 83144626.1815324;
    for (int n = 0; n < NUM_SPECIES; n++) {
       rho += rhoY(i,j,k,n);
    }
    for (int n = 0; n < NUM_SPECIES; n++) {
-   //   if(n != E_ID) Ksp(i,j,k,n) = rhoD(i,j,k,n) * mwt[n] * 0.001 * a_zk[n] / ( rho * PP_RU_MKS * T(i,j,k) );
+   //   if(n != E_ID) Ksp(i,j,k,n) = rhoD(i,j,k,n) * mwt[n] * 0.001 * a_zk[n] / ( rho * PP_RU_CGS * T(i,j,k) );
    //   // if ( n == E_ID ) Ksp(i,j,k,n) = 0.0;         // Set the E species mobility to zero. Electron are treated separately.
    //   // if ( n == 0 ) Ksp(i,j,k,n) = 0.0;         // Set the E species mobility to zero. Electron are treated separately.
        if(n != E_ID) Ksp(i,j,k,n) = 0.0;
