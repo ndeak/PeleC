@@ -28,6 +28,7 @@ pc_compute_hyp_mol_flux(
   const amrex::Geometry& geom,
   const int do_harmonic,
   const int ion_bc_type,
+  const int use_NL,
   const amrex::Real secondary_em_coef
 #endif
 #ifdef PELEC_USE_EB
@@ -328,7 +329,7 @@ pc_compute_hyp_mol_flux(
           flx[dir](i, j, k, URHO) = 0.0;
           for(int n=0; n<NUM_SPECIES; n++){
             flx[dir](i, j, k, UFS + n) = 0.0;
-            if(n == E_ID){
+            if(n == E_ID && !use_NL){
               flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
             }
             if(n != E_ID && K_cc(i,j,k,n) != 0){
@@ -352,14 +353,14 @@ pc_compute_hyp_mol_flux(
             }
             flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
           }
-          flx[dir](i, j, k, UFS + E_ID) += 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) += 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
         }
         if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
           ExtrapTe(eon(ii, jj, kk, 0), &Te);
           flx[dir](i, j, k, URHO) = 0.0;
           for(int n=0; n<NUM_SPECIES; n++){
             flx[dir](i, j, k, UFS + n) = 0.0;
-            if(n == E_ID){
+            if(n == E_ID && !use_NL){
               flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * PI) ,0.5) * a[dir](i, j, k);
             }
             if(n != E_ID && K_cc(i,j,k,n) != 0){
@@ -386,7 +387,7 @@ pc_compute_hyp_mol_flux(
 
           // Add on secondary electron emission based on ion fluxes
           // It is assumed that electrode boundary is an absolutely absorbing wall
-          flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
         }
 #endif
 

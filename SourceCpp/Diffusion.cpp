@@ -478,7 +478,8 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, a, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            K_cc, E_cc, drift_cc, eon, E_edge_arr, PhiVbc, geom, do_harmonic, ion_bc_type, secondary_em_coef
+            K_cc, E_cc, drift_cc, eon, E_edge_arr, PhiVbc, geom, do_harmonic, 
+            ion_bc_type, ef_use_NLsolve, secondary_em_coef
 #endif
 #ifdef PELEC_USE_EB
             ,
