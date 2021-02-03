@@ -250,7 +250,7 @@ pc_compute_hyp_mol_flux(
         // Calculate new species and u momentum fluxes
         amrex::Real Xstar[NUM_SPECIES];
         amrex::Real ndens = 0.0;
-        amrex::Real kB = 1.380649e-16; // erg/K
+        amrex::Real kB = 1.380649e-16; // cm^2.g.s^-2/K
         amrex::Real NA = 6.0221409e23; // 1/mol
         amrex::Real Ttemp;
         double EoN, Te;
