@@ -66,7 +66,7 @@ amr.max_grid_size   = 64
 #amr.subcycling_mode = None
 
 # TAGGING
-tagging.efielderr = 200
+tagging.efielderr = 1000
 tagging.max_efield_lev = 2
 tagging.negraderr = 1.0e-34
 tagging.max_negrad_lev = 2
@@ -79,7 +79,7 @@ amr.check_int       = -1       # number of timesteps between checkpoints
 # PLOTFILES
 amr.plot_files_output = 1
 amr.plot_file       = plt
-amr.plot_int        = 1000
+amr.plot_int        = 200
 amr.derive_plot_vars=ALL
 pelec.plot_massfrac = true
 
@@ -111,7 +111,8 @@ prob.vx_in =  0.0
 prob.vy_in =  0.0
 prob.Re_L = 1.0
 prob.Pr = 0.7
-prob.phiV_bottom = 24463.0
+# Voltage in erg
+prob.phiV_bottom = 24463.0e7
 
 #fabarray.mfiter_tile_size = 1024 1024 1024
 amrex.fpe_trap_invalid = 1
