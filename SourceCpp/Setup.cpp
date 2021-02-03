@@ -108,7 +108,7 @@ static int phiV_bc[] = {INT_DIR,      EXT_DIR,      FOEXTRAP, REFLECT_EVEN,
                         EXT_DIR, REFLECT_EVEN, EXT_DIR};
 
 static int ne_bc[] =   {INT_DIR,      EXT_DIR,      FOEXTRAP, REFLECT_EVEN,
-                        FOEXTRAP, REFLECT_EVEN, EXT_DIR};
+                        REFLECT_EVEN, REFLECT_EVEN, EXT_DIR};
 
 static void
 set_phiV_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
@@ -403,7 +403,7 @@ PeleC::variableSetUp()
   name[cnt] = "phiV";
   // Add nE. TODO: for now assumes nE has same physical BC as regular species
   cnt++;
-  set_nE_bc(bc, phys_bc);
+  set_scalar_bc(bc, phys_bc);
   bcs[cnt] = bc;
   name[cnt] = "nE";
 
@@ -570,6 +570,17 @@ PeleC::variableSetUp()
     "massfrac", amrex::IndexType::TheCellType(), NUM_SPECIES,
     var_names_massfrac, pc_derspec, the_same_box);
   derive_lst.addComponent("massfrac", desc_lst, State_Type, Density, NVAR);
+
+#ifdef PELEC_USE_PLASMA
+  amrex::Vector<std::string> var_names_numdens(NUM_SPECIES);
+  for (int i = 0; i < NUM_SPECIES; i++) {
+    var_names_numdens[i] = "n(" + spec_names[i] + ")";
+  }
+  derive_lst.add(
+    "numdens", amrex::IndexType::TheCellType(), NUM_SPECIES,
+    var_names_numdens, pc_derspecn, the_same_box);
+  derive_lst.addComponent("numdens", desc_lst, State_Type, Density, NVAR);
+#endif
 
   //
   // Species mole fractions
