@@ -56,7 +56,7 @@ PeleC::solveEF ( Real time,
        const Real* dx      = geom.CellSize();
        const Real* problo  = geom.ProbLo();
        int useNL = ef_use_NLsolve;
-       Real        factor = -1.0 / ( EFConst::eps0  * EFConst::epsr);
+       Real        factor = -1.0 / ( EFConst::eps0_cgs  * EFConst::epsr);
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {
