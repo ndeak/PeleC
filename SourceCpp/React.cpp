@@ -5,6 +5,9 @@
 #ifdef USE_SUNDIALS_PP
 #include <reactor.h>
 #endif
+#ifdef PELEC_USE_PLASMA
+#include <Plasma.H>
+#endif
 
 void
 PeleC::react_state(
@@ -212,20 +215,26 @@ PeleC::react_state(
                  - rho_old * e_old) /
                 dt;
 
-              int offset =
-                (k - lo.z) * len.x * len.y + (j - lo.y) * len.x + (i - lo.x);
+              int offset = (k - lo.z) * len.x * len.y + (j - lo.y) * len.x + (i - lo.x);
               for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                rY_in[offset * (NUM_SPECIES + 1) + nsp] =
-                  sold_arr(i, j, k, UFS + nsp);
-                rY_src_in[offset * NUM_SPECIES + nsp] =
-                  nonrs_arr(i, j, k, UFS + nsp);
+                rY_in[offset * (NUM_SPECIES + 1) + nsp] = sold_arr(i, j, k, UFS + nsp);
+                rY_src_in[offset * NUM_SPECIES + nsp] = nonrs_arr(i, j, k, UFS + nsp);
               }
-              rY_in[offset * (NUM_SPECIES + 1) + NUM_SPECIES] =
-                sold_arr(i, j, k, UTEMP);
+              rY_in[offset * (NUM_SPECIES + 1) + NUM_SPECIES] = sold_arr(i, j, k, UTEMP);
               re_in[offset] = rho_old * e_old;
               re_src_in[offset] = rhoedot_ext;
 #ifdef PELEC_USE_PLASMA
               eon_in[offset] = eon(i, j, k, 0);
+              amrex::Real mwt[NUM_SPECIES] = {0.0};
+              EOS::molecular_weight(mwt);
+              if (ef_use_NLsolve) {
+                 // Pass electrons from nE AUX to rhoY_e
+                 rY_in[offset * (NUM_SPECIES + 1) + E_ID] = sold_arr(i, j, k, UFX+1) / EFConst::Na
+                                                            * mwt[E_ID];
+                 // Convert forcing on nE into forcing on rhoY_e
+                 rY_src_in[offset * NUM_SPECIES + E_ID] = nonrs_arr(i, j, k, UFX + 1) / EFConst::Na
+                                                            * mwt[E_ID];
+              }
 #endif
             });
 
@@ -287,10 +296,10 @@ PeleC::react_state(
               amrex::Real wmnew =
                 sold_arr(i, j, k, UMZ) + dt * nonrs_arr(i, j, k, UMZ);
 
+
               // get new rho
               amrex::Real rhonew = 0.;
-              int offset =
-                (k - lo.z) * len.x * len.y + (j - lo.y) * len.x + (i - lo.x);
+              int offset = (k - lo.z) * len.x * len.y + (j - lo.y) * len.x + (i - lo.x);
               for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
                 rhonew += rY_in[offset * (NUM_SPECIES + 1) + nsp];
               }
@@ -300,6 +309,16 @@ PeleC::react_state(
                 snew_arr(i, j, k, UMX) = umnew;
                 snew_arr(i, j, k, UMY) = vmnew;
                 snew_arr(i, j, k, UMZ) = wmnew;
+
+#ifdef PELEC_USE_PLASMA
+                // if non-linear solve : extract the new nE and set rhoY_e to zero
+                amrex::Real mwt[NUM_SPECIES] = {0.0};
+                EOS::molecular_weight(mwt);
+                snew_arr(i, j, k, UFX+1) = rY_in[offset * (NUM_SPECIES + 1) + E_ID] * EFConst::Na
+                                           / mwt[E_ID];
+                rY_in[offset * (NUM_SPECIES + 1) + E_ID] = 0.0;
+#endif
+
                 for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
                   snew_arr(i, j, k, UFS + nsp) =
                     rY_in[offset * (NUM_SPECIES + 1) + nsp];
@@ -321,6 +340,11 @@ PeleC::react_state(
                     / dt -
                   nonrs_arr(i, j, k, UFS + nsp);
               }
+#ifdef PELEC_USE_PLASMA
+              // Set reaction term for nE in place of the one of rhoY_e
+              I_R(i, j, k, E_ID) = ( snew_arr(i, j, k, UFX+1) - sold_arr(i, j, k, UFX+1) ) / dt -
+                                   nonrs_arr(i, j, k, UFX+1);
+#endif
               I_R(i, j, k, NUM_SPECIES) =
                 (rho_old * e_old + dt * rhoedot_ext // new internal energy
                  + 0.5 * (umnew * umnew + vmnew * vmnew + wmnew * wmnew) /
