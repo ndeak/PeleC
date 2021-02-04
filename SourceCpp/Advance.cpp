@@ -98,7 +98,9 @@ PeleC::do_mol_advance(
 
 #ifdef PELEC_USE_PLASMA
   // Compute PhiV
-  solveEF( time, dt );
+  if (!ef_use_NLsolve) {
+     solveEF( time, dt );
+  }
 
   // Print the potential to verify BCs
   // for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
