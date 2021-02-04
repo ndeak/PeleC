@@ -194,8 +194,8 @@ void PeleC::ef_solve_NL(const Real     &dt,
    for (MFIter mfi(forcing_nE,TilingIfNotGPU()); mfi.isValid(); ++mfi)
    {
       const Box& bx = mfi.tilebox();
-      auto const& old_nE   = ef_state_old.const_array(mfi);
-      auto const& new_nE   = nl_state.const_array(mfi);
+      auto const& old_nE   = ef_state_old.const_array(mfi,1);
+      auto const& new_nE   = nl_state.const_array(mfi,1);
       auto const& I_R_nE   = I_R_in.const_array(mfi,E_ID);
       auto const& force    = forcing_nE.array(mfi);
       Real dtinv           = 1.0 / nl_dt;
