@@ -175,7 +175,6 @@ void PeleC::ef_solve_NL(const Real     &dt,
 
       // Exit condition
       exit_newton = testExitNewton(nl_resid,NK_ite);
-      Abort();
 
    } while( !exit_newton );
    NK_tot_count += NK_ite;
@@ -557,7 +556,7 @@ void PeleC::ef_setUpPrecond (const Real &dt_lcl,
    {
       // Upwinded edge neKe values
       MultiFab nEKe(grids,dmap,1,1);
-      MultiFab nE_a(a_nl_state,amrex::make_alias,0,1);  // State is not scale at this point
+      MultiFab nE_a(a_nl_state,amrex::make_alias,1,1);  // State is not scale at this point
       MultiFab Schur_nEKe;
       if ( ef_PC_approx == 2 ) {
          Schur_nEKe.define(grids,dmap,1,1);
@@ -577,7 +576,7 @@ void PeleC::ef_setUpPrecond (const Real &dt_lcl,
          AMREX_GPU_DEVICE (int i, int j, int k) noexcept
          {
             getKappaE(i,j,k,0,neke);
-            neke(i,j,k) *= ne_arr(i,j,k);
+            neke(i,j,k) *= ne_arr(i,j,k) * -1.0;  // invert sign since getKappaE return negative kappa_e
             if ( do_Schur ) {
                Schur(i,j,k) = - dt_lcl * 0.5 * neke(i,j,k) / diag_a(i,j,k);
             }
@@ -690,10 +689,10 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
    //return;
 
    // Set up some aliases to make things easier
-   MultiFab a_ne(v,amrex::make_alias,0,1);
-   MultiFab a_phiV(v,amrex::make_alias,1,1);
-   MultiFab a_Pne(Pv,amrex::make_alias,0,1);
-   MultiFab a_PphiV(Pv,amrex::make_alias,1,1);
+   MultiFab a_ne(v,amrex::make_alias,1,1);
+   MultiFab a_phiV(v,amrex::make_alias,0,1);
+   MultiFab a_Pne(Pv,amrex::make_alias,1,1);
+   MultiFab a_PphiV(Pv,amrex::make_alias,0,1);
 
    // TODO: I need to initialize the result to zero otherwise MLMG goes nuts
    // or do I ?
@@ -763,14 +762,13 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
    // |           |
    // | 0   S*^-1 |
    // --         --
-   S_tol_abs = a_PphiV.norm0() * ef_PC_MG_Tol;
    MultiFab temp(grids,dmap,1,1);
    temp.setVal(0.0,0,1,0);
    // Scale the solve RHS
    a_PphiV.mult(FphiV_scale/phiV_scale);
+   S_tol_abs = a_PphiV.norm0() * ef_PC_MG_Tol;
    mg_Stilda->solve({&temp},{&a_PphiV}, S_tol, S_tol_abs);
    MultiFab::Copy(a_PphiV, temp, 0, 0, 1, 0);
-
 
    // Final mat
    // --                          --
