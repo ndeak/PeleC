@@ -191,10 +191,10 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      {
         if (useNL) {
            getKappaE(i,j,k,0,Ke);
-           getDiffE(i,j,k,0,factor,T,rhoY,Ke,De);
+           getDiffE(i,j,k,0,useNL,factor,T,rhoY,Ke,De);
         } else {
            getKappaE(i,j,k,E_ID,Ks);
-           getDiffE(i,j,k,E_ID,factor,T,rhoY,Ks,rhoD);
+           getDiffE(i,j,k,E_ID,useNL,factor,T,rhoY,Ks,rhoD);
         }
      });
      Real mwt[NUM_SPECIES];
