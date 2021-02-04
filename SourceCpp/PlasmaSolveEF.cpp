@@ -123,7 +123,7 @@ PeleC::solveEF ( Real time,
    }
    poissonOP.setBCoeffs(0, amrex::GetArrOfConstPtrs(bcoef));   
    Real ascal = 0.0;
-   Real bscal = 1.0;
+   Real bscal = -1.0;
    poissonOP.setScalars(ascal, bscal);
 
    // set Dirichlet BC for EB
