@@ -71,7 +71,8 @@ void PeleC::ef_solve_NL(const Real     &dt,
                         const Real     &time,
                         const MultiFab &state_in,      
                         const MultiFab &forcing_state,
-                        const MultiFab &I_R_in)
+                        const MultiFab &I_R_in,
+                              MultiFab &forcing_nE)
 {
    BL_PROFILE("PC_EF::ef_solve_NL()");
 
@@ -186,6 +187,26 @@ void PeleC::ef_solve_NL(const Real     &dt,
    nl_state.mult(nE_scale,1,1);
    nl_state.mult(phiV_scale,0,1);
 
+   // Compute forcing term on nE
+#ifdef _OPENMP   
+#pragma omp parallel if (Gpu::notInLaunchRegion())
+#endif
+   for (MFIter mfi(forcing_nE,TilingIfNotGPU()); mfi.isValid(); ++mfi)
+   {
+      const Box& bx = mfi.tilebox();
+      auto const& old_nE   = ef_state_old.const_array(mfi);
+      auto const& new_nE   = nl_state.const_array(mfi);
+      auto const& I_R_nE   = I_R_in.const_array(mfi,E_ID);
+      auto const& force    = forcing_nE.array(mfi);
+      Real dtinv           = 1.0 / nl_dt;
+      amrex::ParallelFor(bx, [old_nE, new_nE, I_R_nE, force, dtinv]
+      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+      {
+         force(i,j,k) = (new_nE(i,j,k) - old_nE(i,j,k)) * dtinv - I_R_nE(i,j,k);
+      });
+   }
+   if ( ef_debug ) VisMF::Write(forcing_nE,"NL_ForcingnE_Lvl"+std::to_string(level));
+
    Abort();
 }
 
@@ -255,7 +276,7 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
    for (MFIter mfi(a_nl_resid,TilingIfNotGPU()); mfi.isValid(); ++mfi)
    {
       const Box& bx = mfi.tilebox();
-      auto const& I_R_nE   = get_new_data(Reactions_Type).const_array(mfi,NUM_SPECIES);
+      auto const& I_R_nE   = get_new_data(Reactions_Type).const_array(mfi,E_ID);
       auto const& lapPhiV  = laplacian_term.const_array(mfi);
       auto const& ne_diff  = diffnE.const_array(mfi);
       auto const& ne_adv   = advnE.const_array(mfi);
@@ -268,7 +289,7 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
       amrex::ParallelFor(bx, [ne_curr,ne_old,lapPhiV,I_R_nE,ne_diff,ne_adv,charge,res_nE,res_phiV,dt_lcl,scalLap]
       AMREX_GPU_DEVICE (int i, int j, int k) noexcept
       {    
-         res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) + 0.0*I_R_nE(i,j,k) );
+         res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) + I_R_nE(i,j,k) );
          res_phiV(i,j,k) = lapPhiV(i,j,k) * scalLap - ne_curr(i,j,k) + charge(i,j,k);
       });  
    }

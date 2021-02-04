@@ -117,7 +117,8 @@
                     const amrex::Real      &time,
                     const amrex::MultiFab  &state_in,
                     const amrex::MultiFab  &Forcing_state,
-                    const amrex::MultiFab  &I_R_in);
+                    const amrex::MultiFab  &I_R_in,
+                          amrex::MultiFab  &Forcing_nE);
 
 // Newton exit test
   int testExitNewton(const amrex::MultiFab  &res,
