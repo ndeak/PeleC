@@ -150,7 +150,8 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve
-     ef_solve_NL(dt,time,Sborder,molSrc,I_R);
+     MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
+     ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);
   }
 #endif
 
