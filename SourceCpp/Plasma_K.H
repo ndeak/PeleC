@@ -24,6 +24,7 @@ AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void
 getDiffE(int i, int j, int k, int Ecomp, 
+         int use_NL,
          const amrex::Real &factor,
          amrex::Array4<const amrex::Real> const& T,
          amrex::Array4<const amrex::Real> const& rhoY,
@@ -34,14 +35,20 @@ getDiffE(int i, int j, int k, int Ecomp,
   // factor has units of J/K-C
    using namespace amrex::literals;
 
-   amrex::Real rho = 0.0;
-   for (int n = 0; n < NUM_SPECIES; n++) {
-      rho += rhoY(i,j,k,n);
-   }
-   rhoD(i,j,k,Ecomp) = rho * Ks(i,j,k,Ecomp) * T(i,j,k) * factor;
+   if ( use_NL ) {  // If using non-linear solve, don't * rho
+      rhoD(i,j,k,Ecomp) = Ks(i,j,k,Ecomp) * T(i,j,k) * factor;
+      // TODO remove after testing 1D code
+      rhoD(i,j,k,Ecomp) = 846.28133089;
+   } else {
+      amrex::Real rho = 0.0;
+      for (int n = 0; n < NUM_SPECIES; n++) {
+         rho += rhoY(i,j,k,n);
+      }
+      rhoD(i,j,k,Ecomp) = rho * Ks(i,j,k,Ecomp) * T(i,j,k) * factor;
 
-  // TODO remove after testing 1D code
-  rhoD(i,j,k,Ecomp) = rho * 846.28133089;
+      // TODO remove after testing 1D code
+      rhoD(i,j,k,Ecomp) = rho * 846.28133089;
+   }
 
 }
 
