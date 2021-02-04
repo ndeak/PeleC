@@ -312,11 +312,13 @@ PeleC::react_state(
 
 #ifdef PELEC_USE_PLASMA
                 // if non-linear solve : extract the new nE and set rhoY_e to zero
-                amrex::Real mwt[NUM_SPECIES] = {0.0};
-                EOS::molecular_weight(mwt);
-                snew_arr(i, j, k, UFX+1) = rY_in[offset * (NUM_SPECIES + 1) + E_ID] * EFConst::Na
-                                           / mwt[E_ID];
-                rY_in[offset * (NUM_SPECIES + 1) + E_ID] = 0.0;
+                if (ef_use_NLsolve) {
+                   amrex::Real mwt[NUM_SPECIES] = {0.0};
+                   EOS::molecular_weight(mwt);
+                   snew_arr(i, j, k, UFX+1) = rY_in[offset * (NUM_SPECIES + 1) + E_ID] * EFConst::Na
+                                              / mwt[E_ID];
+                   rY_in[offset * (NUM_SPECIES + 1) + E_ID] = 0.0;
+                }
 #endif
 
                 for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
@@ -341,9 +343,11 @@ PeleC::react_state(
                   nonrs_arr(i, j, k, UFS + nsp);
               }
 #ifdef PELEC_USE_PLASMA
-              // Set reaction term for nE in place of the one of rhoY_e
-              I_R(i, j, k, E_ID) = ( snew_arr(i, j, k, UFX+1) - sold_arr(i, j, k, UFX+1) ) / dt -
-                                   nonrs_arr(i, j, k, UFX+1);
+              if (ef_use_NLsolve) {
+                 // Set reaction term for nE in place of the one of rhoY_e
+                 I_R(i, j, k, E_ID) = ( snew_arr(i, j, k, UFX+1) - sold_arr(i, j, k, UFX+1) ) / dt -
+                                      nonrs_arr(i, j, k, UFX+1);
+              }
 #endif
               I_R(i, j, k, NUM_SPECIES) =
                 (rho_old * e_old + dt * rhoedot_ext // new internal energy
