@@ -329,6 +329,12 @@ PeleC::getMOLSrcTerm(
       auto const& drift_cc = spec_drift.array(mfi);
       auto const& eon = redEfield.array(mfi);
       std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge_arr = {AMREX_D_DECL(Efield_edge[0]->array(mfi), Efield_edge[1]->array(mfi), Efield_edge[2]->array(mfi))} ;
+      std::array<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> ionFlux_arr;
+      if (ef_use_NLsolve) {
+         ionFlux_arr = {AMREX_D_DECL(ionFlx[0]->array(mfi), ionFlx[1]->array(mfi), ionFlx[2]->array(mfi))};
+      } else { // For simplicity, just put useless stuff in there
+         ionFlux_arr = {AMREX_D_DECL(Efield.array(mfi),Efield.array(mfi),Efield.array(mfi))};
+      }
 #endif
       const amrex::GpuArray<
         const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
@@ -478,7 +484,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, a, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            K_cc, E_cc, drift_cc, eon, E_edge_arr, PhiVbc, geom, do_harmonic, 
+            K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, PhiVbc, geom, do_harmonic, 
             ion_bc_type, ef_use_NLsolve, secondary_em_coef
 #endif
 #ifdef PELEC_USE_EB
