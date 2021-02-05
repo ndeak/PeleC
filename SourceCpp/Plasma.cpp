@@ -17,7 +17,8 @@ namespace EFConst
    amrex::Real eps0_cgs = 8.854187817e-12 * 1.0e-9;   //Free space permittivity (C/(erg.cm))
    amrex::Real epsr = 1.0;
    amrex::Real elemCharge = 1.60217662e-19;     //Coulomb per charge
-   amrex::Real Na = 6.022e23;                   //Avogadro's number
+   amrex::Real Na = 6.0221409e23;                   //Avogadro's number
+   amrex::Real kB = 1.380649e-16;
    amrex::Real PP_RU_MKS = 8.31446261815324;    //Universal gas constant (J/mol-K)
    amrex::Real PP_RU_CGS = 83144626.1815324;    // (erg/mol-K)
 }
@@ -95,6 +96,13 @@ void PeleC::plasma_define_data() {
       De_ec = diff_e.get();
       mob_e.define(this);
       Ke_ec = mob_e.get();
+      gasN_fb.define(this);
+      gasN_ec = gasN_fb.get();
+      ionFlx_fb.define(this,1,3);
+      ionFlx = ionFlx_fb.get();
+      for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+         ionFlx[d]->setVal(0.0);
+      }
    }
 }
 
