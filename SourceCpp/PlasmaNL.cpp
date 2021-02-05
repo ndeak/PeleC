@@ -119,7 +119,10 @@ void PeleC::ef_solve_NL(const Real     &dt,
 
    // Compute the background charge distribution
    compute_bg_charge(nl_dt, state_in, forcing_state, I_R_in);
-   VisMF::Write(bg_charge,"bg_charge");
+   if ( ef_debug ) VisMF::Write(bg_charge,"NLBgCharge_Lvl"+std::to_string(level));
+
+   // Compute face-centered gas number density
+   compute_gasN(nl_dt, state_in, forcing_state, I_R_in);
 
    // Newton initial guess
    ef_normMF(nl_state,nl_stateNorm);
@@ -206,8 +209,6 @@ void PeleC::ef_solve_NL(const Real     &dt,
       });
    }
    if ( ef_debug ) VisMF::Write(forcing_nE,"NL_ForcingnE_Lvl"+std::to_string(level));
-
-   Abort();
 }
 
 int PeleC::testExitNewton(const MultiFab  &res,
@@ -410,20 +411,72 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
       {
          const Box& bx = mfi.tilebox();
          auto const& ueff    = elec_Ueff[d].array(mfi);
-         auto const& gphi_c  = gphiV[d]->const_array(mfi);
+         auto const& gphi    = gphiV[d]->const_array(mfi);
          //auto const& umac    = u_mac[d].const_array(mfi);
          auto const& kappa_e = Ke_ec[d]->const_array(mfi);
-         amrex::ParallelFor(bx, [ueff, gphi_c, kappa_e]
+         amrex::ParallelFor(bx, [ueff, gphi, kappa_e]
          AMREX_GPU_DEVICE (int i, int j, int k) noexcept
          {
             // TODO: Nick uses a negative kappa_E -> + Ke*gradPhi
-            // Don't account for umac now, need to find a way to get face average velocities
-            ueff(i,j,k) = kappa_e(i,j,k) * gphi_c(i,j,k);
+            // TODO: get the a face centered gas velocity in here
+            ueff(i,j,k) = kappa_e(i,j,k) * gphi(i,j,k);
          });
       }
    }
    if ( ef_debug ) VisMF::Write(elec_Ueff[0],"NLRes_ElecUeffX_"+std::to_string(level));
    if ( ef_debug ) VisMF::Write(elec_Ueff[1],"NLRes_ElecUeffY_"+std::to_string(level));
+
+   // ----------------------------------------------------
+   // Get face-centered E/N
+   // Update it at every calls --> maybe not necessary 
+   MultiFab EF_cc(grids,dmap,3,0);
+   std::array<const amrex::MultiFab* ,AMREX_SPACEDIM> EF_ec{AMREX_D_DECL(gphiV[0], gphiV[1], gphiV[2])};
+   average_face_to_cellcenter(EF_cc, 0, EF_ec);
+
+   MultiFab EFMag_cc(grids,dmap,1,1);
+#ifdef _OPENMP
+#pragma omp parallel if (Gpu::notInLaunchRegion())
+#endif
+   for (MFIter mfi(EF_cc,TilingIfNotGPU()); mfi.isValid(); ++mfi)
+   {
+      const Box& bx = mfi.tilebox();
+      const auto EF_ar = EF_cc.array(mfi);
+      const auto EFmag_ar = EFMag_cc.array(mfi);
+      amrex::ParallelFor(bx,
+      [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
+      {
+         EFmag_ar(i,j,k) = std::sqrt( AMREX_D_TERM(  EF_ar(i,j,k,0)*EF_ar(i,j,k,0),
+                                                   + EF_ar(i,j,k,1)*EF_ar(i,j,k,1), 
+                                                   + EF_ar(i,j,k,2)*EF_ar(i,j,k,2)) );
+         EFmag_ar(i,j,k) *= 1e-7 * 1e17;   // Scale erg -> V and to Td. The division by gasN comes later.
+      });
+   }
+   EFMag_cc.FillBoundary(0,1,geom.periodicity());
+   Extrapolater::FirstOrderExtrap(EFMag_cc, geom, 0, 1); // Fill ghost cells of EFMag_cc.
+
+   FluxBoxes EoN_fb(this);
+   MultiFab** EoN_ec = EoN_fb.get();
+   std::array<amrex::MultiFab*,AMREX_SPACEDIM> EoN_arr{AMREX_D_DECL(EoN_ec[0], EoN_ec[1], EoN_ec[2])};
+   average_cellcenter_to_face(EoN_arr, EFMag_cc, geom);
+
+   for (int dir = 0; dir < AMREX_SPACEDIM; dir++) 
+   {
+#ifdef _OPENMP
+#pragma omp parallel if (Gpu::notInLaunchRegion())
+#endif
+      for (MFIter mfi(*EoN_ec[dir],TilingIfNotGPU()); mfi.isValid(); ++mfi)
+      {
+         const Box& ebx = mfi.tilebox();
+         const auto EoN_ar = EoN_ec[dir]->array(mfi);
+         const auto gasN_ar = gasN_ec[dir]->const_array(mfi);
+         amrex::ParallelFor(ebx,
+         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
+         {
+            EoN_ar(i,j,k) /= gasN_ar(i,j,k);
+         });
+      }
+   }
+   // ------------------------------------------------------
 
    MultiFab nE_new(grids,dmap,1,1);
    nE_new.setVal(0.0);
@@ -433,6 +486,9 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
    {
       FArrayBox cflux[AMREX_SPACEDIM];
       FArrayBox edgstate[AMREX_SPACEDIM];
+
+      const BCRec& bcrec = get_desc_lst()[State_Type].getBC(nE);
+      const Box& domain = geom.Domain();
 
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -450,6 +506,12 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
          AMREX_D_TERM( Array4<Real const> u = elec_Ueff[0].const_array(mfi);,
                        Array4<Real const> v = elec_Ueff[1].const_array(mfi);,
                        Array4<Real const> w = elec_Ueff[2].const_array(mfi););
+         AMREX_D_TERM( Array4<Real const> EoNx = EoN_ec[0]->const_array(mfi);,
+                       Array4<Real const> EoNy = EoN_ec[1]->const_array(mfi);,
+                       Array4<Real const> EoNz = EoN_ec[2]->const_array(mfi););
+         AMREX_D_TERM( Array4<Real const> ionFx = ionFlx[0]->const_array(mfi);,
+                       Array4<Real const> ionFy = ionFlx[1]->const_array(mfi);,
+                       Array4<Real const> ionFz = ionFlx[2]->const_array(mfi););
 
          // Set temporary edge FABs
          AMREX_D_TERM( cflux[0].resize(xbx,1);,
@@ -465,23 +527,56 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                        Array4<Real> yflux = cflux[1].array();,
                        Array4<Real> zflux = cflux[2].array(););
 
-         // Predict edge states (TODO: ignoring bcs for now !)
-         amrex::ParallelFor(xbx, [ne_arr,u,xstate]
-         AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+         // Predict edge states
+         // X
          {
-            xstate(i,j,k) = ef_edge_state(i,j,k,0,ne_arr,u);
-         });
-         amrex::ParallelFor(ybx, [ne_arr,v,ystate]
-         AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            // BCs
+            const Box& edomain = surroundingNodes(domain,0);
+            const auto bc_lo = bcrec.lo(0);
+            const auto bc_hi = bcrec.hi(0);
+
+            amrex::ParallelFor(xbx, [ne_arr,u,xstate,bc_lo,bc_hi,edomain]
+            AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+               int idx[3] = {i,j,k};
+               bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && ( idx[0] <= edomain.smallEnd(0) ) );
+               bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && ( idx[0] >= edomain.bigEnd(0) ) );
+               xstate(i,j,k) = ef_edge_state_extdir(i,j,k,0,on_lo,on_hi,ne_arr,u);
+            });
+         }
+         // Y
          {
-            ystate(i,j,k) = ef_edge_state(i,j,k,1,ne_arr,v);
-         });
+            // BCs
+            const Box& edomain = surroundingNodes(domain,1);
+            const auto bc_lo = bcrec.lo(1);
+            const auto bc_hi = bcrec.hi(1);
+
+            amrex::ParallelFor(ybx, [ne_arr,v,ystate,bc_lo,bc_hi,edomain]
+            AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+               int idx[3] = {i,j,k};
+               bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && ( idx[1] <= edomain.smallEnd(1) ) );
+               bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && ( idx[1] >= edomain.bigEnd(1) ) );
+               ystate(i,j,k) = ef_edge_state_extdir(i,j,k,1,on_lo,on_hi,ne_arr,v);
+            });
+         }
 #if ( AMREX_SPACEDIM ==3 )
-         amrex::ParallelFor(zbx, [ne_arr,w,zstate]
-         AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+         // Z
          {
-            zstate(i,j,k) = ef_edge_state(i,j,k,2,ne_arr,w);
-         });
+            // BCs
+            const Box& edomain = surroundingNodes(domain,2);
+            const auto bc_lo = bcrec.lo(2);
+            const auto bc_hi = bcrec.hi(2);
+
+            amrex::ParallelFor(zbx, [ne_arr,w,zstate,bc_lo,bc_hi,edomain]
+            AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+               int idx[3] = {i,j,k};
+               bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && ( idx[2] <= edomain.smallEnd(2) ) );
+               bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && ( idx[2] >= edomain.bigEnd(2) ) );
+               zstate(i,j,k) = ef_edge_state_extdir(i,j,k,2,on_lo,on_hi,ne_arr,w);
+            });
+         }
 #endif
 
          // Computing fluxes
@@ -501,6 +596,103 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
          {
             zflux(i,j,k) = w(i,j,k) * zstate(i,j,k);
          });
+#endif
+
+         // Overwrite dirichlet BC fluxes
+         // X
+         {
+            // BCs
+            const Box& edomain = surroundingNodes(domain,0);
+            const auto bc_lo = bcrec.lo(0);
+            const auto bc_hi = bcrec.hi(0);
+            amrex::ParallelFor(xbx, [xflux,xstate,EoNx,ionFx,bc_lo,bc_hi,edomain]
+            AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+               int idx[3] = {i,j,k};
+               bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && ( idx[0] <= edomain.smallEnd(0) ) );
+               bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && ( idx[0] >= edomain.bigEnd(0) ) );
+               if ( on_lo || on_hi ) {
+                  // Get the electron temperature
+                  amrex::Real Te = 0.0;
+                  ExtrapTe(EoNx(idx[0], idx[1], idx[2], 0), &Te);
+                  
+                  amrex::Real mwt[NUM_SPECIES] = {0.0};
+                  EOS::molecular_weight(mwt);
+ 
+                  if ( on_lo ) {
+                     xflux(i,j,k) = - 0.5 * xstate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
+                     xflux(i,j,k) += 2.0 * secondary_em_coef * ionFx(i,j,k) * mwt[E_ID] / EFConst::Na;
+                  }
+                  if ( on_hi ) { 
+                     xflux(i,j,k) = 0.5 * xstate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
+                     xflux(i,j,k) += 2.0 * secondary_em_coef * ionFx(i,j,k) * mwt[E_ID] / EFConst::Na;
+                  }
+               }
+            });
+         }
+         // Y
+         {
+            // BCs
+            const Box& edomain = surroundingNodes(domain,1);
+            const auto bc_lo = bcrec.lo(1);
+            const auto bc_hi = bcrec.hi(1);
+            amrex::ParallelFor(ybx, [yflux,ystate,EoNy,ionFy,bc_lo,bc_hi,edomain]
+            AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+               int idx[3] = {i,j,k};
+               bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && ( idx[1] <= edomain.smallEnd(1) ) );
+               bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && ( idx[1] >= edomain.bigEnd(1) ) );
+               if ( on_lo || on_hi ) {
+                  // Get the electron temperature
+                  amrex::Real Te = 0.0;
+                  ExtrapTe(EoNy(idx[0], idx[1], idx[2], 0), &Te);
+                  
+                  amrex::Real mwt[NUM_SPECIES] = {0.0};
+                  EOS::molecular_weight(mwt);
+ 
+                  if ( on_lo ) {
+                     yflux(i,j,k) = - 0.5 * ystate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
+                     yflux(i,j,k) += 2.0 * secondary_em_coef * ionFy(i,j,k) * mwt[E_ID] / EFConst::Na;
+                  }
+                  if ( on_hi ) { 
+                     yflux(i,j,k) = 0.5 * ystate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
+                     yflux(i,j,k) += 2.0 * secondary_em_coef * ionFy(i,j,k) * mwt[E_ID] / EFConst::Na;
+                  }
+               }
+            });
+         }
+#if ( AMREX_SPACEDIM ==3 )
+         // Z
+         {
+            // BCs
+            const Box& edomain = surroundingNodes(domain,2);
+            const auto bc_lo = bcrec.lo(2);
+            const auto bc_hi = bcrec.hi(2);
+            amrex::ParallelFor(ybx, [zflux,zstate,EoNz,ionFz,bc_lo,bc_hi,edomain]
+            AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+               int idx[3] = {i,j,k};
+               bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && ( idx[2] <= edomain.smallEnd(2) ) );
+               bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && ( idx[2] >= edomain.bigEnd(2) ) );
+               if ( on_lo || on_hi ) {
+                  // Get the electron temperature
+                  amrex::Real Te = 0.0;
+                  ExtrapTe(EoNz(idx[0], idx[1], idx[2], 0), &Te);
+                  
+                  amrex::Real mwt[NUM_SPECIES] = {0.0};
+                  EOS::molecular_weight(mwt);
+ 
+                  if ( on_lo ) {
+                     zflux(i,j,k) = - 0.5 * zstate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
+                     zflux(i,j,k) += 2.0 * secondary_em_coef * ionFz(i,j,k) * mwt[E_ID] / EFConst::Na;
+                  }
+                  if ( on_hi ) { 
+                     zflux(i,j,k) = 0.5 * zstate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
+                     zflux(i,j,k) += 2.0 * secondary_em_coef * ionFz(i,j,k) * mwt[E_ID] / EFConst::Na;
+                  }
+               }
+            });
+         }
 #endif
 
          // Compute divergence
@@ -845,11 +1037,77 @@ void PeleC::compute_bg_charge(const Real &dt_lcl,
       {
          charge(i,j,k) = 0.0;
          for (int n = 0; n < NUM_SPECIES; n++) {
-            Real rhoYpred = rhoYold(i,j,k,n) + dt_lcl * ( srcRhoY(i,j,k,n) + 0.0*reacRhoY(i,j,k,n) );
+            Real rhoYpred = rhoYold(i,j,k,n) + dt_lcl * ( srcRhoY(i,j,k,n) + reacRhoY(i,j,k,n) );
             rhoYpred = amrex::max(rhoYpred,0.0);
             charge(i,j,k) += zk[n] * rhoYpred;
          }
          charge(i,j,k) *= factor;
       });
+   }
+}
+
+void PeleC::compute_gasN(const Real &dt_lcl,
+                         const MultiFab &state_old,
+                         const MultiFab &MOL_src,
+                         const MultiFab &I_R) {
+
+   BL_PROFILE("PC_EF::compute_gasN()");
+
+   MultiFab gasN_cc(grids,dmap,1,1);
+
+   // Get a reaction MF with an extrapolated ghost cell layer
+   MultiFab I_R_GC(grids,dmap,I_R.nComp(),1);
+   MultiFab::Copy(I_R_GC,I_R,0,0,I_R.nComp(),0);
+   I_R_GC.FillBoundary(0,I_R.nComp(),geom.periodicity());
+   Extrapolater::FirstOrderExtrap(I_R_GC, geom, 0, I_R.nComp());
+
+#ifdef _OPENMP
+#pragma omp parallel if (Gpu::notInLaunchRegion())
+#endif   
+   for (MFIter mfi(gasN_cc,TilingIfNotGPU()); mfi.isValid(); ++mfi)
+   {
+      const Box& bx = mfi.growntilebox();
+      auto const& rhoYold  = state_old.const_array(mfi,FirstSpec);
+      auto const& srcRhoY  = state_old.const_array(mfi,FirstSpec);
+      auto const& reacRhoY = I_R_GC.const_array(mfi,0);
+      auto const& gasN     = gasN_cc.array(mfi);
+      amrex::ParallelFor(bx, [rhoYold,srcRhoY,reacRhoY,gasN,dt_lcl]
+      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+      {
+         gasN(i,j,k) = 0.0;
+         Real mwt[NUM_SPECIES] = {0.0};
+         EOS::molecular_weight(mwt);
+         for (int n = 0; n < NUM_SPECIES; n++) {
+            Real rhoYpred = rhoYold(i,j,k,n) + dt_lcl * ( srcRhoY(i,j,k,n) + reacRhoY(i,j,k,n) );
+            gasN(i,j,k) += rhoYpred * EFConst::Na / mwt[n];
+         }
+      });
+   }
+
+   const Box& domain = geom.Domain();
+   bool use_harmonic_avg = def_harm_avg_cen2edge ? true : false;
+   const BCRec& bcrec = get_desc_lst()[State_Type].getBC(nE);
+ #ifdef _OPENMP
+ #pragma omp parallel if (Gpu::notInLaunchRegion())
+ #endif
+   for (MFIter mfi(gasN_cc,TilingIfNotGPU()); mfi.isValid();++mfi)
+   {
+      for (int dir = 0; dir < AMREX_SPACEDIM; dir++)
+      {
+         const Box ebx = mfi.nodaltilebox(dir);
+         const Box& edomain = amrex::surroundingNodes(domain,dir);
+         const auto& gasN_c  = gasN_cc.array(mfi);
+         const auto& gasN_ed = gasN_ec[dir]->array(mfi);
+         const auto bc_lo = bcrec.lo(dir);
+         const auto bc_hi = bcrec.hi(dir);
+         amrex::ParallelFor(ebx, [dir, bc_lo, bc_hi, use_harmonic_avg, gasN_c, gasN_ed, edomain]
+         AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+         {
+            int idx[3] = {i,j,k};
+            bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && idx[dir] <= edomain.smallEnd(dir) );
+            bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && idx[dir] >= edomain.bigEnd(dir) );
+            cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, gasN_c, gasN_ed);
+         });
+      }
    }
 }
