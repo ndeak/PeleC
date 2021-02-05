@@ -56,6 +56,10 @@
   amrex::MultiFab**   Ke_ec;
   FluxBoxes diff_e;
   amrex::MultiFab**   De_ec;
+  FluxBoxes gasN_fb;
+  amrex::MultiFab**   gasN_ec;
+  FluxBoxes ionFlx_fb;
+  amrex::MultiFab**   ionFlx;
 
   // Scaling
   amrex::Real                nE_scale;
@@ -128,6 +132,11 @@
                           const amrex::MultiFab &state_old,
                           const amrex::MultiFab &MOL_src,
                           const amrex::MultiFab &I_R_in);
+
+  void compute_gasN( const amrex::Real      &dt,
+                     const amrex::MultiFab &state_old,
+                     const amrex::MultiFab &MOL_src,
+                     const amrex::MultiFab &I_R_in);
 
   void ef_nlResidual(const amrex::Real        &dt,
                      const amrex::MultiFab    &a_nl_state,
