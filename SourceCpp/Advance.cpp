@@ -9,6 +9,7 @@
 #ifdef PELEC_USE_PLASMA
 #include <PlasmaBCFill.H>
 #include <FluxBoxes.H>
+#include <Plasma.H>
 #endif
 
 amrex::Real
@@ -119,7 +120,6 @@ PeleC::do_mol_advance(
 
   amrex::Real mwt[NUM_SPECIES];
   EOS::molecular_weight(mwt);    // CGS
-  amrex::Real NA = 6.0221409e23; // 1/mol
 
   // Calculate the reduced electric field strength
   FillPatch(*this, Sborder, nGrowTr, time, State_Type, 0, NVAR);
@@ -133,7 +133,7 @@ PeleC::do_mol_advance(
      amrex::ParallelFor(
        gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          amrex::Real ndens = 0.0;
-         for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * NA;
+         for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
          redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Efab(i,j,k,0)*Efab(i,j,k,0), + Efab(i,j,k,1)*Efab(i,j,k,1), + Efab(i,j,k,2)*Efab(i,j,k,2))) / ndens * 1e-7 * 1e17;   // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
        });
   }
@@ -198,6 +198,14 @@ PeleC::do_mol_advance(
   // TODO: re-evaluate efield based on * quantities
 #endif
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
+
+#ifdef PELEC_USE_PLASMA
+  if (ef_use_NLsolve) {
+     // NL solve
+     MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
+     ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);
+  }
+#endif
 
   // Build other (neither spray nor diffusion) sources at t_new
   for (int n = 0; n < src_list.size(); ++n) {
