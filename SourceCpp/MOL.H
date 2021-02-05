@@ -118,6 +118,7 @@ void pc_compute_hyp_mol_flux(
   const amrex::Array4<amrex::Real>& drift_cc,
   const amrex::Array4<amrex::Real>& eon,
   std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge,
+  std::array<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> ionFlux,
   const int* bcr,
   const amrex::Geometry& geom,
   const int do_harmonic,

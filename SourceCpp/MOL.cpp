@@ -24,6 +24,7 @@ pc_compute_hyp_mol_flux(
   const amrex::Array4<amrex::Real>& drift_cc,
   const amrex::Array4<amrex::Real>& eon,
   std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge,
+  std::array<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> ionFlux_arr,
   const int* bcr,
   const amrex::Geometry& geom,
   const int do_harmonic,
@@ -322,6 +323,10 @@ pc_compute_hyp_mol_flux(
         int iv[3] = {i,j,k};
         amrex::Real ionFlux = 0.0;
 
+        if (use_NL) {
+           ionFlux_arr[dir](i,j,k) = 0.0;
+        }
+
         // overwrite fluxes on all ext_dir boundaries
         if ((bcr[dir] == amrex::BCType::ext_dir) and (iv[dir] == domlo[dir])) {
           // Use EoN to get Te for electron flux at the boundary
@@ -349,7 +354,11 @@ pc_compute_hyp_mol_flux(
                 exit(1);
               }
               // Save ion flux for secondary electron emissions and convert to number density
-              ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+              if ( use_NL ) {
+                 ionFlux_arr[dir](i,j,k) += flx[dir](i, j, k, UFS + n) / mwt[n] * NA; 
+              } else {
+                 ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+              }
             }
             flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
           }
@@ -380,7 +389,11 @@ pc_compute_hyp_mol_flux(
                 exit(1);
               }
               // Save ion flux for secondary electron emissions and convert to number density
-              ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+              if ( use_NL ) {
+                 ionFlux_arr[dir](i,j,k) += flx[dir](i, j, k, UFS + n) / mwt[n] * NA; 
+              } else {
+                 ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+              }
             }
             flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
           }
