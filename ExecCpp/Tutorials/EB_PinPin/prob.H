@@ -44,7 +44,7 @@ pc_initdata(
   mfs[O2_ID] = 0.233;
 
   // Some electrons
-  mfs[E_ID] = 5.0e-16 * exp(-pow((y - 0.5) / 0.02, 2));
+  //mfs[E_ID] = 5.0e-16 * exp(-pow((y - 0.5) / 0.02, 2)) + 1e-20;
 
   amrex::Real Na = 6.022e23;
   // if using the non-linear solve move E from species to aux
