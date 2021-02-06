@@ -1,13 +1,13 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
-max_step = 10000
+max_step = 2500
 stop_time = 100.0
 
 # PROBLEM SIZE & GEOMETRY
 geometry.is_periodic =  1   0  1
 geometry.coord_sys   =  0       # 0 => cart
 geometry.prob_lo     =  0    0    0 
-geometry.prob_hi     =  0.25  1.0  1.0
-amr.n_cell           =  32 128 256
+geometry.prob_hi     =  0.125  1.0  1.0
+amr.n_cell           =  32 256 256
 #amr.n_cell           =  256 256 256
 #amr.n_cell           =  128 128 128
 #amr.n_cell           =  16 16 16
@@ -76,7 +76,7 @@ amr.check_int       = -1       # number of timesteps between checkpoints
 # PLOTFILES
 amr.plot_files_output = 1
 amr.plot_file       = plt
-amr.plot_int        = 200
+amr.plot_int        = 1000
 amr.derive_plot_vars=ALL
 pelec.plot_massfrac = true
 
@@ -103,7 +103,7 @@ ebd.boundary_grad_stencil_type = 0
 #
 
 prob.p = 1013250.0
-prob.rho = 0.0011719
+prob.rho = 0.00117197032
 prob.vx_in =  0.0
 prob.vy_in =  0.0
 prob.Re_L = 1.0
@@ -111,19 +111,20 @@ prob.Pr = 0.7
 prob.phiV_bottom = 24463.0e7
 
 ef.verbose = 1
-ef.debug = 1
+ef.debug = 0
 ef.use_nonLinearSolve = 1
-ef.Poisson_verbose = 2
-ef.Poisson_tol = 1.0e-11
-ef.JFNK_lambda = 1.0e-7
-ef.JFNK_difftype = 2
+ef.Poisson_verbose = 0
+ef.Poisson_tol = 5.0e-9
+ef.JFNK_lambda = 1.0e-6
+ef.JFNK_difftype = 1
 ef.JFNK_maxNewton = 5
-ef.GMRES_verbose = 2
+ef.JFNK_newtonTol = 1.5e-7
+ef.GMRES_verbose = 0
 ef.GMRES_restart_size = 20
-ef.GMRES_rel_tol = 1.0e-6
+ef.GMRES_rel_tol = 1.0e-8
 ef.GMRES_max_restart = 3
 ef.Precond_SchurApprox = 2
-#ef.Precond_fixedIter = 2
+ef.Precond_fixedIter = 10
 
 #fabarray.mfiter_tile_size = 1024 1024 1024
 amrex.fpe_trap_invalid = 1
