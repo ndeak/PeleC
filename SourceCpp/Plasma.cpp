@@ -69,7 +69,7 @@ PeleC::plasma_init()
     // zk[9] = -1.0;
 
     // get charge per unit mass (C/g) CGS
-    Real zk_temp[NUM_SPECIES];
+    Real zk_temp[NUM_SPECIES] = {0.0};
     EOS::charge_mass(zk_temp);
     for (int k = 0; k < NUM_SPECIES; k++) {
        zk[k] = zk_temp[k];

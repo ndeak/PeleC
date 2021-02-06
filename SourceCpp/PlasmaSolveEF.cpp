@@ -40,7 +40,7 @@ PeleC::solveEF ( Real time,
    MultiFab phiV_alias(Ucurr, amrex::make_alias, PhiV, 1);
    MultiFab phiV_borders(Sborder, amrex::make_alias, 0, 1);
 
-// Setup a dummy charge distribution MF
+// Charge distribution MF
    MultiFab chargeDistib(grids,dmap,1,0,MFInfo(),Factory());
 
 #ifdef _OPENMP
@@ -71,7 +71,7 @@ PeleC::solveEF ( Real time,
        }); 
    }
 // If need be, visualize the charge distribution.
-//   VisMF::Write(chargeDistib,"chargeDistibPhiV_"+std::to_string(level));
+   //VisMF::Write(chargeDistib,"chargeDistibPhiVExpl_"+std::to_string(level));
 
 /////////////////////////////////////   
 // Setup a linear operator
