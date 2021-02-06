@@ -76,6 +76,8 @@ void PeleC::ef_solve_NL(const Real     &dt,
 {
    BL_PROFILE("PC_EF::ef_solve_NL()");
 
+   const Real strt_time = ParallelDescriptor::second();
+
    // Substepping of non-linear solve: DEACTIVATE for now
    nl_dt = dt/1.0;
 
@@ -199,16 +201,34 @@ void PeleC::ef_solve_NL(const Real     &dt,
       const Box& bx = mfi.tilebox();
       auto const& old_nE   = ef_state_old.const_array(mfi,1);
       auto const& new_nE   = nl_state.const_array(mfi,1);
-      auto const& I_R_nE   = I_R_in.const_array(mfi,E_ID);
+      auto const& I_R_nE   = I_R_in.const_array(mfi,NUM_SPECIES+1);
       auto const& force    = forcing_nE.array(mfi);
       Real dtinv           = 1.0 / nl_dt;
-      amrex::ParallelFor(bx, [old_nE, new_nE, I_R_nE, force, dtinv]
+      amrex::ParallelFor(bx, [old_nE, new_nE, I_R_nE, force, dtinv, do_react]
       AMREX_GPU_DEVICE (int i, int j, int k) noexcept
       {
-         force(i,j,k) = (new_nE(i,j,k) - old_nE(i,j,k)) * dtinv - I_R_nE(i,j,k);
+         force(i,j,k) = (new_nE(i,j,k) - old_nE(i,j,k)) * dtinv;
+         if (do_react) force(i,j,k) -= I_R_nE(i,j,k);
       });
    }
    if ( ef_debug ) VisMF::Write(forcing_nE,"NL_ForcingnE_Lvl"+std::to_string(level));
+
+   if ( ef_verbose )
+   {
+      const int IOProc = ParallelDescriptor::IOProcessorNumber();
+
+      Real mx = ParallelDescriptor::second() - strt_time, mn = mx;
+
+      ParallelDescriptor::ReduceRealMin(mn,IOProc);
+      ParallelDescriptor::ReduceRealMax(mx,IOProc);
+
+      if ( !ef_use_PETSC_direct ) {
+         Real avgGMRES = (float)GMRES_tot_count/(float)NK_tot_count;
+         amrex::Print() << " dt: " << dt << " - Avg GMRES/Newton: " << avgGMRES << "\n";
+      }
+      amrex::Print() << "PeleLM_EF::ef_solve_PNP(): lev: " << level << ", time: ["
+                     << mn << " ... " << mx << "]\n";
+   }
 }
 
 int PeleC::testExitNewton(const MultiFab  &res,
@@ -277,7 +297,7 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
    for (MFIter mfi(a_nl_resid,TilingIfNotGPU()); mfi.isValid(); ++mfi)
    {
       const Box& bx = mfi.tilebox();
-      auto const& I_R_nE   = get_new_data(Reactions_Type).const_array(mfi,E_ID);
+      auto const& I_R_nE   = get_new_data(Reactions_Type).const_array(mfi,NUM_SPECIES+1);
       auto const& lapPhiV  = laplacian_term.const_array(mfi);
       auto const& ne_diff  = diffnE.const_array(mfi);
       auto const& ne_adv   = advnE.const_array(mfi);
@@ -287,10 +307,12 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
       auto const& res_nE   = a_nl_resid.array(mfi,1);
       auto const& res_phiV = a_nl_resid.array(mfi,0);
       Real scalLap         = EFConst::eps0_cgs * EFConst::epsr / EFConst::elemCharge;
-      amrex::ParallelFor(bx, [ne_curr,ne_old,lapPhiV,I_R_nE,ne_diff,ne_adv,charge,res_nE,res_phiV,dt_lcl,scalLap]
+      amrex::ParallelFor(bx, [ne_curr,ne_old,lapPhiV,I_R_nE,ne_diff,ne_adv,charge,res_nE,res_phiV,
+                              dt_lcl,scalLap,do_react]
       AMREX_GPU_DEVICE (int i, int j, int k) noexcept
       {    
-         res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) + I_R_nE(i,j,k) );
+         res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) );
+         if (do_react) res_nE(i,j,k) += dt_lcl * I_R_nE(i,j,k);
          res_phiV(i,j,k) = lapPhiV(i,j,k) * scalLap - ne_curr(i,j,k) + charge(i,j,k);
       });  
    }
@@ -401,6 +423,8 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                               MultiFab *gphiV[AMREX_SPACEDIM],
                               MultiFab &elecAdv)
 {
+
+   int order = 1;
    // Get the face effective velocity
    // effVel = Umac - \mu_e * gradPhiVcurr
    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
@@ -487,7 +511,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
       FArrayBox cflux[AMREX_SPACEDIM];
       FArrayBox edgstate[AMREX_SPACEDIM];
 
-      const BCRec& bcrec = get_desc_lst()[State_Type].getBC(nE);
+      const BCRec& bcrec = get_desc_lst()[State_Type].getBC(PhiV);
       const Box& domain = geom.Domain();
 
 #ifdef _OPENMP
@@ -535,13 +559,20 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
             const auto bc_lo = bcrec.lo(0);
             const auto bc_hi = bcrec.hi(0);
 
-            amrex::ParallelFor(xbx, [ne_arr,u,xstate,bc_lo,bc_hi,edomain]
+            amrex::ParallelFor(xbx, [ne_arr,u,xstate,bc_lo,bc_hi,edomain,domain,order]
             AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
                int idx[3] = {i,j,k};
                bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && ( idx[0] <= edomain.smallEnd(0) ) );
                bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && ( idx[0] >= edomain.bigEnd(0) ) );
-               xstate(i,j,k) = ef_edge_state_extdir(i,j,k,0,on_lo,on_hi,ne_arr,u);
+               if (order == 1) {
+                  xstate(i,j,k) = ef_edge_state_extdir(i,j,k,0,on_lo,on_hi,ne_arr,u);
+               } else if (order == 2) {
+                  bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
+                  bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
+                  xstate(i,j,k) = ef_edge_state_2ndO_extdir(i,j,k,0,on_lo,on_hi,extdir_or_ho_lo, extdir_or_ho_hi, 
+                                                            domain.smallEnd(0), domain.bigEnd(0), ne_arr,u);
+               }
             });
          }
          // Y
@@ -551,13 +582,20 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
             const auto bc_lo = bcrec.lo(1);
             const auto bc_hi = bcrec.hi(1);
 
-            amrex::ParallelFor(ybx, [ne_arr,v,ystate,bc_lo,bc_hi,edomain]
+            amrex::ParallelFor(ybx, [ne_arr,v,ystate,bc_lo,bc_hi,edomain,domain,order]
             AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
                int idx[3] = {i,j,k};
                bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && ( idx[1] <= edomain.smallEnd(1) ) );
                bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && ( idx[1] >= edomain.bigEnd(1) ) );
-               ystate(i,j,k) = ef_edge_state_extdir(i,j,k,1,on_lo,on_hi,ne_arr,v);
+               if (order == 1) {
+                  ystate(i,j,k) = ef_edge_state_extdir(i,j,k,1,on_lo,on_hi,ne_arr,v);
+               } else if (order == 2) {
+                  bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
+                  bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
+                  ystate(i,j,k) = ef_edge_state_2ndO_extdir(i,j,k,1,on_lo,on_hi,extdir_or_ho_lo, extdir_or_ho_hi,
+                                                            domain.smallEnd(1), domain.bigEnd(1),ne_arr,v);
+               }
             });
          }
 #if ( AMREX_SPACEDIM ==3 )
@@ -568,13 +606,20 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
             const auto bc_lo = bcrec.lo(2);
             const auto bc_hi = bcrec.hi(2);
 
-            amrex::ParallelFor(zbx, [ne_arr,w,zstate,bc_lo,bc_hi,edomain]
+            amrex::ParallelFor(zbx, [ne_arr,w,zstate,bc_lo,bc_hi,edomain,domain,order]
             AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
                int idx[3] = {i,j,k};
                bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && ( idx[2] <= edomain.smallEnd(2) ) );
                bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && ( idx[2] >= edomain.bigEnd(2) ) );
-               zstate(i,j,k) = ef_edge_state_extdir(i,j,k,2,on_lo,on_hi,ne_arr,w);
+               if (order == 1) {
+                  zstate(i,j,k) = ef_edge_state_extdir(i,j,k,2,on_lo,on_hi,ne_arr,w);
+               } else if (order == 2) {
+                  bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
+                  bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
+                  zstate(i,j,k) = ef_edge_state_2ndO_extdir(i,j,k,2,on_lo,on_hi,extdir_or_ho_lo, extdir_or_ho_hi,
+                                                            domain.smallEnd(2), domain.bigEnd(2),ne_arr,w);
+               }
             });
          }
 #endif
@@ -625,7 +670,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                   }
                   if ( on_hi ) { 
                      xflux(i,j,k) = 0.5 * xstate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
-                     xflux(i,j,k) += 2.0 * secondary_em_coef * ionFx(i,j,k) * mwt[E_ID] / EFConst::Na;
+                     xflux(i,j,k) -= 2.0 * secondary_em_coef * ionFx(i,j,k) * mwt[E_ID] / EFConst::Na;
                   }
                }
             });
@@ -651,12 +696,12 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                   EOS::molecular_weight(mwt);
  
                   if ( on_lo ) {
-                     yflux(i,j,k) = - 0.5 * ystate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
+                     yflux(i,j,k) = -0.5 * ystate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
                      yflux(i,j,k) += 2.0 * secondary_em_coef * ionFy(i,j,k) * mwt[E_ID] / EFConst::Na;
                   }
                   if ( on_hi ) { 
                      yflux(i,j,k) = 0.5 * ystate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
-                     yflux(i,j,k) += 2.0 * secondary_em_coef * ionFy(i,j,k) * mwt[E_ID] / EFConst::Na;
+                     yflux(i,j,k) -= 2.0 * secondary_em_coef * ionFy(i,j,k) * mwt[E_ID] / EFConst::Na;
                   }
                }
             });
@@ -688,7 +733,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                   }
                   if ( on_hi ) { 
                      zflux(i,j,k) = 0.5 * zstate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * PI), 0.5 );// * a[0](i, j, k);
-                     zflux(i,j,k) += 2.0 * secondary_em_coef * ionFz(i,j,k) * mwt[E_ID] / EFConst::Na;
+                     zflux(i,j,k) -= 2.0 * secondary_em_coef * ionFz(i,j,k) * mwt[E_ID] / EFConst::Na;
                   }
                }
             });
@@ -1032,12 +1077,13 @@ void PeleC::compute_bg_charge(const Real &dt_lcl,
       auto const& reacRhoY = I_R.const_array(mfi,0);
       auto const& charge   = bg_charge.array(mfi);
       Real        factor = 1.0 / EFConst::elemCharge;
-      amrex::ParallelFor(bx, [rhoYold,srcRhoY,reacRhoY,charge,dt_lcl,factor,zk]
+      amrex::ParallelFor(bx, [rhoYold,srcRhoY,reacRhoY,charge,dt_lcl,factor,zk,do_react]
       AMREX_GPU_DEVICE (int i, int j, int k) noexcept
       {
          charge(i,j,k) = 0.0;
          for (int n = 0; n < NUM_SPECIES; n++) {
-            Real rhoYpred = rhoYold(i,j,k,n) + dt_lcl * ( srcRhoY(i,j,k,n) + reacRhoY(i,j,k,n) );
+            Real rhoYpred = rhoYold(i,j,k,n) + dt_lcl * srcRhoY(i,j,k,n);
+            if (do_react) rhoYpred += dt_lcl * reacRhoY(i,j,k,n);
             rhoYpred = amrex::max(rhoYpred,0.0);
             charge(i,j,k) += zk[n] * rhoYpred;
          }
@@ -1057,9 +1103,11 @@ void PeleC::compute_gasN(const Real &dt_lcl,
 
    // Get a reaction MF with an extrapolated ghost cell layer
    MultiFab I_R_GC(grids,dmap,I_R.nComp(),1);
-   MultiFab::Copy(I_R_GC,I_R,0,0,I_R.nComp(),0);
-   I_R_GC.FillBoundary(0,I_R.nComp(),geom.periodicity());
-   Extrapolater::FirstOrderExtrap(I_R_GC, geom, 0, I_R.nComp());
+   if (do_react) {
+      MultiFab::Copy(I_R_GC,I_R,0,0,I_R.nComp(),0);
+      I_R_GC.FillBoundary(0,I_R.nComp(),geom.periodicity());
+      Extrapolater::FirstOrderExtrap(I_R_GC, geom, 0, I_R.nComp());
+   }
 
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -1071,14 +1119,15 @@ void PeleC::compute_gasN(const Real &dt_lcl,
       auto const& srcRhoY  = state_old.const_array(mfi,FirstSpec);
       auto const& reacRhoY = I_R_GC.const_array(mfi,0);
       auto const& gasN     = gasN_cc.array(mfi);
-      amrex::ParallelFor(bx, [rhoYold,srcRhoY,reacRhoY,gasN,dt_lcl]
+      amrex::ParallelFor(bx, [rhoYold,srcRhoY,reacRhoY,gasN,dt_lcl,do_react]
       AMREX_GPU_DEVICE (int i, int j, int k) noexcept
       {
          gasN(i,j,k) = 0.0;
          Real mwt[NUM_SPECIES] = {0.0};
          EOS::molecular_weight(mwt);
          for (int n = 0; n < NUM_SPECIES; n++) {
-            Real rhoYpred = rhoYold(i,j,k,n) + dt_lcl * ( srcRhoY(i,j,k,n) + reacRhoY(i,j,k,n) );
+            Real rhoYpred = rhoYold(i,j,k,n) + dt_lcl * srcRhoY(i,j,k,n);
+            if (do_react) rhoYpred += dt_lcl * reacRhoY(i,j,k,n);
             gasN(i,j,k) += rhoYpred * EFConst::Na / mwt[n];
          }
       });
