@@ -183,6 +183,9 @@ PeleC::do_mol_advance(
   if (do_react == 1) {
     amrex::MultiFab::Saxpy(S_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
+#ifdef PELEC_USE_PLASMA
+    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0);
+#endif
   }
 #endif
 
@@ -235,6 +238,9 @@ PeleC::do_mol_advance(
   if (do_react == 1) {
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES, Eden, 1, 0);
+#ifdef PELEC_USE_PLASMA
+    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0);
+#endif
 
     // F_{AD} = (1/dt)(U^{n+1,**} - U^n) - I_R = 0.5*(S^{n}+S^{n+1}(which is a
     // guess!))
@@ -242,6 +248,9 @@ PeleC::do_mol_advance(
       molSrc, 1.0 / dt, S_new, 0, -1.0 / dt, S_old, 0, 0, NVAR, 0);
     amrex::MultiFab::Subtract(molSrc, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES, Eden, 1, 0);
+#ifdef PELEC_USE_PLASMA
+    if (ef_use_NLsolve) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0);
+#endif
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
     react_state(time, dt, false, &molSrc);
@@ -677,6 +686,9 @@ PeleC::construct_Snew(
     amrex::MultiFab& I_R = get_new_data(Reactions_Type);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
+#ifdef PELEC_USE_PLASMA
+    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0); 
+#endif
   }
 #endif
 }

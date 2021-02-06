@@ -308,17 +308,22 @@ PeleC::variableSetUp()
   // Components 0:Numspec-1         are      rho.omega_i
   // Component    NUM_SPECIES            is      rho.edot = (rho.eout-rho.ein)
 #ifdef PELEC_USE_REACTIONS
+  int nrhoydot = NUM_SPECIES+1;
   store_in_checkpoint = true;
+#ifdef PELEC_USE_PLASMA
+  if (ef_use_NLsolve) nrhoydot += 1;
+#endif
   desc_lst.addDescriptor(
     Reactions_Type, amrex::IndexType::TheCellType(),
-    amrex::StateDescriptor::Point, 0, NUM_SPECIES + 1, interp,
+    amrex::StateDescriptor::Point, 0, nrhoydot, interp,
     state_data_extrap, store_in_checkpoint);
+
+  amrex::Vector<amrex::BCRec> react_bcs(nrhoydot);
+  amrex::Vector<std::string> react_name(nrhoydot);
 #endif
 
   amrex::Vector<amrex::BCRec> bcs(NVAR);
   amrex::Vector<std::string> name(NVAR);
-  amrex::Vector<amrex::BCRec> react_bcs(NUM_SPECIES + 1);
-  amrex::Vector<std::string> react_name(NUM_SPECIES + 1);
 
   amrex::BCRec bc;
   cnt = 0;
@@ -455,6 +460,12 @@ PeleC::variableSetUp()
   set_react_src_bc(bc, phys_bc);
   react_bcs[NUM_SPECIES] = bc;
   react_name[NUM_SPECIES] = "rhoe_dot";
+#ifdef PELEC_USE_PLASMA
+  if (ef_use_NLsolve) {
+     react_bcs[NUM_SPECIES+1] = bc;
+     react_name[NUM_SPECIES+1] = "rho_omega_nE";
+  }
+#endif
 
   amrex::StateDescriptor::BndryFunc bndryfunc2(pc_reactfill_hyp);
   bndryfunc2.setRunOnGPU(true);

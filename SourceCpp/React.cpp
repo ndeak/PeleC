@@ -135,6 +135,11 @@ PeleC::react_state(
 
           // for rk64 we set the error tolerance
           const amrex::Real errtol = adaptrk_errtol;
+#ifdef PELEC_USE_PLASMA
+          if (ef_use_NLsolve) {
+             amrex::Abort("Explicit chemistry not implemented with non-linear solve");
+          }
+#endif
 
           amrex::ParallelFor(
             bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -345,8 +350,8 @@ PeleC::react_state(
 #ifdef PELEC_USE_PLASMA
               if (ef_use_NLsolve) {
                  // Set reaction term for nE in place of the one of rhoY_e
-                 I_R(i, j, k, E_ID) = ( snew_arr(i, j, k, UFX+1) - sold_arr(i, j, k, UFX+1) ) / dt -
-                                      nonrs_arr(i, j, k, UFX+1);
+                 I_R(i, j, k, NUM_SPECIES+1) = ( snew_arr(i, j, k, UFX+1) - sold_arr(i, j, k, UFX+1) ) / dt -
+                                                 nonrs_arr(i, j, k, UFX+1);
               }
 #endif
               I_R(i, j, k, NUM_SPECIES) =

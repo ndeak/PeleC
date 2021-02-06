@@ -40,6 +40,13 @@ PeleC::construct_hydro_source(
       amrex::MultiFab::Add(
         sources_for_hydro, get_new_data(Reactions_Type), 0, FirstSpec,
         NUM_SPECIES, ng);
+#ifdef PELEC_USE_PLASMA      
+      if (ef_use_NLsolve) {
+         amrex::MultiFab::Add(
+           sources_for_hydro, get_new_data(Reactions_Type), NUM_SPECIES+1, FirstAux+1,
+           1, ng);
+      }
+#endif
       amrex::MultiFab::Add(
         sources_for_hydro, get_new_data(Reactions_Type), NUM_SPECIES, Eden, 1,
         ng);
