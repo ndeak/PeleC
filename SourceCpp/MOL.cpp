@@ -535,6 +535,10 @@ pc_compute_hyp_mol_flux(
         flux_tmp[UFS + n] = flux_tmp[URHO] * qtempl[R_Y + n];
       }
 
+#ifdef PELEC_USE_PLASMA
+      // /EB/AMReX_EBMultiFabUtil_2D_C.H eb_interp_centroid2facecent_x
+#endif
+  
       // Copy result into ebflux vector. Being a bit chicken here and only
       // copy values where ebg % iv is within box
       for (int n = 0; n < NVAR; n++) {

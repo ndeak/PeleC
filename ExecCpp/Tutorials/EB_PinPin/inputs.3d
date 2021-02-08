@@ -6,10 +6,11 @@ stop_time = 100.0
 geometry.is_periodic =  1   0  1
 geometry.coord_sys   =  0       # 0 => cart
 geometry.prob_lo     =  0    0    0 
-geometry.prob_hi     =  0.125  1.0  0.125
-#amr.n_cell           =  32 256 32
-#amr.n_cell           =  16 128 16
-amr.n_cell           =  8 64 8
+#geometry.prob_hi     =  0.125  1.0  0.125
+geometry.prob_hi     =  11.0  11.0  11.0
+#amr.n_cell           =  256 256 256
+#amr.n_cell           =  128 128 128
+amr.n_cell           =  64 64 64
 #amr.n_cell           =  32 32 32
 #amr.n_cell           =  64   80   64
 

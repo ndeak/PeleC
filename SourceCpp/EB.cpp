@@ -65,6 +65,7 @@ pc_fill_bndry_grad_stencil(
       const amrex::Real n[AMREX_SPACEDIM] = {AMREX_D_DECL(
         ebg[L].eb_normal[0], ebg[L].eb_normal[1], ebg[L].eb_normal[2])};
 
+
       int c[AMREX_SPACEDIM] = {0};
       idxsort(n, c);
       const int ivs[AMREX_SPACEDIM] = {
@@ -170,6 +171,7 @@ pc_fill_bndry_grad_stencil(
           }
         }
       }
+      // ndeak note - in 3D bcval_sten has units of cm
       grad_stencil[L].bcval_sten = fac * ebg[L].eb_area * bcs;
     }
   });
@@ -595,7 +597,6 @@ pc_apply_eb_boundry_visc_flux_stencil(
       amrex::Real dUtdn[AMREX_SPACEDIM];
       for (int idir = 0; idir < AMREX_SPACEDIM; idir++)
         dUtdn[idir] = sum[idir] + bct[idir] * sten[L].bcval_sten;
-
       amrex::Real tauDotN[AMREX_SPACEDIM];
       tauDotN[0] =
         ((4.0 / 3.0) * coeff(i, j, k, dComp_mu) + coeff(i, j, k, dComp_xi)) *
@@ -628,6 +629,13 @@ pc_apply_eb_boundry_flux_stencil(
 {
   const auto lo = amrex::lbound(bx);
   const auto hi = amrex::ubound(bx);
+  
+  // ndeak notes
+  // D units (g-cm/K-s3)
+  // bcval units (K)
+  // sum units (K-cm)
+  // bcval_sten units (cm)
+  // stencil val (cm)?
 
   amrex::ParallelFor(Nsten, [=] AMREX_GPU_DEVICE(int L) {
     const int i = sten[L].iv[0];
@@ -642,12 +650,17 @@ pc_apply_eb_boundry_flux_stencil(
               sum += sten[L].val[kk][jj][ii] *
                      s(sten[L].iv_base[0] + ii, sten[L].iv_base[1] + jj,
                        sten[L].iv_base[2] + kk, scomp + n);
+              printf("(%i, %i, %i) val = %.6e, s = %.6e\n", ii, jj, kk, sten[L].val[kk][jj][ii], s(sten[L].iv_base[0] + ii, sten[L].iv_base[1] + jj, sten[L].iv_base[2] + kk, scomp + n));
             }
           }
         }
         bcflux[n * Nflux + L] =
           D(i, j, k, Dcomp + n) *
           (bcval[n * Nsten + L] * sten[L].bcval_sten + sum);
+          printf("bcval = %.6e\n", bcval[n * Nsten + L]);
+          printf("bcval_sten = %.6e\n", sten[L].bcval_sten);
+          printf("sum = %.6e\n", sum);
+          exit(1);
       }
     }
   });

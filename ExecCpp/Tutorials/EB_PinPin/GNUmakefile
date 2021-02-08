@@ -1,5 +1,5 @@
 # AMReX
-DIM = 2
+DIM = 3
 COMP = gnu
 PRECISION = DOUBLE
 
@@ -30,8 +30,8 @@ USE_ARKODE_PP = FALSE
 USE_CVODE_PP = TRUE
 USE_EB = FALSE
 USE_MASA = FALSE
-# USE_EB = TRUE
-USE_PLASMA = TRUE
+USE_EB = TRUE
+USE_PLASMA =TRUE
 Eos_dir := Fuego
 Reactions_dir := Fuego
 Chemistry_Model := PlasmaAir

@@ -471,9 +471,6 @@ PeleC::getMOLSrcTerm(
             (nFlux > 0 ? eb_flux_thdlocal.dataPtr() : 0);
 #endif
           //auto const& vol = volume.array(mfi);
-          // ndeak note - for plasma species, need to replace this call with 
-          // IAMR's Godunov::ComputeEdgeState and Godunov::ComputeFluxes, essentially
-          // Likely extra work needed if using EB
           pc_compute_hyp_mol_flux(
             cbox, qar, qauxar, flx, a, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA

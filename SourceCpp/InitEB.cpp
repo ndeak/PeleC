@@ -854,7 +854,7 @@ initialize_EB2(
       auto allpin_IF = amrex::EB2::makeUnion(*impfunc_pins[0],*impfunc_pins[1]);
 
       auto gshop = amrex::EB2::makeShop(allpin_IF);
-      amrex::EB2::Build(gshop, geom, required_level, max_level);
+      amrex::EB2::Build(gshop, geom, max_level, max_level);
   } else {
     amrex::EB2::Build(geom, max_level, max_level);
   }
