@@ -99,7 +99,28 @@ PeleC::do_mol_advance(
 
 #ifdef PELEC_USE_PLASMA
   // Compute PhiV
-  if (!ef_use_NLsolve) {
+  if (ef_use_NLsolve) {  // Don't solve for PhiV now, it's wrapped in the NL solve.
+                         // But I still need the gradients
+     gphi.clear();
+     gphi.define(this,1,NUM_GROW);
+     gradPhiV = gphi.get();
+
+     MultiFab PhiVFilled(grids, dmap, 1, 1, amrex::MFInfo(), Factory());
+     PhiVFilled.copy(S_old,PhiV,0,1,0,0);
+     PhiVFilled.FillBoundary(geom.periodicity());
+     const BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
+     const Vector<BCRec>& bc = {bcphiV};
+     if (not geom.isAllPeriodic()) {
+        GpuBndryFuncFab<PhiVFill> bf(PhiVFill{});
+        PhysBCFunct<GpuBndryFuncFab<PhiVFill> > phiVf(geom, bc, bf);
+        phiVf(PhiVFilled, 0, 1, PhiVFilled.nGrowVect(), time, 0);
+     }
+
+     ef_calcGradPhiV(time, PhiVFilled, gradPhiV);
+     Efield_edge = {AMREX_D_DECL(gradPhiV[0], gradPhiV[1], gradPhiV[2])};
+     average_face_to_cellcenter(Efield, 0, Efield_edge);
+
+  } else {
      solveEF( time, dt );
   }
 
