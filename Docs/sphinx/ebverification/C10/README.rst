@@ -1,3 +1,5 @@
+.. _EB-C10:
+
 C10. Hagen–Poiseuille flow
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -26,7 +28,7 @@ where :math:`G = -dp/dx`, and :math:`\mu` is the dynamic viscosity.
 Velocity profiles at :math:`x=6` cm (channel center)
 ####################################################
 
-.. image:: ./ebverification/C10/u.png
+.. image:: /ebverification/C10/u.png
    :height: 300pt
 
 :math:`L_2` error norm of velocity
@@ -40,7 +42,7 @@ The :math:`L_2` error norm for a quantity :math:`s` is defined as
 where :math:`s^h` is the numerical solution, :math:`s^*` is the exact
 solution, and :math:`n_r` is the number of cells per radius.
 
-.. image:: ./ebverification/C10/error.png
+.. image:: /ebverification/C10/error.png
    :height: 300pt
 
 .. note::
@@ -54,7 +56,7 @@ solution, and :math:`n_r` is the number of cells per radius.
 Time convergence of kinetic energy
 ##################################
 
-.. image:: ./ebverification/C10/ke_history.png
+.. image:: /ebverification/C10/ke_history.png
    :height: 300pt
 
 .. note::
@@ -63,3 +65,26 @@ Time convergence of kinetic energy
    state. It is not expected that the total integration of the kinetic
    energy in the domain match the incompressible value for integrated
    kinetic energy :math:`K_e` because of compressibility effects.
+
+Running study
+#############
+
+.. code-block:: bash
+
+   paren=`pwd`
+   pelec="${paren}/PeleC3d.gnu.MPI.ex"
+   mpi_ranks=36
+
+   res=( 4 8 16 32 )
+   for i in "${res[@]}"
+   do
+       rm -rf "${i}"
+       mkdir "${i}"
+       cd "${i}" || exit
+       cp "${paren}/inputs_3d" .
+       ny="$((i*4))"
+       nx="$((i*4*3))"
+       srun -n ${mpi_ranks} "${pelec}" inputs_3d amr.n_cell="${nx} ${ny} ${ny}" > out
+       ls -1v *plt*/Header | tee movie.visit
+       cd "${paren}" || exit
+   done

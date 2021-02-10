@@ -1,5 +1,3 @@
-#include <cmath>
-
 #include "mechanism.h"
 
 #include "PeleC.H"
@@ -15,16 +13,14 @@ amrex::Real
 PeleC::advance(
   amrex::Real time, amrex::Real dt, int amr_iteration, int amr_ncycle)
 {
-  /** the main driver for a single level implementing the time advance.
-
-         @param time the current simulation time
-         @param dt the timestep to advance (e.g., go from time to time + dt)
-         @param amr_iteration where we are in the current AMR subcycle.  Each
-                         level will take a number of steps to reach the
-                         final time of the coarser level below it.  This
-                         counter starts at 1
-         @param amr_ncycle  the number of subcycles at this level
-  */
+  // The main driver for a single level implementing the time advance.
+  //        @param time the current simulation time
+  //        @param dt the timestep to advance (e.g., go from time to time + dt)
+  //        @param amr_iteration where we are in the current AMR subcycle.  Each
+  //                        level will take a number of steps to reach the
+  //                        final time of the coarser level below it.  This
+  //                        counter starts at 1
+  //        @param amr_ncycle  the number of subcycles at this level
 
   BL_PROFILE("PeleC::advance()");
 
@@ -75,26 +71,32 @@ PeleC::do_mol_advance(
   }
 
   // get old and new state
+  // cppcheck-suppress constVariable
   amrex::MultiFab& S_old = get_old_data(State_Type);
   amrex::MultiFab& S_new = get_new_data(State_Type);
 
   // define sourceterm
   amrex::MultiFab molSrc(grids, dmap, NVAR, 0, amrex::MFInfo(), Factory());
 
-  amrex::MultiFab molSrc_old, molSrc_new;
+  amrex::MultiFab molSrc_old;
+  amrex::MultiFab molSrc_new;
   if (mol_iters > 1) {
     molSrc_old.define(grids, dmap, NVAR, 0, amrex::MFInfo(), Factory());
     molSrc_new.define(grids, dmap, NVAR, 0, amrex::MFInfo(), Factory());
   }
 
 #ifdef PELEC_USE_REACTIONS
-  amrex::MultiFab& I_R = get_new_data(Reactions_Type);
+  if (do_react == 0) {
+    get_new_data(Reactions_Type).setVal(0.0);
+  }
+  const amrex::MultiFab& I_R = get_new_data(Reactions_Type);
 #endif
 
 #ifdef PELEC_USE_EB
   set_body_state(S_old);
   set_body_state(S_new);
 #endif
+
 
 #ifdef PELEC_USE_PLASMA
   // Compute PhiV
@@ -118,13 +120,13 @@ PeleC::do_mol_advance(
   amrex::Real mwt[NUM_SPECIES];
   EOS::molecular_weight(mwt);
   amrex::Real NA = 6.0221409e23; // 1/mol
+  int ng = Sborder.nGrow();
 
   // Calculate the reduced electric field strength
-  FillPatch(*this, Sborder, nGrowTr, time, State_Type, 0, NVAR);
+  FillPatch(*this, Sborder, ng, time, State_Type, 0, NVAR);
   for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
      const amrex::Box& tbox = mfi.tilebox();
-     int ng = Sborder.nGrow();
-     const amrex::Box gbox = amrex::grow(tbox, NUM_GROW);
+     const amrex::Box gbox = amrex::grow(tbox, ng);
      const auto Efab = Efield.array(mfi);
      const auto redEfab = redEfield.array(mfi);
      const auto Sfab = Sborder.array(mfi);
@@ -141,7 +143,16 @@ PeleC::do_mol_advance(
   if (verbose) {
     amrex::Print() << "... Computing MOL source term at t^{n} " << std::endl;
   }
-  FillPatch(*this, Sborder, nGrowTr, time, State_Type, 0, NVAR);
+  FillPatch(*this, Sborder, NUM_GROW + nGrowF, time, State_Type, 0, NVAR);
+  //TODO remove later
+  // for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid();
+  //      ++mfi) {
+  //   const amrex::Box& bx = mfi.tilebox();
+  //   auto const& s_arr = Sborder.array(mfi);
+  //   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //     for(int n=0; n<NUM_SPECIES; n++) printf("sbord(%i, %i, %i, %i) = %.6e\n", i, j, k, n, s_arr(i, j, k, UFS+n));      
+  //   });
+  // }
   amrex::Real flux_factor = 0;
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
 
@@ -169,8 +180,9 @@ PeleC::do_mol_advance(
     }
   }
 
-  if (mol_iters > 1)
+  if (mol_iters > 1) {
     amrex::MultiFab::Copy(molSrc_old, molSrc, 0, 0, NVAR, 0);
+  }
 
   // U^* = U^n + dt*S^n
   amrex::MultiFab::LinComb(S_new, 1.0, Sborder, 0, dt, molSrc, 0, 0, NVAR, 0);
@@ -189,7 +201,7 @@ PeleC::do_mol_advance(
   if (verbose) {
     amrex::Print() << "... Computing MOL source term at t^{n+1} " << std::endl;
   }
-  FillPatch(*this, Sborder, nGrowTr, time + dt, State_Type, 0, NVAR);
+  FillPatch(*this, Sborder, NUM_GROW + nGrowF, time + dt, State_Type, 0, NVAR);
   flux_factor = mol_iters > 1 ? 0 : 1;
 #ifdef PELEC_USE_PLASMA
   // TODO: re-evaluate efield based on * quantities
@@ -245,11 +257,12 @@ PeleC::do_mol_advance(
         amrex::Print() << "... Re-computing MOL source term at t^{n+1} (iter = "
                        << mol_iter << " of " << mol_iters << ")" << std::endl;
       }
-      FillPatch(*this, Sborder, nGrowTr, time + dt, State_Type, 0, NVAR);
+      FillPatch(
+        *this, Sborder, NUM_GROW + nGrowF, time + dt, State_Type, 0, NVAR);
       flux_factor = mol_iter == mol_iters ? 1 : 0;
       getMOLSrcTerm(Sborder, molSrc_new, time, dt, flux_factor);
 
-      // F_{AD} = (1/2)(S_old + S_new)
+      // F_{AD} = (1/2)(molSrc_old + molSrc_new)
       amrex::MultiFab::LinComb(
         molSrc, 0.5, molSrc_old, 0, 0.5, molSrc_new, 0, 0, NVAR, 0);
 
@@ -264,6 +277,7 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_EB
   set_body_state(S_new);
 #endif
+
 
   return dt;
 }
@@ -295,10 +309,9 @@ PeleC::setSprayGridInfo(
 
   // *** ghost_width ***  is used
   //   *) to set how many cells are used to hold ghost particles i.e copies of
-  //   particles
-  //      that live on (level-1) can affect the grid over all of the amr_ncycle
-  //      steps. We define ghost cells at the coarser level to cover all
-  //      iterations so we can't reduce this number as amr_iteration increases.
+  //   particles that live on (level-1) can affect the grid over all of the
+  //   amr_ncycle steps. We define ghost cells at the coarser level to cover all
+  //   iterations so we can't reduce this number as amr_iteration increases.
 
   ghost_width = 0;
   if (parent->subCycle() && parent->maxLevel() > 0)
@@ -313,8 +326,8 @@ PeleC::setSprayGridInfo(
   //     have moved and we don't want to just lose it (we will redistribute it
   //     when we're done}
 
-  where_width =
-    amrex::max(ghost_width + (1 - amr_iteration) - 1, amr_iteration);
+  where_width = amrex::max<amrex::Real>(
+    ghost_width + (1 - amr_iteration) - 1, amr_iteration);
 
   // *** spray_n_grow *** is used
   //   *) to determine how many ghost cells we need to fill in the MultiFab from
@@ -341,11 +354,10 @@ PeleC::do_sdc_advance(
   BL_PROFILE("PeleC::do_sdc_advance()");
   amrex::Real dt_new = dt;
 
-  /** This routine will advance the old state data (called S_old here)
-      to the new time, for a single level.  The new data is called
-      S_new here.  The update includes reactions (if we are not doing
-      SDC), hydro, and the source terms.
-  */
+  // This routine will advance the old state data (called S_old here)
+  // to the new time, for a single level.  The new data is called
+  // S_new here.  The update includes reactions (if we are not doing
+  // SDC), hydro, and the source terms.
 
   initialize_sdc_advance(time, dt, amr_iteration, amr_ncycle);
 
@@ -377,10 +389,9 @@ PeleC::do_sdc_iteration(
   int sub_iteration,
   int sub_ncycle)
 {
-  /** This routine will advance the old state data (called S_old here)
-      to the new time, for a single level.  The new data is called
-      S_new here.  The update includes hydro, and the source terms.
-  */
+  // This routine will advance the old state data (called S_old here)
+  // to the new time, for a single level.  The new data is called
+  // S_new here.  The update includes hydro, and the source terms.
 
   BL_PROFILE("PeleC::do_sdc_iteration()");
 
@@ -436,31 +447,23 @@ PeleC::do_sdc_iteration(
 
   if (sub_iteration == 0) {
 #ifdef AMREX_PARTICLES
-    //
+
     // Compute drag terms from particles at old positions, move particles to new
-    // positions
-    //  based on old-time velocity field
-    //
+    // positions  based on old-time velocity field
     // TODO: Maybe move this mess into construct_old_source?
     if (do_spray_particles) {
       amrex::Gpu::LaunchSafeGuard lsg(true);
-      //
+
       // Setup ghost particles for use in finer levels. Note that ghost
       // particles that will be used by this level have already been created,
       // the particles being set here are only used by finer levels.
-      //
       int finest_level = parent->finestLevel();
 
-      //
       // Setup the virtual particles that particles on finer levels
-      //
-
       if (level < finest_level && use_virt_parts)
         setupVirtualParticles();
 
-      //
       // Check if I need to insert new particles
-      //
       amrex::Real cur_time = state[State_Type].curTime();
       int nstep = parent->levelSteps(0);
 
@@ -471,19 +474,15 @@ PeleC::do_sdc_iteration(
       if (level == finest_level)
         insertParts = theSprayPC()->insertParticles(cur_time, nstep, level);
 
-      //
       // Only redistribute if we injected or inserted particles
-      //
       if (injectParts || insertParts) {
         // TODO: Determine the number of ghost cells needed here
         int nGrow = 1;
         particleRedistribute(level, nGrow, 0);
       }
 
-      //
       // Make a copy of the particles on this level into ghost particles
       // for the finer level
-      //
       if (use_ghost_parts)
         setupGhostParticles(ghost_width);
 
@@ -494,9 +493,8 @@ PeleC::do_sdc_iteration(
           << "moveKickDrift ... updating particle positions and velocity\n";
 
       // We will make a temporary copy of the source term array inside
-      // moveKickDrift
-      //    and we are only going to use the spray force out to one ghost cell
-      //    so we need only define spray_force_old with one ghost cell
+      // moveKickDrift and we are only going to use the spray force out to one
+      // ghost cell so we need only define spray_force_old with one ghost cell
 
       AMREX_ASSERT(old_sources[spray_src]->nGrow() >= 1);
       old_sources[spray_src]->setVal(0.);
@@ -516,7 +514,7 @@ PeleC::do_sdc_iteration(
           Sborder, *old_sources[spray_src], level, dt, cur_time, true, false,
           tmp_src_width, true, where_width);
 
-      // Miiiight need all Ghosts
+      // Might need all Ghosts
       if (use_ghost_parts && theGhostPC() != 0)
         theGhostPC()->moveKickDrift(
           Sborder, *old_sources[spray_src], level, dt, cur_time, false, true,
@@ -539,8 +537,7 @@ PeleC::do_sdc_iteration(
     }
 
     // Get diffusion source separate from other sources, since it requires grow
-    // cells, and we
-    //  may want to reuse what we fill-patched for hydro
+    // cells, and we may want to reuse what we fill-patched for hydro
     if (do_diffuse) {
       if (verbose) {
         amrex::Print() << "... Computing diffusion terms at t^(n)" << std::endl;
@@ -578,7 +575,7 @@ PeleC::do_sdc_iteration(
       amrex::Print() << "... Computing diffusion terms at t^(n+1,"
                      << sub_iteration + 1 << ")" << std::endl;
     }
-    FillPatch(*this, Sborder, nGrowTr, time + dt, State_Type, 0, NVAR);
+    FillPatch(*this, Sborder, NUM_GROW, time + dt, State_Type, 0, NVAR);
     amrex::Real flux_factor_new = sub_iteration == sub_ncycle - 1 ? 0.5 : 0;
     getMOLSrcTerm(Sborder, *new_sources[diff_src], time, dt, flux_factor_new);
   }
@@ -686,8 +683,8 @@ PeleC::initialize_sdc_iteration(
 
   // Reset the grid loss tracking.
   if (track_grid_losses) {
-    for (int i = 0; i < n_lost; i++) {
-      material_lost_through_boundary_temp[i] = 0.0;
+    for (amrex::Real& i : material_lost_through_boundary_temp) {
+      i = 0.0;
     }
   }
 }

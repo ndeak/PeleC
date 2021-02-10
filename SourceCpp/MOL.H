@@ -31,10 +31,10 @@ mol_slope(
 {
 #ifdef PELEC_USE_EB
   const bool flagArrayL =
-    flags(i, j, k).isConnected(-bdim[0], -bdim[1], -bdim[2]) and
+    flags(i, j, k).isConnected(-bdim[0], -bdim[1], -bdim[2]) &&
     !flags(i, j, k).isCovered();
   const bool flagArrayR =
-    flags(i, j, k).isConnected(+bdim[0], +bdim[1], +bdim[2]) and
+    flags(i, j, k).isConnected(+bdim[0], +bdim[1], +bdim[2]) &&
     !flags(i, j, k).isCovered();
 #else
   const bool flagArrayL = true;
@@ -95,10 +95,11 @@ mol_slope(
     const amrex::Real dcen = 0.5 * (dlft[n] + drgt[n]);
     const amrex::Real dlim =
       dlft[n] * drgt[n] >= 0.0
-        ? 2.0 * amrex::min(amrex::Math::abs(dlft[n]), amrex::Math::abs(drgt[n]))
+        ? 2.0 * amrex::min<amrex::Real>(
+                  amrex::Math::abs(dlft[n]), amrex::Math::abs(drgt[n]))
         : 0.0;
     dq(i, j, k, n) = amrex::Math::copysign(1.0, dcen) *
-                     amrex::min(dlim, amrex::Math::abs(dcen));
+                     amrex::min<amrex::Real>(dlim, amrex::Math::abs(dcen));
   }
 }
 

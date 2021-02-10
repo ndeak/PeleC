@@ -2,8 +2,10 @@
 
 cmake_minimum_required (VERSION 3.14 FATAL_ERROR)
 project(PeleC CXX C)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/CMake")
 include(CMakePackageConfigHelpers)
+include(PeleCUtils)
 
 ########################## OPTIONS #####################################
 
@@ -11,11 +13,18 @@ include(CMakePackageConfigHelpers)
 set(PELEC_DIM "3" CACHE STRING "Number of physical dimensions")
 option(PELEC_ENABLE_AMREX_EB "Enable EB in AMReX library" ON)
 option(PELEC_ENABLE_ALL_WARNINGS "Enable all compiler warnings" ON)
+option(PELEC_ENABLE_CLANG_TIDY "Enable clang-tidy analysis" OFF)
+option(PELEC_ENABLE_CPPCHECK "Enable cppcheck analysis" OFF)
 option(PELEC_ENABLE_WERROR "Treat compiler warnings as errors" OFF)
-option(PELEC_ENABLE_TESTS "Enable regression and unit tests" OFF)
 option(PELEC_ENABLE_MASA "Enable tests that require MASA" OFF)
+option(PELEC_ENABLE_SUNDIALS "Enable SUNDIALS as ODE solver" OFF)
 option(PELEC_ENABLE_FCOMPARE "Enable building fcompare when not testing" OFF)
+option(PELEC_ENABLE_TESTS "Enable regression and unit tests" OFF)
 option(PELEC_ENABLE_FCOMPARE_FOR_TESTS "Check test plots against gold files" OFF)
+option(PELEC_ENABLE_SANITIZE_FOR_TESTS "Currently only disables certain long running MMS tests if set" OFF)
+option(PELEC_ENABLE_FPE_TRAP_FOR_TESTS "Enable FPE trapping in tests" ON)
+option(PELEC_ENABLE_TINY_PROFILE "Enable tiny profiler in AMReX" OFF)
+set(PELEC_PRECISION "DOUBLE" CACHE STRING "Floating point precision SINGLE or DOUBLE")
 
 #Options for performance
 option(PELEC_ENABLE_MPI "Enable MPI" OFF)
@@ -45,23 +54,37 @@ if(PELEC_ENABLE_CUDA)
 endif()
 
 if((NOT PELEC_DIM EQUAL 3) AND PELEC_ENABLE_AMREX_EB)
-  message(FATAL_ERROR "EB is only supported in 3D.")
+  set(PELEC_ENABLE_AMREX_EB OFF)
+  message(WARNING "Disabling EB for ${PELEC_DIM}D.")
 endif()
 
 ########################### AMReX #####################################
 
+message(STATUS "AMReX Configure Section")
 set(AMREX_SUBMOD_LOCATION "${CMAKE_SOURCE_DIR}/Submodules/AMReX")
-include(${CMAKE_SOURCE_DIR}/CMake/SetAmrexOptions.cmake)
+include(SetAmrexOptions)
 list(APPEND CMAKE_MODULE_PATH "${AMREX_SUBMOD_LOCATION}/Tools/CMake")
 if(PELEC_ENABLE_CUDA)
   include(AMReX_SetupCUDA)
 endif()
 add_subdirectory(${AMREX_SUBMOD_LOCATION})
-include(${CMAKE_SOURCE_DIR}/CMake/SetAmrexCompileFlags.cmake)
+include(SetAmrexCompileFlags)
+
+########################## SUNDIALS ###################################
+
+if(PELEC_ENABLE_SUNDIALS)
+  message(STATUS "SUNDIALS Configure Section")
+  set(SUNDIALS_SUBMOD_LOCATION "${CMAKE_SOURCE_DIR}/Submodules/sundials")
+  include(SetSundialsOptions)
+  #BUILD_TESTING is an old CMake keyword so don't clear it in sundials configure
+  set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+  add_subdirectory(${SUNDIALS_SUBMOD_LOCATION})
+endif()
 
 ########################### MASA #####################################
 
 if(PELEC_ENABLE_MASA)
+  message(STATUS "MASA Configure Section")
   set(CMAKE_PREFIX_PATH ${MASA_DIR} ${CMAKE_PREFIX_PATH})
   find_package(MASA QUIET REQUIRED)
   if(MASA_FOUND)
@@ -72,6 +95,7 @@ endif()
 ########################### PeleC #####################################
 
 if(PELEC_ENABLE_MPI)
+  message(STATUS "MPI Configure Section")
   find_package(MPI REQUIRED)
 endif()
 
@@ -81,9 +105,22 @@ message(STATUS "CMAKE_SYSTEM_NAME = ${CMAKE_SYSTEM_NAME}")
 message(STATUS "CMAKE_CXX_COMPILER_ID = ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "CMAKE_CXX_COMPILER_VERSION = ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "CMAKE_BUILD_TYPE = ${CMAKE_BUILD_TYPE}")
+if(PELEC_ENABLE_WERROR)
+  message(STATUS "Enabling Werror.")
+endif()
 
-# Turn on rpath stuff
-include(${CMAKE_SOURCE_DIR}/CMake/SetRpath.cmake)
+message(STATUS "PELEC_PRECISION = ${PELEC_PRECISION}")
+if("${PELEC_PRECISION}" STREQUAL "SINGLE" AND PELEC_ENABLE_AMREX_EB)
+  message(FATAL_ERROR "Single precision currently not allowed in AMReX with EB enabled")
+endif()
+if("${PELEC_PRECISION}" STREQUAL "SINGLE" AND PELEC_ENABLE_MASA)
+  message(FATAL_ERROR "Single precision currently not allowed in AMReX with MASA enabled")
+endif()
+
+init_code_checks()
+
+#Turn on rpath stuff
+include(SetRpath)
 
 #Build pelec executables and link to amrex library
 add_subdirectory(ExecCpp)

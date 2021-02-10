@@ -8,6 +8,14 @@ using namespace amrex;
 
 struct PhiVFill
 {
+  ProbParmDevice const* lprobparm;
+
+  AMREX_GPU_HOST
+  constexpr PhiVFill(ProbParmDevice const* d_prob_parm)
+    : lprobparm(d_prob_parm)
+  {
+  }
+
     AMREX_GPU_DEVICE
     void operator() (const amrex::IntVect& iv, amrex::Array4<amrex::Real> const& dest,
                      const int dcomp, const int numcomp,
@@ -28,11 +36,11 @@ struct PhiVFill
 
        for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
           if ((bc[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
-             bcnormal(x, s_int, s_ext, idir, +1, time, geom);
+             bcnormal(x, s_int, s_ext, idir, +1, time, geom, *lprobparm);
              dest(iv, dcomp) = s_ext[UFX];
           }
           if ((bc[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[idir] > domhi[idir])) {
-             bcnormal(x, s_int, s_ext, idir, -1, time, geom);
+             bcnormal(x, s_int, s_ext, idir, -1, time, geom, *lprobparm);
              dest(iv, dcomp) = s_ext[UFX];
           }
        }
@@ -41,6 +49,13 @@ struct PhiVFill
 
 struct nEFill
 {
+  ProbParmDevice const* lprobparm;
+
+  AMREX_GPU_HOST
+  constexpr nEFill(ProbParmDevice const* d_prob_parm)
+    : lprobparm(d_prob_parm)
+  {
+  }
     AMREX_GPU_DEVICE
     void operator() (const amrex::IntVect& iv, amrex::Array4<amrex::Real> const& dest,
                      const int dcomp, const int numcomp,
@@ -61,11 +76,11 @@ struct nEFill
 
        for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
           if ((bc[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
-             bcnormal(x, s_int, s_ext, idir, +1, time, geom);
+             bcnormal(x, s_int, s_ext, idir, +1, time, geom, *lprobparm);
              dest(iv, dcomp) = s_ext[UFX+1];
           }
           if ((bc[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[idir] > domhi[idir])) {
-             bcnormal(x, s_int, s_ext, idir, -1, time, geom);
+             bcnormal(x, s_int, s_ext, idir, -1, time, geom, *lprobparm);
              dest(iv, dcomp) = s_ext[UFX+1];
           }
        }

@@ -117,12 +117,11 @@ pc_fill_bndry_grad_stencil(
 
       amrex::Real sten[3][3][3] = {{{0.0}}};
       // The two intersections, that are d(1) and d(2) away from the eb
-      // centroid, are both in
-      //  y-z planes, bounded in (0:2)x(0:2) in normalized coordinates
-      // For point m, we interpolate z=0,1,2 lines, to (y(m),0), (y(m),1) and
-      // (y(m),2), and
-      //  then interpolate along y=y(m) to (y(m),z(m))
-      amrex::Real cy[3], cz[3];
+      // centroid, are both in y-z planes, bounded in (0:2)x(0:2) in normalized
+      // coordinates For point m, we interpolate z=0,1,2 lines, to (y(m),0),
+      // (y(m),1) and (y(m),2), and then interpolate along y=y(m) to (y(m),z(m))
+      amrex::Real cy[3];
+      amrex::Real cz[3];
       for (int m = 0; m < 2; m++) {
         cy[0] = 0.5 * (y[m] - 1.0) * (y[m] - 2.0);
         cy[1] = -y[m] * (y[m] - 2.0);
@@ -193,9 +192,9 @@ pc_fill_flux_interp_stencil(
     const int j = sten[L].iv[1];
     const int k = sten[L].iv[2];
     if (is_inside(i, j, k, lo, hi)) {
-      for (int ii = 0; ii < 3; ii++) {
-        for (int jj = 0; jj < 3; jj++) {
-          sten[L].val[ii][jj] = 0.0;
+      for (auto& ii : sten[L].val) {
+        for (amrex::Real& jj : ii) {
+          jj = 0.0;
         }
       }
       const amrex::Real ct0 = fc(i, j, k, 0);
@@ -226,14 +225,14 @@ pc_apply_face_stencil(
   const auto hi = amrex::ubound(bx);
 
   for (int n = 0; n < nc; n++) {
-    amrex::Vector<amrex::Real> newval_vec(Nsten, 0.0);
-    amrex::AsyncArray<amrex::Real> newval(newval_vec.data(), newval_vec.size());
+    amrex::Gpu::DeviceVector<amrex::Real> newval(Nsten);
     amrex::Real* d_newval = newval.data();
 
     amrex::ParallelFor(Nsten, [=] AMREX_GPU_DEVICE(int L) {
       const int i = sten[L].iv[0];
       const int j = sten[L].iv[1];
       const int k = sten[L].iv[2];
+      d_newval[L] = 0.0;
       if (is_inside(i, j, k, lo, hi)) {
         if (dir == 0) {
           for (int t0 = 0; t0 < 3; t0++) {
@@ -302,7 +301,6 @@ pc_fix_div_and_redistribute(
   const amrex::Real volinv = 1.0 / vol;
 
   for (int n = 0; n < nc; n++) {
-
     // Recompute conservative divergence, DC, on cut cells...need DC in 2 grow
     // cells for final result
     amrex::ParallelFor(Ncut, [=] AMREX_GPU_DEVICE(int L) {
@@ -310,7 +308,8 @@ pc_fix_div_and_redistribute(
       const int j = sv_ebg[L].iv[1];
       const int k = sv_ebg[L].iv[2];
       if (is_inside(i, j, k, lo, hi, 2)) {
-        const amrex::Real kappa_inv = 1.0 / amrex::max(vf(i, j, k), 1.0e-12);
+        const amrex::Real kappa_inv =
+          1.0 / amrex::max<amrex::Real>(vf(i, j, k), 1.0e-12);
         amrex::Real tmp;
 #ifdef _OPENMP
 #pragma omp atomic read
@@ -326,19 +325,18 @@ pc_fix_div_and_redistribute(
     // Compute non-conservative and hybrid divergence, DNC and HD, and
     // redistribution mass dM in cut cells. Will need in 1 grow cells (see
     // below), so it depends on having a conservative div in 2 grow cells
-    amrex::Vector<amrex::Real> dM_vec(Ncut, 0.0);
-    amrex::Vector<amrex::Real> HD_vec(Ncut, 0.0);
-    amrex::AsyncArray<amrex::Real> h_dM(dM_vec.data(), dM_vec.size());
-    amrex::AsyncArray<amrex::Real> h_HD(HD_vec.data(), HD_vec.size());
-    amrex::Real* dM = h_dM.data();
-    amrex::Real* HD = h_HD.data();
+    amrex::Gpu::DeviceVector<amrex::Real> dM_vec(Ncut);
+    amrex::Gpu::DeviceVector<amrex::Real> HD_vec(Ncut);
+    amrex::Real* dM = dM_vec.data();
+    amrex::Real* HD = HD_vec.data();
     amrex::Gpu::synchronize();
     amrex::ParallelFor(Ncut, [=] AMREX_GPU_DEVICE(int L) {
       const int i = sv_ebg[L].iv[0];
       const int j = sv_ebg[L].iv[1];
       const int k = sv_ebg[L].iv[2];
       if (is_inside(i, j, k, lo, hi, 1)) {
-        amrex::Real sum_kappa = 0.0, sum_div = 0.0;
+        amrex::Real sum_kappa = 0.0;
+        amrex::Real sum_div = 0.0;
         for (int ii = -1; ii <= 1; ii++) {
           for (int jj = -1; jj <= 1; jj++) {
             for (int kk = -1; kk <= 1; kk++) {
@@ -385,7 +383,7 @@ pc_fix_div_and_redistribute(
           for (int jj = -1; jj <= 1; jj++) {
             for (int kk = -1; kk <= 1; kk++) {
               int nbr = flags(i, j, k).isConnected(ii, jj, kk);
-              if ((ii == 0) and (jj == 0) and (kk == 0)) {
+              if ((ii == 0) && (jj == 0) && (kk == 0)) {
                 nbr = 0;
               }
               if (vf(i + ii, j + jj, k + kk) < eb_small_vfrac) {
@@ -401,7 +399,7 @@ pc_fix_div_and_redistribute(
           for (int jj = -1; jj <= 1; jj++) {
             for (int kk = -1; kk <= 1; kk++) {
               int nbr = flags(i, j, k).isConnected(ii, jj, kk);
-              if ((ii == 0) and (jj == 0) and (kk == 0)) {
+              if ((ii == 0) && (jj == 0) && (kk == 0)) {
                 nbr = 0;
               }
               if (vf(i + ii, j + jj, k + kk) < eb_small_vfrac) {
@@ -421,7 +419,7 @@ pc_fix_div_and_redistribute(
         bool as_crse_covered_cell = false;
         if (as_crse) {
           as_crse_crse_cell =
-            is_inside(i, j, k, lo, hi) and
+            is_inside(i, j, k, lo, hi) &&
             (rr_flag_crse(i, j, k) == amrex_yafluxreg_crse_fine_boundary_cell);
           as_crse_covered_cell =
             rr_flag_crse(i, j, k) == amrex_yafluxreg_fine_cell;
@@ -441,7 +439,7 @@ pc_fix_div_and_redistribute(
           for (int jj = -1; jj <= 1; jj++) {
             for (int kk = -1; kk <= 1; kk++) {
               if (
-                ((ii != 0) || (jj != 0) || (kk != 0)) and
+                ((ii != 0) || (jj != 0) || (kk != 0)) &&
                 flags(i, j, k).isConnected(ii, jj, kk)) {
 
                 const int iii = i + ii;
@@ -453,27 +451,27 @@ pc_fix_div_and_redistribute(
                 const bool valid_dst_cell = is_inside(iii, jjj, kkk, lo, hi);
 
                 if (
-                  (as_crse_crse_cell) and
-                  (rr_flag_crse(iii, jjj, kkk) == amrex_yafluxreg_fine_cell) and
+                  (as_crse_crse_cell) &&
+                  (rr_flag_crse(iii, jjj, kkk) == amrex_yafluxreg_fine_cell) &&
                   (vf(i, j, k) > reredistribution_threshold)) {
                   rr_drho_crse(i, j, k, n) +=
                     dt * drho * (vf(iii, jjj, kkk) / vf(i, j, k));
                 }
 
                 if (
-                  (as_crse_covered_cell) and (valid_dst_cell) and
+                  (as_crse_covered_cell) && (valid_dst_cell) &&
                   (rr_flag_crse(iii, jjj, kkk) ==
-                   amrex_yafluxreg_crse_fine_boundary_cell) and
+                   amrex_yafluxreg_crse_fine_boundary_cell) &&
                   (vf(iii, jjj, kkk) > reredistribution_threshold)) {
                   // the recipient is a crse/fine boundary cell
                   rr_drho_crse(iii, jjj, kkk, n) -= dt * drho;
                 }
 
-                if ((as_fine_valid_cell) and (!valid_dst_cell)) {
+                if ((as_fine_valid_cell) && (!valid_dst_cell)) {
                   dm_as_fine(iii, jjj, kkk, n) += dt * drho * vf(iii, jjj, kkk);
                 }
 
-                if ((as_fine_ghost_cell) and (valid_dst_cell)) {
+                if ((as_fine_ghost_cell) && (valid_dst_cell)) {
                   dm_as_fine(i, j, k, n) -= dt * drho * vf(iii, jjj, kkk);
                 }
               }
@@ -521,13 +519,15 @@ pc_apply_eb_boundry_visc_flux_stencil(
       const amrex::Real ndota =
         norm[0] * alpha[0] + norm[1] * alpha[1] + norm[2] * alpha[2];
       amrex::Real t1[AMREX_SPACEDIM];
-      for (int idir = 0; idir < AMREX_SPACEDIM; idir++)
+      for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
         t1[idir] = alpha[idir] - ndota * norm[idir];
+      }
 
       const amrex::Real denom =
         1.0 / std::sqrt(t1[0] * t1[0] + t1[1] * t1[1] + t1[2] * t1[2]);
-      for (int idir = 0; idir < AMREX_SPACEDIM; idir++)
-        t1[idir] *= denom;
+      for (amrex::Real& idir : t1) {
+        idir *= denom;
+      }
 
       amrex::Real t2[AMREX_SPACEDIM];
       t2[0] = norm[1] * t1[2] - norm[2] * t1[1];
@@ -575,13 +575,15 @@ pc_apply_eb_boundry_visc_flux_stencil(
 
       // Transform eb boundary velocities to coordinates aligned with EB
       amrex::Real bco[AMREX_SPACEDIM];
-      for (int idir = 0; idir < AMREX_SPACEDIM; idir++)
+      for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
         bco[idir] = bcval[idir * Nsten + L];
+      }
 
       amrex::Real bct[AMREX_SPACEDIM];
-      for (int idir = 0; idir < AMREX_SPACEDIM; idir++)
+      for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
         bct[idir] =
           Qt[idir][0] * bco[0] + Qt[idir][1] * bco[1] + Qt[idir][2] * bco[2];
+      }
 
       // Compute normal derivative (times eb area) using precomputed stencil
       amrex::Real sum[AMREX_SPACEDIM] = {0.0};
@@ -595,8 +597,10 @@ pc_apply_eb_boundry_visc_flux_stencil(
         }
       }
       amrex::Real dUtdn[AMREX_SPACEDIM];
-      for (int idir = 0; idir < AMREX_SPACEDIM; idir++)
+      for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
         dUtdn[idir] = sum[idir] + bct[idir] * sten[L].bcval_sten;
+      }
+
       amrex::Real tauDotN[AMREX_SPACEDIM];
       tauDotN[0] =
         ((4.0 / 3.0) * coeff(i, j, k, dComp_mu) + coeff(i, j, k, dComp_xi)) *
@@ -604,10 +608,11 @@ pc_apply_eb_boundry_visc_flux_stencil(
       tauDotN[1] = coeff(i, j, k, dComp_mu) * dUtdn[1];
       tauDotN[2] = coeff(i, j, k, dComp_mu) * dUtdn[2];
 
-      for (int idir = 0; idir < AMREX_SPACEDIM; idir++)
+      for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
         bcflux[idir * Nflux + L] = Qt[0][idir] * tauDotN[0] +
                                    Qt[1][idir] * tauDotN[1] +
                                    Qt[2][idir] * tauDotN[2];
+      }
     }
   });
 }

@@ -32,7 +32,8 @@ PeleC::solveEF ( Real time,
    const BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
    const Vector<BCRec>& bc = {bcphiV};
    if (not geom.isAllPeriodic()) {
-      GpuBndryFuncFab<PhiVFill> bf(PhiVFill{});
+      ProbParmDevice const* lprobparm = PeleC::prob_parm_device.get();
+      amrex::GpuBndryFuncFab<PhiVFill>  bf(PhiVFill{lprobparm});
       PhysBCFunct<GpuBndryFuncFab<PhiVFill> > phiVf(geom, bc, bf);
       phiVf(Sborder, 0, 1, Sborder.nGrowVect(), time, 0);
    }

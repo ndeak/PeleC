@@ -16,7 +16,8 @@ PeleC::getMOLSrcTerm(
     MOLSrcTerm.setVal(0, 0, NVAR, MOLSrcTerm.nGrow());
     return;
   }
-  /**
+
+  /*
      Across all conserved state components, compute the method of lines rhs
      = -Div(Flux).  The input state, S, contained the conserved variables, and
      is "fill patched" in the usual AMReX way, where values at Dirichlet
@@ -60,6 +61,7 @@ PeleC::getMOLSrcTerm(
      EB will need to be carefully considered before implementation for
      accelerators.
   */
+
   const int nCompTr = dComp_lambda + 1;
   const int do_harmonic = 1; // TODO: parmparse this
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
@@ -72,6 +74,7 @@ PeleC::getMOLSrcTerm(
     {AMREX_D_DECL(dx1, dx1, dx1)}};
 
   // Fetch some gpu arrays
+
   prefetchToDevice(S);
   prefetchToDevice(MOLSrcTerm);
 
@@ -82,8 +85,9 @@ PeleC::getMOLSrcTerm(
   // amrex::Elixir flags_eli = flags.elixir();
   amrex::MultiFab* cost = nullptr;
 
-  if (do_mol_load_balance)
+  if (do_mol_load_balance) {
     cost = &(get_new_data(Work_Estimate_Type));
+  }
 
   amrex::EBFluxRegister* fr_as_crse = nullptr;
   if (do_reflux && level < parent->finestLevel()) {
@@ -116,27 +120,31 @@ PeleC::getMOLSrcTerm(
     auto const& q = Q_ext.array(mfi);
     auto const& qaux = Qaux_ext.array(mfi);
     {
+        PassMap const* lpmap = pass_map.get();
         BL_PROFILE("PeleC::ctoprim()");
         amrex::ParallelFor(
           gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            pc_ctoprim(i, j, k, s, q, qaux);
+            pc_ctoprim(i, j, k, s, q, qaux, *lpmap);
         });
     }
     
-    // Calculate species diffusivities
-    auto const& qar_yin = Q_ext.array(mfi,QFS);
-    auto const& qar_Tin = Q_ext.array(mfi,QTEMP);
-    auto const& qar_rhoin = Q_ext.array(mfi,QRHO);
-    auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
-    auto const& coe_mu = coeffs_old.array(mfi,dComp_mu);
-    auto const& coe_xi = coeffs_old.array(mfi,dComp_xi);
-    auto const& coe_lambda = coeffs_old.array(mfi,dComp_lambda);
-    BL_PROFILE("PeleC::get_transport_coeffs()");
-    // Get Transport coefs on GPU.
-    amrex::launch(tbox, [=] AMREX_GPU_DEVICE(amrex::Box const& tbx) 
     {
-      get_transport_coeffs(tbox, qar_yin, qar_Tin, qar_rhoin, coe_rhoD, coe_mu, coe_xi,coe_lambda);
-    });
+      // Calculate species diffusivities
+      TransParm const* ltransparm = trans_parm_g;
+      auto const& qar_yin = Q_ext.array(mfi,QFS);
+      auto const& qar_Tin = Q_ext.array(mfi,QTEMP);
+      auto const& qar_rhoin = Q_ext.array(mfi,QRHO);
+      auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
+      auto const& coe_mu = coeffs_old.array(mfi,dComp_mu);
+      auto const& coe_xi = coeffs_old.array(mfi,dComp_xi);
+      auto const& coe_lambda = coeffs_old.array(mfi,dComp_lambda);
+      BL_PROFILE("PeleC::get_transport_coeffs()");
+      // Get Transport coefs on GPU.
+      amrex::launch(tbox, [=] AMREX_GPU_DEVICE(amrex::Box const& tbx) 
+      {
+        get_transport_coeffs(tbox, qar_yin, qar_Tin, qar_rhoin, coe_rhoD, coe_mu, coe_xi,coe_lambda, ltransparm);
+      });
+    }
   }
 
   // Get the cc species transport properties
@@ -217,7 +225,7 @@ PeleC::getMOLSrcTerm(
       amrex::FabType typ = flag_fab.getType(vbox);
       if (typ == amrex::FabType::covered) {
         setV(vbox, NVAR, MOLSrc, 0);
-        if (do_mol_load_balance) {
+        if (do_mol_load_balance && cost) {
           wt = (amrex::ParallelDescriptor::second() - wt) / vbox.d_numPts();
           (*cost)[mfi].plus<amrex::RunOn::Device>(wt, vbox);
         }
@@ -236,9 +244,11 @@ PeleC::getMOLSrcTerm(
       int local_i = mfi.LocalIndex();
       int Ncut = (!eb_in_domain) ? 0 : sv_eb_bndry_grad_stencil[local_i].size();
       SparseData<amrex::Real, EBBndrySten> eb_flux_thdlocal;
-      eb_flux_thdlocal.define(sv_eb_bndry_grad_stencil[local_i], NVAR);
+      if (Ncut > 0) {
+        eb_flux_thdlocal.define(sv_eb_bndry_grad_stencil[local_i], NVAR);
+      }
       auto* d_sv_eb_bndry_geom =
-        (Ncut > 0 ? sv_eb_bndry_geom[local_i].data() : 0);
+        (Ncut > 0 ? sv_eb_bndry_geom[local_i].data() : nullptr);
 #endif
 
       // const int* lo = vbox.loVect();
@@ -246,8 +256,9 @@ PeleC::getMOLSrcTerm(
 
       BL_PROFILE_VAR_START(diff);
       int nqaux = NQAUX > 0 ? NQAUX : 1;
-      amrex::FArrayBox q(gbox, QVAR), qaux(gbox, nqaux),
-        coeff_cc(gbox, nCompTr);
+      amrex::FArrayBox q(gbox, QVAR);
+      amrex::FArrayBox qaux(gbox, nqaux);
+      amrex::FArrayBox coeff_cc(gbox, nCompTr);
       amrex::Elixir qeli = q.elixir();
       amrex::Elixir qauxeli = qaux.elixir();
       amrex::Elixir coefeli = coeff_cc.elixir();
@@ -259,45 +270,45 @@ PeleC::getMOLSrcTerm(
       // required for D term
       {
         BL_PROFILE("PeleC::ctoprim()");
+        PassMap const* lpmap = pass_map.get();
         amrex::ParallelFor(
           gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            pc_ctoprim(i, j, k, s, qar, qauxar);
+            pc_ctoprim(i, j, k, s, qar, qauxar, *lpmap);
           });
       }
-// TODO deal with NSCBC
-#if 0       
-      for (int dir = 0; dir < AMREX_SPACEDIM ; dir++)  {
-        const amrex::Box& bxtmp = amrex::surroundingNodes(vbox,dir);
-        amrex::Box TestBox(bxtmp);
-        for(int d=0; d<AMREX_SPACEDIM; ++d) {
-          if (dir!=d) TestBox.grow(d,1);
-        }
-        
-        bcMask[dir].resize(TestBox,1);
-        bcMask[dir].setVal(0);
-	    }
-      
-      // Becase bcMask is read in the Riemann solver in any case,
-      // here we put physbc values in the appropriate faces for the non-nscbc case
-      set_bc_mask(lo, hi, domain_lo, domain_hi,
-                  AMREX_D_DECL(AMREX_TO_FORTRAN(bcMask[0]),
-	                       AMREX_TO_FORTRAN(bcMask[1]),
-                         AMREX_TO_FORTRAN(bcMask[2])));
+      // TODO deal with NSCBC
+      /*
+            for (int dir = 0; dir < AMREX_SPACEDIM ; dir++)  {
+              const amrex::Box& bxtmp = amrex::surroundingNodes(vbox,dir);
+              amrex::Box TestBox(bxtmp);
+              for(int d=0; d<AMREX_SPACEDIM; ++d) {
+                if (dir!=d) TestBox.grow(d,1);
+              }
 
-      if (nscbc_diff == 1)
-      {
-        impose_NSCBC(lo, hi, domain_lo, domain_hi,
-                     AMREX_TO_FORTRAN(Sfab),
-                     AMREX_TO_FORTRAN(q.fab()),
-                     AMREX_TO_FORTRAN(qaux.fab()),
-                     AMREX_D_DECL(AMREX_TO_FORTRAN(bcMask[0]),
-                            AMREX_TO_FORTRAN(bcMask[1]),
-                            AMREX_TO_FORTRAN(bcMask[2])),
-                     &flag_nscbc_isAnyPerio, flag_nscbc_perio, 
-                     &time, dx, &dt);
-      }
-#endif
+              bcMask[dir].resize(TestBox,1);
+              bcMask[dir].setVal(0);
+            }
 
+            // Becase bcMask is read in the Riemann solver in any case,
+            // here we put physbc values in the appropriate faces for the
+         non-nscbc case set_bc_mask(lo, hi, domain_lo, domain_hi,
+                        AMREX_D_DECL(AMREX_TO_FORTRAN(bcMask[0]),
+                               AMREX_TO_FORTRAN(bcMask[1]),
+                               AMREX_TO_FORTRAN(bcMask[2])));
+
+            if (nscbc_diff == 1)
+            {
+              impose_NSCBC(lo, hi, domain_lo, domain_hi,
+                           AMREX_TO_FORTRAN(Sfab),
+                           AMREX_TO_FORTRAN(q.fab()),
+                           AMREX_TO_FORTRAN(qaux.fab()),
+                           AMREX_D_DECL(AMREX_TO_FORTRAN(bcMask[0]),
+                                  AMREX_TO_FORTRAN(bcMask[1]),
+                                  AMREX_TO_FORTRAN(bcMask[2])),
+                           &flag_nscbc_isAnyPerio, flag_nscbc_perio,
+                           &time, dx, &dt);
+            }
+      */
       // Compute transport coefficients, coincident with Q
       auto const& coe_cc = coeff_cc.array();
       {
@@ -310,10 +321,11 @@ PeleC::getMOLSrcTerm(
         auto const& coe_lambda = coeff_cc.array(dComp_lambda);
         BL_PROFILE("PeleC::get_transport_coeffs()");
         // Get Transport coefs on GPU.
+        TransParm const* ltransparm = trans_parm_g;
         amrex::launch(gbox, [=] AMREX_GPU_DEVICE(amrex::Box const& tbx) {
           get_transport_coeffs(
             tbx, qar_yin, qar_Tin, qar_rhoin, coe_rhoD, coe_mu, coe_xi,
-            coe_lambda);
+            coe_lambda, ltransparm);
         });
       }
 
@@ -366,8 +378,8 @@ PeleC::getMOLSrcTerm(
           });
       }
 
-      // Shut off unwanted diffusion after the fact
-      //    ick! Under normal conditions, you either have diffusion on all or
+      // Shut off unwanted diffusion after the fact.
+      //      Under normal conditions, you either have diffusion on all or
       //      none, so this shouldn't be done this way.  However, the regression
       //      test for diffusion works by diffusing only temperature through
       //      this process.  Ideally, we'd redo that test to diffuse a passive
@@ -394,11 +406,10 @@ PeleC::getMOLSrcTerm(
       }
 
 #ifdef PELEC_USE_EB
-      //  Set extensive flux at embedded boundary, potentially
-      //  non-zero only for heat flux on isothermal boundaries,
-      //  and momentum fluxes at no-slip walls
-      const int nFlux =
-        sv_eb_flux.size() == 0 ? 0 : sv_eb_flux[local_i].numPts();
+      // Set extensive flux at embedded boundary, potentially
+      // non-zero only for heat flux on isothermal boundaries,
+      // and momentum fluxes at no-slip walls
+      const int nFlux = sv_eb_flux.empty() ? 0 : sv_eb_flux[local_i].numPts();
       if (typ == amrex::FabType::singlevalued && Ncut > 0) {
         eb_flux_thdlocal.setVal(0); // Default to Neumann for all fields
 
@@ -432,14 +443,13 @@ PeleC::getMOLSrcTerm(
 
       BL_PROFILE_VAR_STOP(diff);
 
-      /* At this point flux_ec contains the diffusive fluxes in each direction
-         at face centers for the (potentially partially covered) grid-aligned
-         faces and eb_flux_thdlocal contains the flux for the cut faces. Before
-         computing hybrid divergence, comptue and add in the hydro fluxes.
-         Also, Dterm currently contains the divergence of the face-centered
-         diffusion fluxes.  Increment this with the divergence of the
-         face-centered hyperbloic fluxes.
-      */
+      // At this point flux_ec contains the diffusive fluxes in each direction
+      // at face centers for the (potentially partially covered) grid-aligned
+      // faces and eb_flux_thdlocal contains the flux for the cut faces. Before
+      // computing hybrid divergence, comptue and add in the hydro fluxes.
+      // Also, Dterm currently contains the divergence of the face-centered
+      // diffusion fluxes.  Increment this with the divergence of the
+      // face-centered hyperbloic fluxes.
       if (do_hydro && do_mol) {
         // amrex::FArrayBox flatn(cbox, 1);
         // amrex::Elixir flatn_eli;
@@ -468,7 +478,7 @@ PeleC::getMOLSrcTerm(
           BL_PROFILE("PeleC::pc_hyp_mol_flux()");
 #ifdef PELEC_USE_EB
           amrex::Real* d_eb_flux_thdlocal =
-            (nFlux > 0 ? eb_flux_thdlocal.dataPtr() : 0);
+            (nFlux > 0 ? eb_flux_thdlocal.dataPtr() : nullptr);
 #endif
           //auto const& vol = volume.array(mfi);
           pc_compute_hyp_mol_flux(
@@ -553,22 +563,22 @@ PeleC::getMOLSrcTerm(
           eb_tile_mask[icut] = 1;
         }
       });
-      if (typ == amrex::FabType::singlevalued) {
+      if (typ == amrex::FabType::singlevalued && Ncut > 0) {
         sv_eb_flux[local_i].merge(eb_flux_thdlocal, 0, NVAR, v_eb_tile_mask);
       }
 
-      amrex::FArrayBox dm_as_fine, fab_drho_as_crse;
+      amrex::FArrayBox dm_as_fine;
+      amrex::FArrayBox fab_drho_as_crse;
       amrex::IArrayBox fab_rrflag_as_crse;
-      amrex::Elixir dm_as_fine_eli, fab_drho_as_crse_eli,
-        fab_rrflag_as_crse_eli;
+      amrex::Elixir dm_as_fine_eli;
+      amrex::Elixir fab_drho_as_crse_eli;
+      amrex::Elixir fab_rrflag_as_crse_eli;
       if (typ == amrex::FabType::singlevalued) {
-        /* Interpolate fluxes from face centers to face centroids
-         * Note that hybrid divergence and redistribution algorithms require
-         * that we be able to compute the conservative divergence on 2 grow
-         * cells, so we need interpolated fluxes on 2 grow cells, and therefore
-         * we need face centered fluxes on 3.
-         */
-
+        // Interpolate fluxes from face centers to face centroids
+        // Note that hybrid divergence and redistribution algorithms require
+        // that we be able to compute the conservative divergence on 2 grow
+        // cells, so we need interpolated fluxes on 2 grow cells, and therefore
+        // we need face centered fluxes on 3.
         {
           BL_PROFILE("PeleC::pc_apply_face_stencil()");
           for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
@@ -576,10 +586,12 @@ PeleC::getMOLSrcTerm(
             // int in_place = 1;
             const amrex::Box valid_interped_flux_box =
               amrex::Box(ebfluxbox).surroundingNodes(dir);
-            pc_apply_face_stencil(
-              valid_interped_flux_box, stencil_volume_box,
-              flux_interp_stencil[dir][local_i].data(), Nsten, dir, NVAR,
-              flx[dir]);
+            if (Nsten > 0) {
+              pc_apply_face_stencil(
+                valid_interped_flux_box, stencil_volume_box,
+                flux_interp_stencil[dir][local_i].data(), Nsten, dir, NVAR,
+                flx[dir]);
+            }
           }
         }
 
@@ -593,13 +605,13 @@ PeleC::getMOLSrcTerm(
         //
         // Upon return:
         // div = kappa.(1/Vol) Div(FluxC.Area)  Vol = kappa.VOL,
-        // Area=aperture.AREA,
-        //                  defined over the valid box
+        // Area=aperture.AREA, defined over the valid box
 
         // TODO: Rework this for r-z, if applicable
         amrex::Real vol = 1;
-        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
           vol *= geom.CellSize()[dir];
+        }
 
         // Set weighting for redistribution
         auto const& W = vfrac.array(mfi);
@@ -622,26 +634,29 @@ PeleC::getMOLSrcTerm(
             dm_as_fine_eli = dm_as_fine.elixir();
             dm_as_fine.setVal<amrex::RunOn::Device>(0.0);
           }
-          BL_PROFILE("PeleC::pc_fix_div_and_redistribute()");
-          pc_fix_div_and_redistribute(
-            vbox, vol, dt, NVAR, eb_small_vfrac, levmsk_notcovered,
-            d_sv_eb_bndry_geom, Ncut, flags.array(mfi),
-            AMREX_D_DECL(flx[0], flx[1], flx[2]), sv_eb_flux[local_i].dataPtr(),
-            nFlux, vfrac.array(mfi), W, as_crse, as_fine, level_mask.array(mfi),
-            (*p_rrflag_as_crse).array(), Dterm, (*p_drho_as_crse).array(),
-            dm_as_fine.array());
+          if (Ncut > 0) {
+            BL_PROFILE("PeleC::pc_fix_div_and_redistribute()");
+            pc_fix_div_and_redistribute(
+              vbox, vol, dt, NVAR, eb_small_vfrac, levmsk_notcovered,
+              d_sv_eb_bndry_geom, Ncut, flags.array(mfi),
+              AMREX_D_DECL(flx[0], flx[1], flx[2]),
+              sv_eb_flux[local_i].dataPtr(), nFlux, vfrac.array(mfi), W,
+              as_crse, as_fine, level_mask.array(mfi),
+              (*p_rrflag_as_crse).array(), Dterm, (*p_drho_as_crse).array(),
+              dm_as_fine.array());
+          }
         }
 
         if (do_reflux && flux_factor != 0) {
-          for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
-            flux_ec[dir].mult<amrex::RunOn::Device>(flux_factor);
+          for (auto& dir : flux_ec) {
+            dir.mult<amrex::RunOn::Device>(flux_factor);
           }
 
           if (fr_as_crse) {
             fr_as_crse->CrseAdd(
-              mfi, {D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])}, dxD.data(),
-              dt, vfrac[mfi],
-              {D_DECL(
+              mfi, {AMREX_D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])},
+              dxD.data(), dt, vfrac[mfi],
+              {AMREX_D_DECL(
                 &((*areafrac[0])[mfi]), &((*areafrac[1])[mfi]),
                 &((*areafrac[2])[mfi]))},
               device);
@@ -654,9 +669,9 @@ PeleC::getMOLSrcTerm(
 
           if (fr_as_fine) {
             fr_as_fine->FineAdd(
-              mfi, {D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])}, dxD.data(),
-              dt, vfrac[mfi],
-              {D_DECL(
+              mfi, {AMREX_D_DECL(&flux_ec[0], &flux_ec[1], &flux_ec[2])},
+              dxD.data(), dt, vfrac[mfi],
+              {AMREX_D_DECL(
                 &((*areafrac[0])[mfi]), &((*areafrac[1])[mfi]),
                 &((*areafrac[2])[mfi]))},
               dm_as_fine, device);
@@ -706,8 +721,8 @@ PeleC::getMOLSrcTerm(
         BL_PROFILE("PeleC::diffextrap()");
         const int mg = MOLSrcTerm.nGrow();
         const amrex::Box bx = mfi.tilebox();
-        auto low = bx.loVect();
-        auto high = bx.hiVect();
+        const auto* low = bx.loVect();
+        const auto* high = bx.hiVect();
         auto dlo = Dterm.begin;
         auto dhi = Dterm.end;
         const int AMREX_D_DECL(lx = low[0], ly = low[1], lz = low[2]);
@@ -730,12 +745,12 @@ PeleC::getMOLSrcTerm(
 
 
 #ifdef PELEC_USE_EB
-      if (do_mol_load_balance) {
+      if (do_mol_load_balance && cost) {
         amrex::Gpu::streamSynchronize();
         wt = (amrex::ParallelDescriptor::second() - wt) / vbox.d_numPts();
         (*cost)[mfi].plus<amrex::RunOn::Device>(wt, vbox);
       }
 #endif
-    } // End of MFIter scope
-  }   // End of OMP scope
-} // End of Function
+    }
+  }
+}

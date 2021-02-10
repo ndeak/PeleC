@@ -92,6 +92,8 @@ pc_umeth_3D(
   auto const& qzmarr = qzm.array();
   auto const& qzparr = qzp.array();
 
+  PassMap const* lpmap = PeleC::pass_map.get();
+
   // Put the PLM and slopes in the same kernel launch to avoid unnecessary
   // launch overhead Pelec_Slope_* are SIMD as well as PeleC_plm_* which loop
   // over the same box
@@ -100,19 +102,25 @@ pc_umeth_3D(
       bxg2, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
         amrex::Real slope[QVAR];
         // X slopes and interp
-        for (int n = 0; n < QVAR; ++n)
+        for (int n = 0; n < QVAR; ++n) {
           slope[n] = plm_slope(i, j, k, n, 0, q);
-        pc_plm_x(i, j, k, qxmarr, qxparr, slope, q, qaux(i, j, k, QC), dx, dt);
+        }
+        pc_plm_x(
+          i, j, k, qxmarr, qxparr, slope, q, qaux(i, j, k, QC), dx, dt, *lpmap);
 
         // Y slopes and interp
-        for (int n = 0; n < QVAR; n++)
+        for (int n = 0; n < QVAR; n++) {
           slope[n] = plm_slope(i, j, k, n, 1, q);
-        pc_plm_y(i, j, k, qymarr, qyparr, slope, q, qaux(i, j, k, QC), dy, dt);
+        }
+        pc_plm_y(
+          i, j, k, qymarr, qyparr, slope, q, qaux(i, j, k, QC), dy, dt, *lpmap);
 
         // Z slopes and interp
-        for (int n = 0; n < QVAR; ++n)
+        for (int n = 0; n < QVAR; ++n) {
           slope[n] = plm_slope(i, j, k, n, 2, q);
-        pc_plm_z(i, j, k, qzmarr, qzparr, slope, q, qaux(i, j, k, QC), dz, dt);
+        }
+        pc_plm_z(
+          i, j, k, qzmarr, qzparr, slope, q, qaux(i, j, k, QC), dz, dt, *lpmap);
       });
   } else if (ppm_type == 1) {
     // Compute the normal interface states by reconstructing
@@ -147,7 +155,7 @@ pc_umeth_3D(
     xflxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       pc_cmpflx(
         i, j, k, bclx, bchx, dlx, dhx, qxmarr, qxparr, fxarr, gdtempx, qaux,
-        cdir);
+        cdir, *lpmap);
     });
 
   // Y initial fluxes
@@ -162,7 +170,7 @@ pc_umeth_3D(
     yflxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       pc_cmpflx(
         i, j, k, bcly, bchy, dly, dhy, qymarr, qyparr, fyarr, gdtempy, qaux,
-        cdir);
+        cdir, *lpmap);
     });
 
   // Z initial fluxes
@@ -177,7 +185,7 @@ pc_umeth_3D(
     zflxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       pc_cmpflx(
         i, j, k, bclz, bchz, dlz, dhz, qzmarr, qzparr, fzarr, gdtempz, qaux,
-        cdir);
+        cdir, *lpmap);
     });
 
   // X interface corrections
@@ -201,10 +209,10 @@ pc_umeth_3D(
   amrex::ParallelFor(txbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     // X|Y
     pc_transy1(
-      i, j, k, qmxy, qpxy, qxmarr, qxparr, fyarr, qaux, gdtempy, cdtdy);
+      i, j, k, qmxy, qpxy, qxmarr, qxparr, fyarr, qaux, gdtempy, cdtdy, *lpmap);
     // X|Z
     pc_transz1(
-      i, j, k, qmxz, qpxz, qxmarr, qxparr, fzarr, qaux, gdtempz, cdtdz);
+      i, j, k, qmxz, qpxz, qxmarr, qxparr, fzarr, qaux, gdtempz, cdtdz, *lpmap);
   });
 
   const amrex::Box& txfxbx = surroundingNodes(bxg1, cdir);
@@ -212,8 +220,10 @@ pc_umeth_3D(
   amrex::FArrayBox fluxxz(txfxbx, NVAR);
   amrex::FArrayBox gdvxyfab(txfxbx, NGDNV);
   amrex::FArrayBox gdvxzfab(txfxbx, NGDNV);
-  amrex::Elixir fluxxyeli = fluxxy.elixir(), gdvxyeli = gdvxyfab.elixir();
-  amrex::Elixir fluxxzeli = fluxxz.elixir(), gdvxzeli = gdvxzfab.elixir();
+  amrex::Elixir fluxxyeli = fluxxy.elixir();
+  amrex::Elixir gdvxyeli = gdvxyfab.elixir();
+  amrex::Elixir fluxxzeli = fluxxz.elixir();
+  amrex::Elixir gdvxzeli = gdvxzfab.elixir();
 
   auto const& flxy = fluxxy.array();
   auto const& flxz = fluxxz.array();
@@ -225,10 +235,12 @@ pc_umeth_3D(
     txfxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       // X|Y
       pc_cmpflx(
-        i, j, k, bclx, bchx, dlx, dhx, qmxy, qpxy, flxy, qxy, qaux, cdir);
+        i, j, k, bclx, bchx, dlx, dhx, qmxy, qpxy, flxy, qxy, qaux, cdir,
+        *lpmap);
       // X|Z
       pc_cmpflx(
-        i, j, k, bclx, bchx, dlx, dhx, qmxz, qpxz, flxz, qxz, qaux, cdir);
+        i, j, k, bclx, bchx, dlx, dhx, qmxz, qpxz, flxz, qxz, qaux, cdir,
+        *lpmap);
     });
 
   qxymeli.clear();
@@ -244,8 +256,10 @@ pc_umeth_3D(
   amrex::FArrayBox qyxp(tybx, QVAR);
   amrex::FArrayBox qyzm(tybxm, QVAR);
   amrex::FArrayBox qyzp(tybx, QVAR);
-  amrex::Elixir qyxmeli = qyxm.elixir(), qyxpeli = qyxp.elixir();
-  amrex::Elixir qyzmeli = qyzm.elixir(), qyzpeli = qyzp.elixir();
+  amrex::Elixir qyxmeli = qyxm.elixir();
+  amrex::Elixir qyxpeli = qyxp.elixir();
+  amrex::Elixir qyzmeli = qyzm.elixir();
+  amrex::Elixir qyzpeli = qyzp.elixir();
   auto const& qmyx = qyxm.array();
   auto const& qpyx = qyxp.array();
   auto const& qmyz = qyzm.array();
@@ -254,10 +268,10 @@ pc_umeth_3D(
   amrex::ParallelFor(tybx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     // Y|X
     pc_transx1(
-      i, j, k, qmyx, qpyx, qymarr, qyparr, fxarr, qaux, gdtempx, cdtdx);
+      i, j, k, qmyx, qpyx, qymarr, qyparr, fxarr, qaux, gdtempx, cdtdx, *lpmap);
     // Y|Z
     pc_transz2(
-      i, j, k, qmyz, qpyz, qymarr, qyparr, fzarr, qaux, gdtempz, cdtdz);
+      i, j, k, qmyz, qpyz, qymarr, qyparr, fzarr, qaux, gdtempz, cdtdz, *lpmap);
   });
 
   fzeli.clear();
@@ -269,8 +283,10 @@ pc_umeth_3D(
   amrex::FArrayBox fluxyz(tyfxbx, NVAR);
   amrex::FArrayBox gdvyxfab(tyfxbx, NGDNV);
   amrex::FArrayBox gdvyzfab(tyfxbx, NGDNV);
-  amrex::Elixir fluxyxeli = fluxyx.elixir(), gdvyxeli = gdvyxfab.elixir();
-  amrex::Elixir fluxyzeli = fluxyz.elixir(), gdvyzeli = gdvyzfab.elixir();
+  amrex::Elixir fluxyxeli = fluxyx.elixir();
+  amrex::Elixir gdvyxeli = gdvyxfab.elixir();
+  amrex::Elixir fluxyzeli = fluxyz.elixir();
+  amrex::Elixir gdvyzeli = gdvyzfab.elixir();
 
   auto const& flyx = fluxyx.array();
   auto const& flyz = fluxyz.array();
@@ -281,10 +297,12 @@ pc_umeth_3D(
     tyfxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       // Y|X
       pc_cmpflx(
-        i, j, k, bcly, bchy, dly, dhy, qmyx, qpyx, flyx, qyx, qaux, cdir);
+        i, j, k, bcly, bchy, dly, dhy, qmyx, qpyx, flyx, qyx, qaux, cdir,
+        *lpmap);
       // Y|Z
       pc_cmpflx(
-        i, j, k, bcly, bchy, dly, dhy, qmyz, qpyz, flyz, qyz, qaux, cdir);
+        i, j, k, bcly, bchy, dly, dhy, qmyz, qpyz, flyz, qyz, qaux, cdir,
+        *lpmap);
     });
 
   qyxmeli.clear();
@@ -300,8 +318,10 @@ pc_umeth_3D(
   amrex::FArrayBox qzxp(tzbx, QVAR);
   amrex::FArrayBox qzym(tzbxm, QVAR);
   amrex::FArrayBox qzyp(tzbx, QVAR);
-  amrex::Elixir qzxmeli = qzxm.elixir(), qzxpeli = qzxp.elixir();
-  amrex::Elixir qzymeli = qzym.elixir(), qzypeli = qzyp.elixir();
+  amrex::Elixir qzxmeli = qzxm.elixir();
+  amrex::Elixir qzxpeli = qzxp.elixir();
+  amrex::Elixir qzymeli = qzym.elixir();
+  amrex::Elixir qzypeli = qzyp.elixir();
 
   auto const& qmzx = qzxm.array();
   auto const& qpzx = qzxp.array();
@@ -311,10 +331,10 @@ pc_umeth_3D(
   amrex::ParallelFor(tzbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     // Z|X
     pc_transx2(
-      i, j, k, qmzx, qpzx, qzmarr, qzparr, fxarr, qaux, gdtempx, cdtdx);
+      i, j, k, qmzx, qpzx, qzmarr, qzparr, fxarr, qaux, gdtempx, cdtdx, *lpmap);
     // Z|Y
     pc_transy2(
-      i, j, k, qmzy, qpzy, qzmarr, qzparr, fyarr, qaux, gdtempy, cdtdy);
+      i, j, k, qmzy, qpzy, qzmarr, qzparr, fyarr, qaux, gdtempy, cdtdy, *lpmap);
   });
 
   fxeli.clear();
@@ -328,8 +348,10 @@ pc_umeth_3D(
   amrex::FArrayBox fluxzy(tzfxbx, NVAR);
   amrex::FArrayBox gdvzxfab(tzfxbx, NGDNV);
   amrex::FArrayBox gdvzyfab(tzfxbx, NGDNV);
-  amrex::Elixir fluxzxeli = fluxzx.elixir(), gdvzxeli = gdvzxfab.elixir();
-  amrex::Elixir fluxzyeli = fluxzy.elixir(), gdvzyeli = gdvzyfab.elixir();
+  amrex::Elixir fluxzxeli = fluxzx.elixir();
+  amrex::Elixir gdvzxeli = gdvzxfab.elixir();
+  amrex::Elixir fluxzyeli = fluxzy.elixir();
+  amrex::Elixir gdvzyeli = gdvzyfab.elixir();
 
   auto const& flzx = fluxzx.array();
   auto const& flzy = fluxzy.array();
@@ -340,10 +362,12 @@ pc_umeth_3D(
     tzfxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       // Z|X
       pc_cmpflx(
-        i, j, k, bclz, bchz, dlz, dhz, qmzx, qpzx, flzx, qzx, qaux, cdir);
+        i, j, k, bclz, bchz, dlz, dhz, qmzx, qpzx, flzx, qzx, qaux, cdir,
+        *lpmap);
       // Z|Y
       pc_cmpflx(
-        i, j, k, bclz, bchz, dlz, dhz, qmzy, qpzy, flzy, qzy, qaux, cdir);
+        i, j, k, bclz, bchz, dlz, dhz, qmzy, qpzy, flzy, qzy, qaux, cdir,
+        *lpmap);
     });
 
   qzxmeli.clear();
@@ -366,7 +390,7 @@ pc_umeth_3D(
   amrex::ParallelFor(tyzbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     pc_transyz(
       i, j, k, qm, qp, qxmarr, qxparr, flyz, flzy, qyz, qzy, qaux, srcQ, hdt,
-      hdtdy, hdtdz);
+      hdtdy, hdtdz, *lpmap);
   });
 
   fluxzyeli.clear();
@@ -377,7 +401,8 @@ pc_umeth_3D(
   qxpeli.clear();
   // Final X flux
   amrex::ParallelFor(xfxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    pc_cmpflx(i, j, k, bclx, bchx, dlx, dhx, qm, qp, flx1, q1, qaux, cdir);
+    pc_cmpflx(
+      i, j, k, bclx, bchx, dlx, dhx, qm, qp, flx1, q1, qaux, cdir, *lpmap);
   });
 
   // Y | X&Z
@@ -387,7 +412,7 @@ pc_umeth_3D(
   amrex::ParallelFor(txzbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     pc_transxz(
       i, j, k, qm, qp, qymarr, qyparr, flxz, flzx, qxz, qzx, qaux, srcQ, hdt,
-      hdtdx, hdtdz);
+      hdtdx, hdtdz, *lpmap);
   });
 
   fluxzxeli.clear();
@@ -398,7 +423,8 @@ pc_umeth_3D(
   qypeli.clear();
   // Final Y flux
   amrex::ParallelFor(yfxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    pc_cmpflx(i, j, k, bcly, bchy, dly, dhy, qm, qp, flx2, q2, qaux, cdir);
+    pc_cmpflx(
+      i, j, k, bcly, bchy, dly, dhy, qm, qp, flx2, q2, qaux, cdir, *lpmap);
   });
 
   // Z | X&Y
@@ -408,7 +434,7 @@ pc_umeth_3D(
   amrex::ParallelFor(txybx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     pc_transxy(
       i, j, k, qm, qp, qzmarr, qzparr, flxy, flyx, qxy, qyx, qaux, srcQ, hdt,
-      hdtdx, hdtdy);
+      hdtdx, hdtdy, *lpmap);
   });
 
   gdvyxeli.clear();
@@ -419,7 +445,8 @@ pc_umeth_3D(
   qzpeli.clear();
   // Final Z flux
   amrex::ParallelFor(zfxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    pc_cmpflx(i, j, k, bclz, bchz, dlz, dhz, qm, qp, flx3, q3, qaux, cdir);
+    pc_cmpflx(
+      i, j, k, bclz, bchz, dlz, dhz, qm, qp, flx3, q3, qaux, cdir, *lpmap);
   });
 
   qmeli.clear();
@@ -500,13 +527,15 @@ pc_umeth_2D(
   auto const& qymarr = qym.array();
   auto const& qyparr = qyp.array();
 
+  PassMap const* lpmap = PeleC::pass_map.get();
   amrex::ParallelFor(
     xslpbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       amrex::Real slope[QVAR];
       // X slopes and interp
       for (int n = 0; n < QVAR; ++n)
         slope[n] = plm_slope(i, j, k, n, 0, q);
-      pc_plm_x(i, j, k, qxmarr, qxparr, slope, q, qaux(i, j, k, QC), dx, dt);
+      pc_plm_x(
+        i, j, k, qxmarr, qxparr, slope, q, qaux(i, j, k, QC), dx, dt, *lpmap);
     });
 
   amrex::ParallelFor(
@@ -515,7 +544,8 @@ pc_umeth_2D(
       // Y slopes and interp
       for (int n = 0; n < QVAR; n++)
         slope[n] = plm_slope(i, j, k, n, 1, q);
-      pc_plm_y(i, j, k, qymarr, qyparr, slope, q, qaux(i, j, k, QC), dy, dt);
+      pc_plm_y(
+        i, j, k, qymarr, qyparr, slope, q, qaux(i, j, k, QC), dy, dt, *lpmap);
     });
 
   // These are the first flux estimates as per the corner-transport-upwind
@@ -532,7 +562,7 @@ pc_umeth_2D(
     xflxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       pc_cmpflx(
         i, j, k, bclx, bchx, dlx, dhx, qxmarr, qxparr, fxarr, gdtemp, qaux,
-        cdir);
+        cdir, *lpmap);
     });
 
   // Y initial fluxes
@@ -543,7 +573,8 @@ pc_umeth_2D(
   amrex::ParallelFor(
     yflxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       pc_cmpflx(
-        i, j, k, bcly, bchy, dly, dhy, qymarr, qyparr, fyarr, q2, qaux, cdir);
+        i, j, k, bcly, bchy, dly, dhy, qymarr, qyparr, fyarr, q2, qaux, cdir,
+        *lpmap);
     });
 
   // X interface corrections
@@ -558,7 +589,8 @@ pc_umeth_2D(
 
   amrex::ParallelFor(tybx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     pc_transy(
-      i, j, k, qmarr, qparr, qxmarr, qxparr, fyarr, srcQ, qaux, q2, hdt, hdtdy);
+      i, j, k, qmarr, qparr, qxmarr, qxparr, fyarr, srcQ, qaux, q2, hdt, hdtdy,
+      *lpmap);
   });
 
   fyeli.clear();
@@ -569,7 +601,8 @@ pc_umeth_2D(
   // Final Riemann problem X
   amrex::ParallelFor(xfxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     pc_cmpflx(
-      i, j, k, bclx, bchx, dlx, dhx, qmarr, qparr, flx1, q1, qaux, cdir);
+      i, j, k, bclx, bchx, dlx, dhx, qmarr, qparr, flx1, q1, qaux, cdir,
+      *lpmap);
   });
 
   // Y interface corrections
@@ -579,7 +612,7 @@ pc_umeth_2D(
   amrex::ParallelFor(txbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     pc_transx(
       i, j, k, qmarr, qparr, qymarr, qyparr, fxarr, srcQ, qaux, gdtemp, a1, vol,
-      hdt);
+      hdt, *lpmap);
   });
   fxeli.clear();
   qymeli.clear();
@@ -589,7 +622,8 @@ pc_umeth_2D(
   const amrex::Box& yfxbx = surroundingNodes(bx, cdir);
   amrex::ParallelFor(yfxbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
     pc_cmpflx(
-      i, j, k, bcly, bchy, dly, dhy, qmarr, qparr, flx2, q2, qaux, cdir);
+      i, j, k, bcly, bchy, dly, dhy, qmarr, qparr, flx2, q2, qaux, cdir,
+      *lpmap);
   });
 
   // Construct p div{U}

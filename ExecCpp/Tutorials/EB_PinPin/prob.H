@@ -21,7 +21,8 @@ pc_initdata(
   int j,
   int k,
   amrex::Array4<amrex::Real> const& state,
-  amrex::GeometryData const& geomdata)
+  amrex::GeometryData const& geomdata,
+  ProbParmDevice const& prob_parm)
 {
   // Geometry
   const amrex::Real* prob_lo = geomdata.ProbLo();
@@ -47,34 +48,34 @@ pc_initdata(
 
 
   // mfs[9] = 5.0e-3 * exp(-pow((x - 0.5) / 0.1, 2)) * exp(-pow((y - 0.5) / 0.1, 2));
-  // mfs[2]  = ProbParm::massfrac[2] - mfs[9];
-  // EOS::PYT2RE(ProbParm::p, mfs, ProbParm::T, tempR, tempE);
-  EOS::RYP2E(ProbParm::rho, mfs, ProbParm::p, tempE);
+  // mfs[2]  = prob_parm.massfrac[2] - mfs[9];
+  // EOS::PYT2RE(prob_parm.p, mfs, prob_parm.T, tempR, tempE);
+  EOS::RYP2E(prob_parm.rho, mfs, prob_parm.p, tempE);
   EOS::EY2T(tempE, mfs, tempT);
 
-  state(i, j, k, URHO) = ProbParm::rho;
-  state(i, j, k, UMX) = ProbParm::rho * ProbParm::vx_in;
-  state(i, j, k, UMY) = ProbParm::rho * ProbParm::vy_in;
+  state(i, j, k, URHO) = prob_parm.rho;
+  state(i, j, k, UMX) = prob_parm.rho * prob_parm.vx_in;
+  state(i, j, k, UMY) = prob_parm.rho * prob_parm.vy_in;
   state(i, j, k, UMZ) = 0.0;
-  state(i, j, k, UEINT) = ProbParm::rho * tempE;
+  state(i, j, k, UEINT) = prob_parm.rho * tempE;
   state(i, j, k, UEDEN) =
-    ProbParm::rho *
-    (tempE + 0.5 * (ProbParm::vx_in * ProbParm::vx_in +
-                             ProbParm::vy_in * ProbParm::vy_in));
+    prob_parm.rho *
+    (tempE + 0.5 * (prob_parm.vx_in * prob_parm.vx_in +
+                             prob_parm.vy_in * prob_parm.vy_in));
   state(i, j, k, UTEMP) = tempT;
   for (int n = 0; n < NUM_SPECIES; n++)
-    state(i, j, k, UFS + n) = ProbParm::rho * mfs[n];
+    state(i, j, k, UFS + n) = prob_parm.rho * mfs[n];
 
   // state(i, j, k, URHO) = tempR;
-  // state(i, j, k, UMX) = tempR * ProbParm::vx_in;
-  // state(i, j, k, UMY) = tempR * ProbParm::vy_in;
+  // state(i, j, k, UMX) = tempR * prob_parm.vx_in;
+  // state(i, j, k, UMY) = tempR * prob_parm.vy_in;
   // state(i, j, k, UMZ) = 0.0;
   // state(i, j, k, UEINT) = tempR * tempE;
   // state(i, j, k, UEDEN) =
   //   tempR *
-  //   (tempE + 0.5 * (ProbParm::vx_in * ProbParm::vx_in +
-  //                            ProbParm::vy_in * ProbParm::vy_in));
-  // state(i, j, k, UTEMP) = ProbParm::T;
+  //   (tempE + 0.5 * (prob_parm.vx_in * prob_parm.vx_in +
+  //                            prob_parm.vy_in * prob_parm.vy_in));
+  // state(i, j, k, UTEMP) = prob_parm.T;
   // for (int n = 0; n < NUM_SPECIES; n++)
   //   state(i, j, k, UFS + n) = tempR * mfs[n];
 
@@ -94,19 +95,20 @@ bcnormal(
   const int idir,
   const int sgn,
   const amrex::Real time,
-  amrex::GeometryData const& geomdata)
+  amrex::GeometryData const& geomdata,
+  ProbParmDevice const& prob_parm)
 {
-  s_ext[URHO] = ProbParm::rho;
-  s_ext[UMX] = ProbParm::rho * ProbParm::vx_in;
-  s_ext[UMY] = ProbParm::rho * ProbParm::vy_in;
+  s_ext[URHO] = prob_parm.rho;
+  s_ext[UMX] = prob_parm.rho * prob_parm.vx_in;
+  s_ext[UMY] = prob_parm.rho * prob_parm.vy_in;
   s_ext[UMZ] = 0.0;
-  s_ext[UEINT] = ProbParm::rho * ProbParm::eint;
-  s_ext[UEDEN] = ProbParm::rho *
-                 (ProbParm::eint + 0.5 * (ProbParm::vx_in * ProbParm::vx_in +
-                                          ProbParm::vy_in * ProbParm::vy_in));
-  s_ext[UTEMP] = ProbParm::T;
+  s_ext[UEINT] = prob_parm.rho * prob_parm.eint;
+  s_ext[UEDEN] = prob_parm.rho *
+                 (prob_parm.eint + 0.5 * (prob_parm.vx_in * prob_parm.vx_in +
+                                          prob_parm.vy_in * prob_parm.vy_in));
+  s_ext[UTEMP] = prob_parm.T;
   for (int n = 0; n < NUM_SPECIES; n++)
-    s_ext[UFS + n] = ProbParm::rho * ProbParm::massfrac[n];
+    s_ext[UFS + n] = prob_parm.rho * prob_parm.massfrac[n];
 
 #ifdef PELEC_USE_PLASMA  
   // Handle phiV bc in y-direction
@@ -114,9 +116,9 @@ bcnormal(
   const amrex::Real* prob_hi = geomdata.ProbHi();
   amrex::Real halfy = (prob_hi[1] + prob_lo[1]) * 0.5;
   if (x[1] >= halfy) {
-      s_ext[UFX] = ProbParm::PhiV_top;
+      s_ext[UFX] = prob_parm.PhiV_top;
   } else if (x[1] < halfy) {
-      s_ext[UFX] = ProbParm::PhiV_bottom;
+      s_ext[UFX] = prob_parm.PhiV_bottom;
   }
   // Zero dirichlet on nE if needed
   s_ext[UFX+1] = 0.0;

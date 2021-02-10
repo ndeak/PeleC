@@ -11,17 +11,14 @@ using namespace amrex;
 
 namespace {
 bool virtual_particles_set = false;
-//
+
 // Containers for the real "active" Particles
-//
 SprayParticleContainer* SprayPC = 0;
-//
+
 // Container for temporary, virtual Particles
-//
 SprayParticleContainer* VirtPC = 0;
-//
+
 // Container for temporary, ghost Particles
-//
 SprayParticleContainer* GhostPC = 0;
 
 Gpu::HostVector<Real> sprayCritT;
@@ -86,7 +83,7 @@ PeleC::particleEstTimeStep(Real& est_dt)
   Real est_dt_particle = theSprayPC()->estTimestep(level, particle_cfl);
 
   if (est_dt_particle > 0)
-    est_dt = amrex::min(est_dt, est_dt_particle);
+    est_dt = amrex::min<amrex::Real>(est_dt, est_dt_particle);
 
   if (verbose && ParallelDescriptor::IOProcessor()) {
     if (est_dt_particle > 0) {
@@ -106,7 +103,7 @@ PeleC::readParticleParams()
   pp.query("do_spray_particles", do_spray_particles);
 
   ParmParse ppp("particles");
-  //
+
   // Control the verbosity of the Particle class
   ppp.query("v", particle_verbose);
 
@@ -139,7 +136,7 @@ PeleC::readParticleParams()
   ppp.getarr("fuel_boil_temp", boil_T);
   ppp.getarr("fuel_latent", latent);
   ppp.getarr("fuel_cp", spraycp);
-  for (int i = 0; i != nfuel; ++i) {
+  for (int i = 0; i < nfuel; ++i) {
     sprayFuelNames[i] = fuel_names[i];
     sprayCritT[i] = crit_T[i];
     sprayBoilT[i] = boil_T[i];
@@ -150,46 +147,39 @@ PeleC::readParticleParams()
   // TODO: This means the reference temperature must be the same for all fuel
   // species
   ppp.get("fuel_ref_temp", sprayRefT);
-  //
+
   // Set if particle plot files should be written
-  //
   ppp.query("write_particle_plotfiles", write_particle_plotfiles);
-  //
+
   // Set if spray ascii files should be written
-  //
   ppp.query("write_spray_ascii_files", write_spray_ascii_files);
-  //
+
   // Used in initData() on startup to read in a file of particles.
-  //
   ppp.query("particle_init_file", particle_init_file);
-  //
+
   // Used in initData() on startup to set a uniform particle field
-  //
   ppp.query("particle_init_uniform", particle_init_uniform);
-  //
+
   // Used in post_restart() to read in a file of particles.
-  //
+
   // This must be true the first time you try to restart from a checkpoint
   // that was written with USE_PARTICLES=FALSE; i.e. one that doesn't have
   // the particle checkpoint stuff (even if there are no active particles).
   // Otherwise the code will fail when trying to read the checkpointed
   // particles.
-  //
+
   // ppp.query("restart_from_nonparticle_chkfile",
   // restart_from_nonparticle_chkfile);
-  //
+
   // The directory in which to store timestamp files.
-  //
   ppp.query("timestamp_dir", timestamp_dir);
-  //
+
   // Only the I/O processor makes the directory if it doesn't already exist.
-  //
   if (ParallelDescriptor::IOProcessor())
     if (!amrex::UtilCreateDirectory(timestamp_dir, 0755))
       amrex::CreateDirectoryFailed(timestamp_dir);
-  //
+
   // Force other processors to wait till directory is built.
-  //
   ParallelDescriptor::Barrier();
 }
 
@@ -202,8 +192,8 @@ PeleC::defineParticles()
     Abort("Cannot have more spray fuel species than fluid species");
   }
 #ifdef PELEC_EOS_FUEGO
-  for (int i = 0; i != SPRAY_FUEL_NUM; ++i) {
-    for (int ns = 0; ns != NUM_SPECIES; ++ns) {
+  for (int i = 0; i < SPRAY_FUEL_NUM; ++i) {
+    for (int ns = 0; ns < NUM_SPECIES; ++ns) {
       std::string gas_spec = spec_names[ns];
       if (gas_spec == sprayFuelNames[i]) {
         sprayIndxMap[i] = ns;
@@ -216,7 +206,7 @@ PeleC::defineParticles()
     }
   }
 #else
-  for (int ns = 0; ns != SPRAY_FUEL_NUM; ++ns) {
+  for (int ns = 0; ns < SPRAY_FUEL_NUM; ++ns) {
     sprayIndxMap[ns] = 0;
   }
 #endif
@@ -273,9 +263,7 @@ PeleC::removeGhostParticles()
     GhostPC->RemoveParticlesAtLevel(level);
 }
 
-/**
- * Initialize the particles on the grid at level 0
- **/
+// Initialize the particles on the grid at level 0
 void
 PeleC::initParticles()
 {
@@ -284,9 +272,7 @@ PeleC::initParticles()
   if (level > 0)
     return;
 
-  //
   // Make sure to call RemoveParticlesOnExit() on exit.
-  //
   amrex::ExecOnFinalize(RemoveParticlesOnExit);
 
   if (do_spray_particles) {
@@ -346,9 +332,7 @@ PeleC::particlePostRestart(const std::string& restart_file, bool is_checkpoint)
         sprayCritT, sprayBoilT, sprayCp, sprayLatent, sprayIndxMap, sprayRefT);
     }
 
-    //
     // Make sure to call RemoveParticlesOnExit() on exit.
-    //
     amrex::ExecOnFinalize(RemoveParticlesOnExit);
     {
       amrex::Gpu::LaunchSafeGuard lsg(true);
@@ -375,9 +359,8 @@ PeleC::particleDerive(const std::string& name, Real time, int ngrow)
     return derive_dat;
   } else if (theSprayPC() && name == "total_particle_count") {
     Abort("Should not be called until it is updated");
-    //
+
     // We want the total particle count at this level or higher.
-    //
     std::unique_ptr<MultiFab> derive_dat =
       particleDerive("particle_count", time, ngrow);
 
@@ -434,18 +417,15 @@ PeleC::particleRedistribute(int lbase, int nGrow, int local, bool init_part)
   int flev = parent->finestLevel();
   if (theSprayPC()) {
     amrex::Gpu::LaunchSafeGuard lsg(true);
-    //
+
     // If we are calling with init_part = true, then we want to force the
     // redistribute without checking whether the grids have changed.
-    //
     if (init_part) {
       theSprayPC()->Redistribute(lbase);
       return;
     }
 
-    //
     // These are usually the BoxArray and DMap from the last regridding.
-    //
     static Vector<BoxArray> ba;
     static Vector<DistributionMapping> dm;
 
@@ -474,13 +454,11 @@ PeleC::particleRedistribute(int lbase, int nGrow, int local, bool init_part)
     }
 
     if (changed) {
-      //
       // We only need to call Redistribute if the BoxArrays or DistMaps have
       // changed.
       // We also only call it for particles >= lbase. This is
       // because if we called redistribute during a subcycle, there may be
       // particles not in the proper position on coarser levels.
-      //
       if (verbose && ParallelDescriptor::IOProcessor())
         amrex::Print() << "Calling redistribute because grid has changed "
                        << '\n';
@@ -490,9 +468,8 @@ PeleC::particleRedistribute(int lbase, int nGrow, int local, bool init_part)
       } else {
         theSprayPC()->Redistribute(lbase, -1, nGrow, false);
       }
-      //
+
       // Use the new BoxArray and DistMap to define ba and dm for next time.
-      //
       for (int i = 0; i <= flev; i++) {
         ba[i] = parent->boxArray(i);
         dm[i] = parent->getLevel(i).get_new_data(0).DistributionMap();
@@ -537,8 +514,8 @@ PeleC::particleTimestamp(int ngrow)
     }
 
     if (!timestamp_indices.empty()) {
-      imax = *(
-        amrex::max_element(timestamp_indices.begin(), timestamp_indices.end()));
+      imax = *(amrex::max<amrex::Real> _element(
+        timestamp_indices.begin(), timestamp_indices.end()));
     }
   }
 
