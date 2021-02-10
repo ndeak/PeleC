@@ -75,17 +75,20 @@ int PeleC::ef_use_PETSC_direct = 0;
 int PeleC::ef_diffT_jfnk = 1;
 int PeleC::ef_maxNewtonIter = 10;
 int PeleC::ef_GMRES_size = 10;
-int PeleC::ef_GMRES_maxRst = 1;
+int PeleC::ef_GMRES_maxRst = 2;
 int PeleC::ef_GMRES_verbose = 0;
 int PeleC::ef_PoissonVerbose = 0;
 int PeleC::ef_PoissonMaxOrder = 2;
 int PeleC::ef_PoissonMaxIter = 100;
 int PeleC::ion_bc_type = 0;
+int PeleC::ef_PC_fixedIter = -1;
+int PeleC::ef_PC_approx = 1;
 bool PeleC::def_harm_avg_cen2edge  = false;
 amrex::Real PeleC::ef_PoissonTol = 1.0e-12;
 amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
 amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
 amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
+amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
 amrex::Real PeleC::secondary_em_coef = 0.0;
 amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
 #endif
@@ -713,16 +716,19 @@ PeleC::initData()
 #ifdef _OPENMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
-  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid();
-       ++mfi) {
+  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
     const amrex::Box& box = mfi.tilebox();
     auto sfab = S_new.array(mfi);
     const auto geomdata = geom.data();
+#ifdef PELEC_USE_PLASMA    
+    int useNL = ef_use_NLsolve;
+#endif
 
     ProbParmDevice const* lprobparm = prob_parm_device.get();
 
     amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      pc_initdata(i, j, k, sfab, geomdata, *lprobparm);
+      pc_initdata(i, j, k, useNL, sfab, geomdata, *lprobparm);
+
       // Verify that the sum of (rho Y)_i = rho at every cell
       pc_check_initial_species(i, j, k, sfab);
     });
@@ -734,6 +740,10 @@ PeleC::initData()
   // Compute initial PhiV
   amrex::Real cur_time = state[State_Type].curTime();
   solveEF( cur_time, 0.0 );
+  if ( ef_debug) {
+     amrex::MultiFab phiV_a(S_new,amrex::make_alias,PhiV,1);
+     amrex::VisMF::Write(phiV_a,"InitialPhiV");
+  }
 #endif
 
   // computeTemp(S_new,0);

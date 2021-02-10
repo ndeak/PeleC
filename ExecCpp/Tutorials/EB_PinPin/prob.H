@@ -20,6 +20,7 @@ pc_initdata(
   int i,
   int j,
   int k,
+  int useNL,
   amrex::Array4<amrex::Real> const& state,
   amrex::GeometryData const& geomdata,
   ProbParmDevice const& prob_parm)
@@ -35,17 +36,27 @@ pc_initdata(
   // Initialize kernel of O4+ ions in air
   // TODO: fix error when factor >= 1.0e-2
   // TODO: Code to find center of domain for arbitrary size
-  amrex::Real mfs[NUM_SPECIES];
+  amrex::Real mwt[NUM_SPECIES] = {0.0};
+  EOS::molecular_weight(mwt);
+  amrex::Real mfs[NUM_SPECIES] = {0.0};
   amrex::Real tempT, tempE;
-  for (int n = 0; n < NUM_SPECIES; n++)
-    mfs[n] = 0.0;
 
-  mfs[1] = 0.233;
-  mfs[2] = 0.767;
-  // mfs[0] = 1.902e-20;     // 1.902e-20 corresponds with 1e-15 mole frac of E in air
-  // mfs[6] = 2.218e-15;     // 2.219e-15 corresponds with 1e-15 mole frac of O4+ in air
-  // mfs[2] -= (mfs[0] + mfs[6]);
+  // Air
+  mfs[O2_ID] = 0.233;
 
+  // Some electrons
+  //mfs[E_ID] = 5.0e-16 * exp(-pow((y - 0.5) / 0.02, 2)) + 1e-20;
+
+  amrex::Real Na = 6.022e23;
+  // if using the non-linear solve move E from species to aux
+  // and convert from massfrac -> nE = rho Y_e / mw_e * Na
+  if ( useNL ) {
+     state(i, j, k, UFX+1) = mfs[E_ID] * prob_parm.rho / mwt[E_ID] * Na;
+     mfs[E_ID] = 0.0;
+  }
+
+  // N2
+  mfs[N2_ID] = 1.0 - mfs[O2_ID] - mfs[E_ID];
 
   // mfs[9] = 5.0e-3 * exp(-pow((x - 0.5) / 0.1, 2)) * exp(-pow((y - 0.5) / 0.1, 2));
   // mfs[2]  = prob_parm.massfrac[2] - mfs[9];
@@ -80,8 +91,10 @@ pc_initdata(
   //   state(i, j, k, UFS + n) = tempR * mfs[n];
 
 #ifdef PELEC_USE_PLASMA  
-  state(i, j, k, UFX) = 1.0;     // UFX : first AUX -> PhiV
-  state(i, j, k, UFX+1) = 0.0;   // nE
+  state(i, j, k, UFX) = 0.0;     // UFX : first AUX -> PhiV
+  if (!useNL) {
+     state(i, j, k, UFX+1) = 0.0;   // nE
+  }
 #endif
 }
 

@@ -113,6 +113,9 @@ set_z_vel_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
 static int phiV_bc[] = {INT_DIR,      EXT_DIR,      FOEXTRAP, REFLECT_EVEN,
                         EXT_DIR, REFLECT_EVEN, EXT_DIR};
 
+static int ne_bc[] =   {INT_DIR,      EXT_DIR,      FOEXTRAP, REFLECT_EVEN,
+                        REFLECT_EVEN, REFLECT_EVEN, EXT_DIR};
+
 static void
 set_phiV_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
 {
@@ -121,6 +124,17 @@ set_phiV_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
   for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
     bc.setLo(dir, phiV_bc[lo_bc[dir]]);
     bc.setHi(dir, phiV_bc[hi_bc[dir]]);
+  }
+}
+
+static void
+set_nE_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
+{
+  const int* lo_bc = phys_bc.lo();
+  const int* hi_bc = phys_bc.hi();
+  for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
+    bc.setLo(dir, ne_bc[lo_bc[dir]]);
+    bc.setHi(dir, ne_bc[hi_bc[dir]]);
   }
 }
 #endif
@@ -317,17 +331,22 @@ PeleC::variableSetUp()
   // Components 0:Numspec-1 are rho.omega_i
   // Component NUM_SPECIES is rho.edot = (rho.eout-rho.ein)
 #ifdef PELEC_USE_REACTIONS
+  int nrhoydot = NUM_SPECIES+1;
   store_in_checkpoint = true;
+#ifdef PELEC_USE_PLASMA
+  if (ef_use_NLsolve) nrhoydot += 1;
+#endif
   desc_lst.addDescriptor(
     Reactions_Type, amrex::IndexType::TheCellType(),
-    amrex::StateDescriptor::Point, 0, NUM_SPECIES + 1, interp,
+    amrex::StateDescriptor::Point, 0, nrhoydot, interp,
     state_data_extrap, store_in_checkpoint);
+
+  amrex::Vector<amrex::BCRec> react_bcs(nrhoydot);
+  amrex::Vector<std::string> react_name(nrhoydot);
 #endif
 
   amrex::Vector<amrex::BCRec> bcs(NVAR);
   amrex::Vector<std::string> name(NVAR);
-  amrex::Vector<amrex::BCRec> react_bcs(NUM_SPECIES + 1);
-  amrex::Vector<std::string> react_name(NUM_SPECIES + 1);
 
   amrex::BCRec bc;
   cnt = 0;
@@ -453,6 +472,12 @@ PeleC::variableSetUp()
   set_react_src_bc(bc, phys_bc);
   react_bcs[NUM_SPECIES] = bc;
   react_name[NUM_SPECIES] = "rhoe_dot";
+#ifdef PELEC_USE_PLASMA
+  if (ef_use_NLsolve) {
+     react_bcs[NUM_SPECIES+1] = bc;
+     react_name[NUM_SPECIES+1] = "rho_omega_nE";
+  }
+#endif
 
   amrex::StateDescriptor::BndryFunc bndryfunc2(pc_reactfill_hyp);
   bndryfunc2.setRunOnGPU(true);
@@ -545,6 +570,18 @@ PeleC::variableSetUp()
     var_names_massfrac, pc_derspec, the_same_box);
   derive_lst.addComponent("massfrac", desc_lst, State_Type, Density, NVAR);
 
+#ifdef PELEC_USE_PLASMA
+  amrex::Vector<std::string> var_names_numdens(NUM_SPECIES);
+  for (int i = 0; i < NUM_SPECIES; i++) {
+    var_names_numdens[i] = "n(" + spec_names[i] + ")";
+  }
+  derive_lst.add(
+    "numdens", amrex::IndexType::TheCellType(), NUM_SPECIES,
+    var_names_numdens, pc_derspecn, the_same_box);
+  derive_lst.addComponent("numdens", desc_lst, State_Type, Density, NVAR);
+#endif
+
+  //
   // Species mole fractions
   amrex::Vector<std::string> var_names_molefrac(NUM_SPECIES);
   for (int i = 0; i < NUM_SPECIES; i++) {
@@ -663,11 +700,13 @@ PeleC::variableSetUp()
   derive_lst.add(
     "Efieldy", amrex::IndexType::TheCellType(), 1, pc_derEfieldy, grow_box_by_one);
   derive_lst.addComponent("Efieldy", desc_lst, State_Type, Density, NVAR);
-#if AMREX_SPACEDIM == 3
+
+#if (AMREX_SPACEDIM == 3)
   derive_lst.add(
     "Efieldz", amrex::IndexType::TheCellType(), 1, pc_derEfieldz, grow_box_by_one);
   derive_lst.addComponent("Efieldz", desc_lst, State_Type, Density, NVAR);
 #endif
+
   derive_lst.add(
     "redEfield", amrex::IndexType::TheCellType(), 1, pc_derredEfield, grow_box_by_one);
   derive_lst.addComponent("redEfield", desc_lst, State_Type, Density, NVAR);

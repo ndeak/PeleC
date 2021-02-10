@@ -18,6 +18,9 @@
 
 #ifdef PELEC_USE_PLASMA
 #include <AMReX_MLMG.H>
+#include <AMReX_MLABecLaplacian.H>
+// TODO LUCAS ADD BACK
+// #include <AMReX_MLABecCecLaplacian.H>
 #include <FluxBoxes.H>
 #endif
 
@@ -129,6 +132,10 @@ public:
 
   // Initialize grid data at problem start-up.
   virtual void initData() override;
+
+#ifdef PELEC_USE_PLASMA
+#include <PeleC_Plasma.H>
+#endif
 
 #ifdef AMREX_PARTICLES
 
@@ -714,9 +721,6 @@ protected:
   static bool do_react_load_balance;
   static bool do_mol_load_balance;
 
-#ifdef PELEC_USE_PLASMA
-#include <PeleC_Plasma.H>
-#endif
 };
 
 void pc_bcfill_hyp(

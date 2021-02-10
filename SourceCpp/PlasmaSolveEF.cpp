@@ -41,7 +41,7 @@ PeleC::solveEF ( Real time,
    MultiFab phiV_alias(Ucurr, amrex::make_alias, PhiV, 1);
    MultiFab phiV_borders(Sborder, amrex::make_alias, 0, 1);
 
-// Setup a dummy charge distribution MF
+// Charge distribution MF
    MultiFab chargeDistib(grids,dmap,1,0,MFInfo(),Factory());
 
 #ifdef _OPENMP
@@ -51,26 +51,28 @@ PeleC::solveEF ( Real time,
    for (MFIter mfi(chargeDistib,true); mfi.isValid(); ++mfi)
    {   
        const Box& bx = mfi.tilebox();
+       const auto& rhoY_ar = Ucurr.array(mfi,UFS);
+       const auto& nE_ar   = Ucurr.array(mfi,UFX+1);
        const auto& chrg_ar = chargeDistib.array(mfi);
        const Real* dx      = geom.CellSize();
        const Real* problo  = geom.ProbLo();
+       int useNL = ef_use_NLsolve;
+       Real        factor = -1.0 / ( EFConst::eps0_cgs  * EFConst::epsr);
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {
-           Real x_rel = problo[0] + (i + 0.5)*dx[0] - 2.0;
-           Real y_rel = problo[1] + (j + 0.5)*dx[1] - 2.0;
-           Real z_rel = problo[2] + (k + 0.5)*dx[2] - 2.0;
-           Real r = std::sqrt(x_rel*x_rel+2.0*y_rel*y_rel+z_rel*z_rel);
-           if (r < 0.5) {
-               //chrg_ar(i,j,k) = 1.0e4*(0.5 - r)/0.5;
-               chrg_ar(i,j,k) = 0.0;
-           } else {
-               chrg_ar(i,j,k) = 0.0;
-           }   
+          if ( useNL ) {
+             chrg_ar(i,j,k) = - nE_ar(i,j,k) * EFConst::elemCharge * factor;
+          } else {
+             chrg_ar(i,j,k) = 0.0;
+          }
+          for (int n = 0; n < NUM_SPECIES; n++) {
+             chrg_ar(i,j,k) += zk[n] * rhoY_ar(i,j,k,n) * factor;
+          }
        }); 
    }
 // If need be, visualize the charge distribution.
-//   VisMF::Write(chargeDistib,"chargeDistibPhiV_"+std::to_string(level));
+   //VisMF::Write(chargeDistib,"chargeDistibPhiVExpl_"+std::to_string(level));
 
 /////////////////////////////////////   
 // Setup a linear operator
@@ -122,7 +124,7 @@ PeleC::solveEF ( Real time,
    }
    poissonOP.setBCoeffs(0, amrex::GetArrOfConstPtrs(bcoef));   
    Real ascal = 0.0;
-   Real bscal = 1.0;
+   Real bscal = -1.0;
    poissonOP.setScalars(ascal, bscal);
 
    // set Dirichlet BC for EB
@@ -165,10 +167,10 @@ PeleC::solveEF ( Real time,
    MLMG mlmg(poissonOP);
 
    // relative and absolute tolerances for linear solve
-   const Real tol_rel = 1.e-8;
-   const Real tol_abs = 1.e-6;
+   const Real tol_rel = ef_PoissonTol;
+   const Real tol_abs = std::max(chargeDistib.norm0(),phiV_alias.norm0()) * ef_PoissonTol;
 
-   mlmg.setVerbose(1);
+   mlmg.setVerbose(ef_PoissonVerbose);
        
    // Solve linear system
    //phiV_alias.setVal(0.0); // initial guess for phi
