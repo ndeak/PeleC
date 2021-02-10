@@ -487,18 +487,6 @@ PeleC::PeleC(
   get_new_data(Reactions_Type).setVal(0.0);
 #endif
 
-#ifdef PELEC_USE_PLASMA
-  // TODO Solve Poisson problem for potential, and fill in E components and redE after creating
-  Efield.define(grids, dmap, NUM_E, NUM_GROW, amrex::MFInfo(), Factory()); Efield.setVal(0.0);
-  redEfield.define(grids, dmap, 1, NUM_GROW, amrex::MFInfo(), Factory()); redEfield.setVal(0.0);
-  KSpec_old.define(grids,dmap,NUM_SPECIES, NUM_GROW); KSpec_old.setVal(0.0);
-  KSpec_new.define(grids,dmap,NUM_SPECIES, NUM_GROW); KSpec_new.setVal(0.0);
-  spec_drift.define(grids,dmap,NUM_E*NUM_SPECIES,NUM_GROW); spec_drift.setVal(0.0);
-  coeffs_old.define(grids,dmap,NUM_SPECIES+3, NUM_GROW); coeffs_old.setVal(0.0);
-  Q_ext.define(grids,dmap,NQ,NUM_GROW); Q_ext.setVal(0.0);
-  Qaux_ext.define(grids,dmap,NQAUX,NUM_GROW); Qaux_ext.setVal(0.0);
-#endif
-
   // Don't need this in pure C++?
   // initialize the Godunov state array used in hydro -- we wait
   // until here so that ngroups is defined (if needed) in
@@ -907,6 +895,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 #ifdef PELEC_USE_PLASMA
             drift_arr,
+            ef_use_NLsolve,
 #endif
             AMREX_D_DECL(dx1, dx2, dx3));
         });
@@ -1254,6 +1243,11 @@ PeleC::post_restart()
   if (use_explicit_filter) {
     init_filters();
   }
+
+#ifdef PELEC_USE_PLASMA
+  // Define data specific to Plasma
+  plasma_define_data();
+#endif
 
   problem_post_restart();
 }

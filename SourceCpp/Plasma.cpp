@@ -77,6 +77,17 @@ PeleC::plasma_init()
 }
 
 void PeleC::plasma_define_data() {
+
+   // TODO Solve Poisson problem for potential, and fill in E components and redE after creating
+   Efield.define(grids, dmap, NUM_E, NUM_GROW, amrex::MFInfo(), Factory()); Efield.setVal(0.0);
+   redEfield.define(grids, dmap, 1, NUM_GROW, amrex::MFInfo(), Factory()); redEfield.setVal(0.0);
+   KSpec_old.define(grids,dmap,NUM_SPECIES, NUM_GROW); KSpec_old.setVal(0.0);
+   KSpec_new.define(grids,dmap,NUM_SPECIES, NUM_GROW); KSpec_new.setVal(0.0);
+   spec_drift.define(grids,dmap,NUM_E*NUM_SPECIES,NUM_GROW); spec_drift.setVal(0.0);
+   coeffs_old.define(grids,dmap,NUM_SPECIES+3, NUM_GROW); coeffs_old.setVal(0.0);
+   Q_ext.define(grids,dmap,NQ,NUM_GROW); Q_ext.setVal(0.0);
+   Qaux_ext.define(grids,dmap,NQAUX,NUM_GROW); Qaux_ext.setVal(0.0);
+
    if (ef_use_NLsolve) {
       nl_state.define(grids,dmap,2,2);
       nl_resid.define(grids,dmap,2,2);
