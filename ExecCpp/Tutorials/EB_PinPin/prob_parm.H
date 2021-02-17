@@ -16,7 +16,7 @@ struct ProbParmDevice : amrex::Gpu::Managed
   amrex::Real Pr = 0.0;
   amrex::Real PhiV_top = 0.0;
   amrex::Real PhiV_bottom = 0.0;
-  amrex::GpuArray<amrex::Real, NUM_SPECIES> massfrac = {1.0};
+  amrex::GpuArray<amrex::Real, NUM_SPECIES> massfrac = {{1.0}};
 }; 
 
 struct ProbParmHost : amrex::Gpu::Managed
