@@ -171,7 +171,7 @@ PeleC::solveEF ( Real time,
    mlmg.setVerbose(1);
        
    // Solve linear system
-   //phiV_alias.setVal(0.0); // initial guess for phi
+   phiV_alias.setVal(0.0); // initial guess for phi
    mlmg.solve({&phiV_alias}, {&chargeDistib}, tol_rel, tol_abs);
 
    // Copy solution into interior of border array
