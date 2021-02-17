@@ -60,14 +60,15 @@ PeleC::solveEF ( Real time,
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {
-          if ( useNL ) {
-             chrg_ar(i,j,k) = - nE_ar(i,j,k) * EFConst::elemCharge * factor;
-          } else {
-             chrg_ar(i,j,k) = 0.0;
-          }
-          for (int n = 0; n < NUM_SPECIES; n++) {
-             chrg_ar(i,j,k) += zk[n] * rhoY_ar(i,j,k,n) * factor;
-          }
+          //if ( useNL ) {
+          //   chrg_ar(i,j,k) = - nE_ar(i,j,k) * EFConst::elemCharge * factor;
+          //} else {
+          //   chrg_ar(i,j,k) = 0.0;
+          //}
+          //for (int n = 0; n < NUM_SPECIES; n++) {
+          //   chrg_ar(i,j,k) += zk[n] * rhoY_ar(i,j,k,n) * factor;
+          //}
+          chrg_ar(i,j,k) = 0.0;
        }); 
    }
 // If need be, visualize the charge distribution.
@@ -99,13 +100,14 @@ PeleC::solveEF ( Real time,
    poissonOP.setDomainBC(bc_lo,bc_hi);   
 
 // Get the coarse level data for AMR cases.
-   std::unique_ptr<MultiFab> phiV_crse;
+   MultiFab phiV_crse;
    if (level > 0) {
       auto& crselev = getLevel(level-1);
-      phiV_crse.reset(new MultiFab(crselev.boxArray(), crselev.DistributionMap(), 1, 0));
-      MultiFab& Coarse_State = (time == prev_time) ? crselev.get_old_data(State_Type) : crselev.get_new_data(State_Type);   
-      MultiFab::Copy(*phiV_crse, Coarse_State,PhiV,0,1,0);
-      poissonOP.setCoarseFineBC(phiV_crse.get(), crse_ratio[0]);
+      phiV_crse.define(crselev.grids, crselev.dmap, 1, 0, MFInfo(),crselev.Factory());
+      MultiFab StateCrse(crselev.grids, crselev.dmap, NVAR, 0, MFInfo(), crselev.Factory());
+      FillPatch(crselev, StateCrse, 0, time, State_Type, 0, NVAR, 0);
+      MultiFab::Copy(phiV_crse, StateCrse,PhiV,0,1,0);
+      poissonOP.setCoarseFineBC(&phiV_crse, crse_ratio[0]);
    }
 
 // Pass the phiV with physical BC filled.
@@ -165,6 +167,8 @@ PeleC::solveEF ( Real time,
 /////////////////////////////////////   
    MLMG mlmg(poissonOP);
 
+   phiV_alias.setVal(0.0); // initial guess for phi
+
    // relative and absolute tolerances for linear solve
    const Real tol_rel = ef_PoissonTol;
    const Real tol_abs = std::max(chargeDistib.norm0(),phiV_alias.norm0()) * ef_PoissonTol;
@@ -172,7 +176,6 @@ PeleC::solveEF ( Real time,
    mlmg.setVerbose(ef_PoissonVerbose);
        
    // Solve linear system
-   //phiV_alias.setVal(0.0); // initial guess for phi
    mlmg.solve({&phiV_alias}, {&chargeDistib}, tol_rel, tol_abs);
 
    // Copy solution into interior of border array
