@@ -41,7 +41,7 @@ PeleC::solveEF ( Real time,
    MultiFab phiV_alias(Ucurr, amrex::make_alias, PhiV, 1);
    MultiFab phiV_borders(Sborder, amrex::make_alias, 0, 1);
 
-// Setup a dummy charge distribution MF
+// Charge distribution MF
    MultiFab chargeDistib(grids,dmap,1,0,MFInfo(),Factory());
 
 #ifdef _OPENMP
@@ -51,9 +51,13 @@ PeleC::solveEF ( Real time,
    for (MFIter mfi(chargeDistib,true); mfi.isValid(); ++mfi)
    {   
        const Box& bx = mfi.tilebox();
+       const auto& rhoY_ar = Ucurr.array(mfi,UFS);
+       const auto& nE_ar   = Ucurr.array(mfi,UFX+1);
        const auto& chrg_ar = chargeDistib.array(mfi);
        const Real* dx      = geom.CellSize();
        const Real* problo  = geom.ProbLo();
+       int useNL = ef_use_NLsolve;
+       Real        factor = -1.0 / ( EFConst::eps0_cgs  * EFConst::epsr);
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {
@@ -122,7 +126,7 @@ PeleC::solveEF ( Real time,
    }
    poissonOP.setBCoeffs(0, amrex::GetArrOfConstPtrs(bcoef));   
    Real ascal = 0.0;
-   Real bscal = 1.0;
+   Real bscal = -1.0;
    poissonOP.setScalars(ascal, bscal);
 
    // set Dirichlet BC for EB
@@ -164,14 +168,15 @@ PeleC::solveEF ( Real time,
 /////////////////////////////////////   
    MLMG mlmg(poissonOP);
 
-   // relative and absolute tolerances for linear solve
-   const Real tol_rel = 1.e-8;
-   const Real tol_abs = 1.e-6;
+   phiV_alias.setVal(0.0); // initial guess for phi
 
-   mlmg.setVerbose(1);
+   // relative and absolute tolerances for linear solve
+   const Real tol_rel = ef_PoissonTol;
+   const Real tol_abs = std::max(chargeDistib.norm0(),phiV_alias.norm0()) * ef_PoissonTol;
+
+   mlmg.setVerbose(ef_PoissonVerbose);
        
    // Solve linear system
-   phiV_alias.setVal(0.0); // initial guess for phi
    mlmg.solve({&phiV_alias}, {&chargeDistib}, tol_rel, tol_abs);
 
    // Copy solution into interior of border array

@@ -18,6 +18,8 @@
 
 #ifdef PELEC_USE_PLASMA
 #include <AMReX_MLMG.H>
+#include <AMReX_MLABecLaplacian.H>
+#include <AMReX_MLABecCecLaplacian.H>
 #include <FluxBoxes.H>
 #endif
 

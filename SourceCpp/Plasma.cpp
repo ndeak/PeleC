@@ -13,11 +13,14 @@ using namespace amrex;
 
 namespace EFConst
 {
-   amrex::Real eps0 = 8.854187817e-12;          //Free space permittivity (C/(V.m))
+   amrex::Real eps0 = 8.854187817e-12;                //Free space permittivity (C/(V.m))
+   amrex::Real eps0_cgs = 8.854187817e-12 * 1.0e-9;   //Free space permittivity (C/(erg.cm))
    amrex::Real epsr = 1.0;
    amrex::Real elemCharge = 1.60217662e-19;     //Coulomb per charge
-   amrex::Real Na = 6.022e23;                   //Avogadro's number
+   amrex::Real Na = 6.0221409e23;                   //Avogadro's number
+   amrex::Real kB = 1.380649e-16;
    amrex::Real PP_RU_MKS = 8.31446261815324;    //Universal gas constant (J/mol-K)
+   amrex::Real PP_RU_CGS = 83144626.1815324;    // (erg/mol-K)
 }
 
 void 
@@ -37,6 +40,22 @@ PeleC::plasma_init()
     pp.query("def_harm_avg_cen2edge",def_harm_avg_cen2edge);
     pp.query("use_nonLinearSolve",ef_use_NLsolve);
 
+    pp.query("Poisson_tol",ef_PoissonTol);
+    pp.query("Poisson_verbose",ef_PoissonVerbose);
+
+    pp.query("JFNK_newtonTol",ef_newtonTol);
+    pp.query("JFNK_maxNewton",ef_maxNewtonIter);
+    pp.query("JFNK_difftype",ef_diffT_jfnk);
+    pp.query("JFNK_lambda",ef_lambda_jfnk);
+    pp.query("GMRES_restart_size",ef_GMRES_size);
+    pp.query("GMRES_rel_tol",ef_GMRES_reltol);
+    pp.query("GMRES_max_restart",ef_GMRES_maxRst);
+    pp.query("GMRES_verbose",ef_GMRES_verbose);
+
+    pp.query("Precond_MG_tol",ef_PC_MG_Tol);
+    pp.query("Precond_fixedIter",ef_PC_fixedIter);
+    pp.query("Precond_SchurApprox",ef_PC_approx);
+
     // ndeak add - hard-coding charges for now
     // zk[0] = -1.0;
     // zk[1] =  0.0;
@@ -49,8 +68,8 @@ PeleC::plasma_init()
     // zk[8] =  1.0;
     // zk[9] = -1.0;
 
-    // get charge per unit  mass (C/kg)
-    Real zk_temp[NUM_SPECIES];
+    // get charge per unit mass (C/g) CGS
+    Real zk_temp[NUM_SPECIES] = {0.0};
     EOS::charge_mass(zk_temp);
     for (int k = 0; k < NUM_SPECIES; k++) {
        zk[k] = zk_temp[k];
@@ -58,17 +77,43 @@ PeleC::plasma_init()
 }
 
 void PeleC::plasma_define_data() {
+
+   // TODO Solve Poisson problem for potential, and fill in E components and redE after creating
+   Efield.define(grids, dmap, NUM_E, NUM_GROW, amrex::MFInfo(), Factory()); Efield.setVal(0.0);
+   redEfield.define(grids, dmap, 1, NUM_GROW, amrex::MFInfo(), Factory()); redEfield.setVal(0.0);
+   KSpec_old.define(grids,dmap,NUM_SPECIES, NUM_GROW); KSpec_old.setVal(0.0);
+   KSpec_new.define(grids,dmap,NUM_SPECIES, NUM_GROW); KSpec_new.setVal(0.0);
+   spec_drift.define(grids,dmap,NUM_E*NUM_SPECIES,NUM_GROW); spec_drift.setVal(0.0);
+   coeffs_old.define(grids,dmap,NUM_SPECIES+3, NUM_GROW); coeffs_old.setVal(0.0);
+   Q_ext.define(grids,dmap,NQ,NUM_GROW); Q_ext.setVal(0.0);
+   Qaux_ext.define(grids,dmap,NQAUX,NUM_GROW); Qaux_ext.setVal(0.0);
+
    if (ef_use_NLsolve) {
       nl_state.define(grids,dmap,2,2);
       nl_resid.define(grids,dmap,2,2);
       bg_charge.define(grids,dmap,1,1);
-      ef_state_old.define(grids,dmap,2,1);
+      ef_state_old.define(grids,dmap,2,2);
+
+      if (elec_Ueff != 0) delete [] elec_Ueff;
+
+      elec_Ueff = new MultiFab[AMREX_SPACEDIM];
+      for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+         const BoxArray& edgeba = getEdgeBoxArray(d);
+         elec_Ueff[d].define(edgeba, dmap, 1, 1,MFInfo(),Factory());
+      }
 
       // Transport coefficients
       diff_e.define(this);
       De_ec = diff_e.get();
       mob_e.define(this);
       Ke_ec = mob_e.get();
+      gasN_fb.define(this);
+      gasN_ec = gasN_fb.get();
+      ionFlx_fb.define(this,1,3);
+      ionFlx = ionFlx_fb.get();
+      for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+         ionFlx[d]->setVal(0.0);
+      }
    }
 }
 
@@ -135,8 +180,8 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   // MultiFab& Kspec = (whichTime == AmrOldTime) ? KSpec_old : KSpec_new;
 
   // Get the cc transport coeffs. These are temporary.
-  //MultiFab Ke_cc(grids,dmap,1,1);
-  //MultiFab De_cc(grids,dmap,1,1);
+  MultiFab Ke_cc(grids,dmap,1,S.nGrow());
+  MultiFab De_cc(grids,dmap,1,S.nGrow());
 
   // Fillpatch the state 
   // ndeak note - not needed since S with boundary cells is provided as input
@@ -145,7 +190,6 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
 
   // ndeak add - get BCs for species (used in center->edge extrap)
   const amrex::BCRec& bcspec = get_desc_lst()[State_Type].getBC(UFS);
-  const int* bcrec = bcspec.data();
 
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -156,18 +200,24 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      auto const& rhoY = S.array(mfi,UFS);
      auto const& T    = Q_ext.array(mfi,QTEMP);
      auto const& rhoD = coeffs_old.array(mfi,dComp_rhoD);
-     //auto const& Ke   = Ke_cc.array(mfi);
-     //auto const& De   = De_cc.array(mfi);
+     auto const& Ke   = Ke_cc.array(mfi);
+     auto const& De   = De_cc.array(mfi);
      auto const& Ks   = KSpec_old.array(mfi);
-     Real factor = EFConst::PP_RU_MKS / ( EFConst::Na * EFConst::elemCharge );
-     amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rhoD]
+     Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
+     int useNL   = ef_use_NLsolve;
+     amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rhoD, Ke, De, useNL]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
-        getKappaE(i,j,k,E_ID,Ks);
-        getDiffE(i,j,k,E_ID,factor,T,rhoY,Ks,rhoD);
+        if (useNL) {
+           getKappaE(i,j,k,0,Ke);
+           getDiffE(i,j,k,0,useNL,factor,T,rhoY,Ke,De);
+        } else {
+           getKappaE(i,j,k,E_ID,Ks);
+           getDiffE(i,j,k,E_ID,useNL,factor,T,rhoY,Ks,rhoD);
+        }
      });
      Real mwt[NUM_SPECIES];
-     EOS::molecular_weight(mwt);
+     EOS::molecular_weight(mwt);  // Return mwt in CGS
      amrex::ParallelFor(gbox, [rhoY, rhoD, T, Ks, mwt]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
@@ -179,35 +229,46 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      VisMF::Write(KSpec_old,"KappaSpec"+timetag+"_Lvl"+std::to_string(level));
   }
 
-//   // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
-//   // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
-//   const Box& domain = geom.Domain();
-//   bool use_harmonic_avg = def_harm_avg_cen2edge ? true : false;
-// #ifdef _OPENMP
-// #pragma omp parallel if (Gpu::notInLaunchRegion())
-// #endif
-//   for (MFIter mfi(De_cc,TilingIfNotGPU()); mfi.isValid();++mfi)
-//   {
-//      for (int dir = 0; dir < AMREX_SPACEDIM; dir++)
-//      {
-//         const Box ebx = mfi.nodaltilebox(dir);
-//         const Box& edomain = amrex::surroundingNodes(domain,dir);
-//         const auto& diff_c  = De_cc.array(mfi);
-//         const auto& diff_ed = De_ec[dir]->array(mfi);
-//         const auto& kappa_c  = Ke_cc.array(mfi);
-//         const auto& kappa_ed = Ke_ec[dir]->array(mfi);
-//         amrex::ParallelFor(ebx, [dir, bc_lo, bc_hi, use_harmonic_avg, diff_c, diff_ed,
-//                                  kappa_c, kappa_ed, edomain]
-//         AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-//         {
-//            int idx[3] = {i,j,k};
-//            bool on_lo = ( ( bcrec[dir] == amrex::BCType::ext_dir ) && k <= domain.smallEnd(dir) );
-//            bool on_hi = ( ( bcrec[AMREX_SPACEDIM+dir] == amrex::BCType::ext_dir ) && k >= domain.bigEnd(dir) );
-//            cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, diff_c, diff_ed);
-//            cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, kappa_c, kappa_ed);
-//         });
-//      }
-//   }
+  if ( ef_use_NLsolve ) {
+     // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
+     // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
+     const Box& domain = geom.Domain();
+     bool use_harmonic_avg = def_harm_avg_cen2edge ? true : false;
+     const BCRec& bcrec = get_desc_lst()[State_Type].getBC(nE);
+ #ifdef _OPENMP
+ #pragma omp parallel if (Gpu::notInLaunchRegion())
+ #endif
+      for (MFIter mfi(De_cc,TilingIfNotGPU()); mfi.isValid();++mfi)
+      {
+         for (int dir = 0; dir < AMREX_SPACEDIM; dir++)
+         {
+            const Box ebx = mfi.nodaltilebox(dir);
+            const Box& edomain = amrex::surroundingNodes(domain,dir);
+            const auto& diff_c  = De_cc.array(mfi);
+            const auto& diff_ed = De_ec[dir]->array(mfi);
+            const auto& kappa_c  = Ke_cc.array(mfi);
+            const auto& kappa_ed = Ke_ec[dir]->array(mfi);
+            const auto bc_lo = bcrec.lo(dir);
+            const auto bc_hi = bcrec.hi(dir);
+            amrex::ParallelFor(ebx, [dir, bc_lo, bc_hi, use_harmonic_avg, diff_c, diff_ed,
+                                     kappa_c, kappa_ed, edomain]
+            AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+               int idx[3] = {i,j,k};
+               bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && idx[dir] <= edomain.smallEnd(dir) );
+               bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && idx[dir] >= edomain.bigEnd(dir) );
+               cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, diff_c, diff_ed);
+               cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, kappa_c, kappa_ed);
+            });
+         }
+      }
+      if ( ef_debug ) {
+         VisMF::Write(*De_ec[0],"DeEcX_Lvl"+std::to_string(level));
+         VisMF::Write(*De_ec[1],"DeEcY_Lvl"+std::to_string(level));
+         VisMF::Write(*Ke_ec[0],"KeEcX_Lvl"+std::to_string(level));
+         VisMF::Write(*Ke_ec[1],"KeEcY_Lvl"+std::to_string(level));
+      }
+  }
 }
 
 // Setup BC conditions for linear Poisson solve on PhiV. Directly copied from the diffusion one ...

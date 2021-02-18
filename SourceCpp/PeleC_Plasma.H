@@ -32,6 +32,11 @@
   static int         ef_GMRES_maxRst;          // Maximum number of GMRES restart
   static int         ef_GMRES_verbose;         // GMRES verbosity
 
+  // Schur preconditioner options
+  static amrex::Real ef_PC_MG_Tol;             // Preconditioner linear solver tolerance
+  static int         ef_PC_fixedIter;          // Preconditioner fixed number of iterations
+  static int         ef_PC_approx;             // Type of approximation of Stilda
+
   // MFs
   amrex::MultiFab     Efield;
   amrex::MultiFab     redEfield;
@@ -51,12 +56,20 @@
   amrex::MultiFab**   Ke_ec;
   FluxBoxes diff_e;
   amrex::MultiFab**   De_ec;
+  FluxBoxes gasN_fb;
+  amrex::MultiFab**   gasN_ec;
+  FluxBoxes ionFlx_fb;
+  amrex::MultiFab**   ionFlx;
+
   // Scaling
   amrex::Real                nE_scale;
   amrex::Real                phiV_scale;
   amrex::Real                FnE_scale = 1.0;
   amrex::Real                FphiV_scale = 1.0;
+
   // Temporary holders
+  int                        PCLinOp_needUpdate; // Flag to update the preconditioner linear operators
+  int                        PCMLMG_needUpdate;  // Flag to update the preconditioner MLMGs
   amrex::Real                nl_dt;
   amrex::Real                nl_stateNorm;
   amrex::Real                nl_residNorm;
@@ -64,6 +77,15 @@
   amrex::MultiFab            ef_state_old;
   amrex::MultiFab            nl_state;
   amrex::MultiFab            nl_resid;
+  amrex::MultiFab*           elec_Ueff;
+
+  // Preconditioner data
+  amrex::MLABecCecLaplacian   *pnp_pc_diff = nullptr;
+  amrex::MLABecLaplacian      *pnp_pc_drift = nullptr;
+  amrex::MLABecLaplacian      *pnp_pc_Stilda = nullptr;
+  amrex::MLMG                 *mg_diff = nullptr;
+  amrex::MLMG                 *mg_drift = nullptr;
+  amrex::MLMG                 *mg_Stilda = nullptr;
 
   //-------------------------------------
   // Methods
@@ -99,12 +121,22 @@
                     const amrex::Real      &time,
                     const amrex::MultiFab  &state_in,
                     const amrex::MultiFab  &Forcing_state,
-                    const amrex::MultiFab  &I_R_in);
+                    const amrex::MultiFab  &I_R_in,
+                          amrex::MultiFab  &Forcing_nE);
+
+// Newton exit test
+  int testExitNewton(const amrex::MultiFab  &res,
+                           int              newtonIter);
 
   void compute_bg_charge( const amrex::Real      &dt,
                           const amrex::MultiFab &state_old,
                           const amrex::MultiFab &MOL_src,
                           const amrex::MultiFab &I_R_in);
+
+  void compute_gasN( const amrex::Real      &dt,
+                     const amrex::MultiFab &state_old,
+                     const amrex::MultiFab &MOL_src,
+                     const amrex::MultiFab &I_R_in);
 
   void ef_nlResidual(const amrex::Real        &dt,
                      const amrex::MultiFab    &a_nl_state,
@@ -125,11 +157,23 @@
   void compElecDiffusion(const amrex::MultiFab    &a_nE,
                                amrex::MultiFab    &elecDiff);  
 
+// Electron diffusion term
+  void compElecAdvection(amrex::MultiFab    &a_nE,
+                         amrex::MultiFab    &a_phiV,
+                         amrex::MultiFab**  a_gphiV,
+                         amrex::MultiFab    &elecDiff);
+
+  void ef_normMFv(const amrex::MultiFab  &a_vec,
+                        amrex::Vector<amrex::Real>  &norm);
+
 // GMRES signatures
   void ef_normMF(const amrex::MultiFab  &a_vec,
                        amrex::Real  &norm);
 
   void jtimesv(const amrex::MultiFab  &x, amrex::MultiFab  &Ax);
+
+  void ef_setUpPrecond(const amrex::Real &dt_lcl,
+                       const amrex::MultiFab& a_nl_state);
 
   void ef_applyPrecond(const amrex::MultiFab  &v,
                              amrex::MultiFab  &Pv);

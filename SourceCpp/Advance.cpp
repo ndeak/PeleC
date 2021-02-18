@@ -7,6 +7,7 @@
 #ifdef PELEC_USE_PLASMA
 #include <PlasmaBCFill.H>
 #include <FluxBoxes.H>
+#include <Plasma.H>
 #endif
 
 amrex::Real
@@ -118,8 +119,7 @@ PeleC::do_mol_advance(
   // }
 
   amrex::Real mwt[NUM_SPECIES];
-  EOS::molecular_weight(mwt);
-  amrex::Real NA = 6.0221409e23; // 1/mol
+  EOS::molecular_weight(mwt);   // CGS
   int ng = Sborder.nGrow();
 
   // Calculate the reduced electric field strength
@@ -133,7 +133,7 @@ PeleC::do_mol_advance(
      amrex::ParallelFor(
        gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          amrex::Real ndens = 0.0;
-         for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * NA;
+         for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
          redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Efab(i,j,k,0)*Efab(i,j,k,0), + Efab(i,j,k,1)*Efab(i,j,k,1), + Efab(i,j,k,2)*Efab(i,j,k,2))) / ndens * 1e17;
        });
   }
@@ -159,7 +159,8 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve
-     ef_solve_NL(dt,time,Sborder,molSrc,I_R);
+     MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
+     ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);
   }
 #endif
 
@@ -192,6 +193,9 @@ PeleC::do_mol_advance(
   if (do_react == 1) {
     amrex::MultiFab::Saxpy(S_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
+#ifdef PELEC_USE_PLASMA
+    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0);
+#endif
   }
 #endif
 
@@ -207,6 +211,14 @@ PeleC::do_mol_advance(
   // TODO: re-evaluate efield based on * quantities
 #endif
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
+
+#ifdef PELEC_USE_PLASMA
+  if (ef_use_NLsolve) {
+     // NL solve
+     MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
+     ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);
+  }
+#endif
 
   // Build other (neither spray nor diffusion) sources at t_new
   for (int n = 0; n < src_list.size(); ++n) {
@@ -236,6 +248,9 @@ PeleC::do_mol_advance(
   if (do_react == 1) {
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES, Eden, 1, 0);
+#ifdef PELEC_USE_PLASMA
+    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0);
+#endif
 
     // F_{AD} = (1/dt)(U^{n+1,**} - U^n) - I_R = 0.5*(S^{n}+S^{n+1}(which is a
     // guess!))
@@ -243,6 +258,9 @@ PeleC::do_mol_advance(
       molSrc, 1.0 / dt, S_new, 0, -1.0 / dt, S_old, 0, 0, NVAR, 0);
     amrex::MultiFab::Subtract(molSrc, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES, Eden, 1, 0);
+#ifdef PELEC_USE_PLASMA
+    if (ef_use_NLsolve) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0);
+#endif
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
     react_state(time, dt, false, &molSrc);
@@ -663,6 +681,9 @@ PeleC::construct_Snew(
     amrex::MultiFab& I_R = get_new_data(Reactions_Type);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
+#ifdef PELEC_USE_PLASMA
+    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0); 
+#endif
   }
 #endif
 }
