@@ -134,7 +134,7 @@ PeleC::do_mol_advance(
        gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          amrex::Real ndens = 0.0;
          for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
-         redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Efab(i,j,k,0)*Efab(i,j,k,0), + Efab(i,j,k,1)*Efab(i,j,k,1), + Efab(i,j,k,2)*Efab(i,j,k,2))) / ndens * 1e17;
+         redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Efab(i,j,k,0)*Efab(i,j,k,0), + Efab(i,j,k,1)*Efab(i,j,k,1), + Efab(i,j,k,2)*Efab(i,j,k,2))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
        });
   }
 #endif
