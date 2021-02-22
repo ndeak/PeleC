@@ -112,7 +112,7 @@ prob.vx_in =  0.0
 prob.vy_in =  0.0
 prob.Re_L = 1.0
 prob.Pr = 0.7
-prob.phiV_bottom = 24463.0
+prob.phiV_bottom = 24463.e7
 
 #fabarray.mfiter_tile_size = 1024 1024 1024
 amrex.fpe_trap_invalid = 1
