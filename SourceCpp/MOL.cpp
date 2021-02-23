@@ -95,10 +95,6 @@ pc_compute_hyp_mol_flux(
         const int jj = j - bdim[1];
         const int kk = k - bdim[2];
 
-        // ndeak printing 
-        // printf("Ex(%i, %i) = %.6e,\t Ey(%i, %i) = %.6e\n", i, j, E_cc(i,j,k,0), i, j, E_cc(i,j,k,1));
-        // for(int n=0; n<NUM_SPECIES; n++) printf("mu(%i, %i, %i) = %.6e\n", i, j, n, E_cc(i,j,k,n));
-
         amrex::Real qtempl[5 + NUM_SPECIES] = {0.0};
         qtempl[R_UN] =
           q(ii, jj, kk, q_idx[0]) +
@@ -250,7 +246,6 @@ pc_compute_hyp_mol_flux(
         //                                  tmp4 = 
 
         // Calculate new species and u momentum fluxes
-        amrex::Real Xstar[NUM_SPECIES];
         amrex::Real ndens = 0.0;
         amrex::Real kB = 1.380649e-16; // erg/K
         amrex::Real NA = 6.0221409e23; // 1/mol
@@ -546,7 +541,57 @@ pc_compute_hyp_mol_flux(
       }
 
 #ifdef PELEC_USE_PLASMA
-      // /EB/AMReX_EBMultiFabUtil_2D_C.H eb_interp_centroid2facecent_x
+      // Overwrite species fluxes at the EB electrode boundaries
+      // Currently, cell-centered values are used to approximate 
+      // values at the EB face
+      // TODO - may need to use better EB face approx
+      // TODO figure out efield logic for strong ion BCs
+      // TODO check signage for boundary fluxes
+
+      amrex::Real ndens = 0.0;
+      amrex::Real kB = 1.380649e-16; // erg/K
+      amrex::Real NA = 6.0221409e23; // 1/mol
+      amrex::Real Ttemp;
+      double EoN, Te;
+      amrex::Real mwt[NUM_SPECIES];
+      EOS::molecular_weight(mwt);
+      int iv[3] = {i,j,k};
+      amrex::Real ionFlux = 0.0;
+
+      // Calculate the electric field normal to the EB face (pointing into the fluid?)
+      amrex::Real Enorm = -(E_cc(i, j, k, 0) * ebnorm[0] + E_cc(i, j, k, 1) * ebnorm[1] + E_cc(i, j, k, 2) * ebnorm[2]);
+
+      // overwrite fluxes on all ext_dir boundaries
+      // Use EoN to get Te for electron flux at the boundary
+      ExtrapTe(eon(i, j, k, 0), &Te);
+      flux_tmp[URHO] = 0.0;
+      for(int n=0; n<NUM_SPECIES; n++){
+        flux_tmp[UFS + n] = 0.0;
+        if(n == E_ID){
+          flux_tmp[UFS + n] = -0.5 * q(i,j,k,R_RHO) * q(i,j,k,R_Y+n) * pow( (8.0*kB*Te) / ((mwt[n]/NA) * constants::PI()) ,0.5);
+        }
+        if(n != E_ID && K_cc(i,j,k,n) != 0){
+          if(ion_bc_type == 0){
+            flux_tmp[UFS + n] = -0.5 * q(i,j,k,R_RHO) * q(i,j,k,R_Y+n) * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5);
+          }
+          else if(ion_bc_type == 1){
+            if((K_cc(i,j,k,n) < 0 && Enorm > 0) || (K_cc(i,j,k,n) > 0 && Enorm < 0)){
+              flux_tmp[UFS + n] = q(i,j,k,R_RHO) * q(i,j,k,R_Y+n) * K_cc(i,j,k,n) * Enorm;
+            }
+            else{
+              flux_tmp[UFS + n] = 0.0;
+            }
+          }
+          else{
+            printf("Ion BC type not supported!\n");
+            exit(1);
+          }
+          // Save ion flux for secondary electron emissions and convert to number density
+          ionFlux += flux_tmp[UFS + n] / mwt[n] * NA;
+        }
+        flux_tmp[URHO] += flux_tmp[UFS + n];
+      }
+      flux_tmp[UFS + E_ID] += 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
 #endif
   
       // Copy result into ebflux vector. Being a bit chicken here and only

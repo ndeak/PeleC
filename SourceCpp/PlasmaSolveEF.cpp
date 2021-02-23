@@ -141,11 +141,12 @@ PeleC::solveEF ( Real time,
        const auto& phiV_ar = phiV_BC.array(mfi);
        const Real* dx      = geom.CellSize();
        const Real* problo  = geom.ProbLo();
+       const Real* probhi  = geom.ProbHi();
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {   
            Real y = problo[1] + (j + 0.5)*dx[1]; 
-           if (y >= 5.5) {
+           if (y >= probhi[1] / 2.0) {
                phiV_ar(i,j,k) = 1.0;
            } else {
                phiV_ar(i,j,k) = 0.0;
