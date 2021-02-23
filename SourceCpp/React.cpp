@@ -3,6 +3,9 @@
 #ifdef USE_SUNDIALS_PP
 #include "reactor.h"
 #endif
+#ifdef PELEC_USE_PLASMA
+#include <Plasma.H>
+#endif
 
 void
 PeleC::react_state(
@@ -156,6 +159,11 @@ PeleC::react_state(
 
           // for rk64 we set the error tolerance
           const amrex::Real errtol = adaptrk_errtol;
+#ifdef PELEC_USE_PLASMA
+          if (ef_use_NLsolve) {
+             amrex::Abort("Explicit chemistry not implemented with non-linear solve");
+          }
+#endif
 
           amrex::ParallelFor(
             bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -266,6 +274,16 @@ PeleC::react_state(
                 d_re_src_in[offset] = rhoedot_ext;
 #ifdef PELEC_USE_PLASMA
                 eon_in[offset] = eon(i, j, k, 0);
+                amrex::Real mwt[NUM_SPECIES] = {0.0};
+                EOS::molecular_weight(mwt);
+                if (ef_use_NLsolve) {
+                   // Pass electrons from nE AUX to rhoY_e
+                   d_rY_in[offset * (NUM_SPECIES + 1) + E_ID] = sold_arr(i, j, k, UFX+1) / EFConst::Na
+                                                              * mwt[E_ID];
+                   // Convert forcing on nE into forcing on rhoY_e
+                   d_rY_src_in[offset * NUM_SPECIES + E_ID] = nonrs_arr(i, j, k, UFX + 1) / EFConst::Na
+                                                              * mwt[E_ID];
+                }
 #endif
               } else {
 
@@ -389,13 +407,34 @@ PeleC::react_state(
                 snew_arr(i, j, k, UMZ) = wmnew;
 
                 if (captured_chem_integrator == 2) {
+#ifdef PELEC_USE_PLASMA
+                  // if non-linear solve : extract the new nE and set rhoY_e to zero
+                  if (ef_use_NLsolve) {
+                     amrex::Real mwt[NUM_SPECIES] = {0.0};
+                     EOS::molecular_weight(mwt);
+                     snew_arr(i, j, k, UFX+1) = d_rY_in[offset * (NUM_SPECIES + 1) + E_ID] * EFConst::Na
+                                                / mwt[E_ID];
+                     d_rY_in[offset * (NUM_SPECIES + 1) + E_ID] = 0.0;
+                  }
+#endif
                   for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
                     snew_arr(i, j, k, UFS + nsp) =
                       d_rY_in[offset * (NUM_SPECIES + 1) + nsp];
                   }
                   snew_arr(i, j, k, UTEMP) =
                     d_rY_in[offset * (NUM_SPECIES + 1) + NUM_SPECIES];
+
                 } else {
+#ifdef PELEC_USE_PLASMA
+                  // if non-linear solve : extract the new nE and set rhoY_e to zero
+                  if (ef_use_NLsolve) {
+                     amrex::Real mwt[NUM_SPECIES] = {0.0};
+                     EOS::molecular_weight(mwt);
+                     snew_arr(i, j, k, UFX+1) = rhoY(i, j, k, E_ID) * EFConst::Na
+                                                / mwt[E_ID];
+                     rhoY(i, j, k, E_ID) = 0.0;
+                  }
+#endif
                   for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
                     snew_arr(i, j, k, UFS + nsp) = rhoY(i, j, k, nsp);
                   }
@@ -427,6 +466,13 @@ PeleC::react_state(
                 }
               }
 
+#ifdef PELEC_USE_PLASMA
+              if (ef_use_NLsolve) {
+                 // Set reaction term for nE in place of the one of rhoY_e
+                 I_R(i, j, k, NUM_SPECIES+1) = ( snew_arr(i, j, k, UFX+1) - sold_arr(i, j, k, UFX+1) ) / dt -
+                                                 nonrs_arr(i, j, k, UFX+1);
+              }
+#endif
               I_R(i, j, k, NUM_SPECIES) =
                 (rho_old * e_old + dt * rhoedot_ext // new internal energy
                  + 0.5 * (umnew * umnew + vmnew * vmnew + wmnew * wmnew) /

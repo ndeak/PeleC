@@ -318,6 +318,7 @@ void pc_derEfieldx(
   amrex::Real /*time*/,
   const int* /*bcrec*/,
   int level);
+
 void pc_derEfieldy(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
@@ -328,6 +329,7 @@ void pc_derEfieldy(
   amrex::Real /*time*/,
   const int* /*bcrec*/,
   int level);
+
 void pc_derEfieldz(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
@@ -338,6 +340,7 @@ void pc_derEfieldz(
   amrex::Real /*time*/,
   const int* /*bcrec*/,
   int level);
+
 void pc_derredEfield(
   const amrex::Box& bx,
   amrex::FArrayBox& derfab,
@@ -348,5 +351,16 @@ void pc_derredEfield(
   amrex::Real /*time*/,
   const int* /*bcrec*/,
   int level);
+
+void pc_derspecn(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int dcomp,
+  int ncomp,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& geomdata,
+  amrex::Real time,
+  const int* bcrec,
+  const int level);
 #endif
 #endif

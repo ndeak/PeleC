@@ -20,6 +20,7 @@ pc_initdata(
   int i,
   int j,
   int k,
+  int use_NL,
   amrex::Array4<amrex::Real> const& state,
   amrex::GeometryData const& geomdata,
   ProbParmDevice const& prob_parm)

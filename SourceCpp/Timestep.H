@@ -52,6 +52,7 @@ pc_estdt_hydro(
 #endif
 #ifdef PELEC_USE_PLASMA
   const amrex::Array4<const amrex::Real>& drift,
+  int useNL,
 #endif
   AMREX_D_DECL(
     const amrex::Real& dx,

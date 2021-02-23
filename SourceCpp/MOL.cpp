@@ -24,10 +24,12 @@ pc_compute_hyp_mol_flux(
   const amrex::Array4<amrex::Real>& drift_cc,
   const amrex::Array4<amrex::Real>& eon,
   std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge,
+  std::array<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> ionFlux_arr,
   const int* bcr,
   const amrex::Geometry& geom,
   const int do_harmonic,
   const int ion_bc_type,
+  const int use_NL,
   const amrex::Real secondary_em_coef
 #endif
 #ifdef PELEC_USE_EB
@@ -247,7 +249,7 @@ pc_compute_hyp_mol_flux(
 
         // Calculate new species and u momentum fluxes
         amrex::Real ndens = 0.0;
-        amrex::Real kB = 1.380649e-16; // erg/K
+        amrex::Real kB = 1.380649e-16; // cm^2.g.s^-2/K
         amrex::Real NA = 6.0221409e23; // 1/mol
         amrex::Real Ttemp;
         double EoN, Te;
@@ -319,6 +321,10 @@ pc_compute_hyp_mol_flux(
         int iv[3] = {i,j,k};
         amrex::Real ionFlux = 0.0;
 
+        if (use_NL) {
+           ionFlux_arr[dir](i,j,k) = 0.0;
+        }
+
         // overwrite fluxes on all ext_dir boundaries
         if ((bcr[dir] == amrex::BCType::ext_dir) and (iv[dir] == domlo[dir])) {
           // Use EoN to get Te for electron flux at the boundary
@@ -326,7 +332,7 @@ pc_compute_hyp_mol_flux(
           flx[dir](i, j, k, URHO) = 0.0;
           for(int n=0; n<NUM_SPECIES; n++){
             flx[dir](i, j, k, UFS + n) = 0.0;
-            if(n == E_ID){
+            if(n == E_ID && !use_NL){
               flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * constants::PI()) ,0.5) * a[dir](i, j, k);
             }
             if(n != E_ID && K_cc(i,j,k,n) != 0){
@@ -346,18 +352,22 @@ pc_compute_hyp_mol_flux(
                 exit(1);
               }
               // Save ion flux for secondary electron emissions and convert to number density
-              ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+              if ( use_NL ) {
+                 ionFlux_arr[dir](i,j,k) += flx[dir](i, j, k, UFS + n) / mwt[n] * NA; 
+              } else {
+                 ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+              }
             }
             flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
           }
-          flx[dir](i, j, k, UFS + E_ID) += 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) += 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
         }
         if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
           ExtrapTe(eon(ii, jj, kk, 0), &Te);
           flx[dir](i, j, k, URHO) = 0.0;
           for(int n=0; n<NUM_SPECIES; n++){
             flx[dir](i, j, k, UFS + n) = 0.0;
-            if(n == E_ID){
+            if(n == E_ID && !use_NL){
               flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * constants::PI()) ,0.5) * a[dir](i, j, k);
             }
             if(n != E_ID && K_cc(i,j,k,n) != 0){
@@ -377,14 +387,18 @@ pc_compute_hyp_mol_flux(
                 exit(1);
               }
               // Save ion flux for secondary electron emissions and convert to number density
-              ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+              if ( use_NL ) {
+                 ionFlux_arr[dir](i,j,k) += flx[dir](i, j, k, UFS + n) / mwt[n] * NA; 
+              } else {
+                 ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+              }
             }
             flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
           }
 
           // Add on secondary electron emission based on ion fluxes
           // It is assumed that electrode boundary is an absolutely absorbing wall
-          flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
         }
 #endif
 
