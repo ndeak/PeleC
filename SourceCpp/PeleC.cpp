@@ -727,7 +727,8 @@ PeleC::initData()
 #ifdef PELEC_USE_PLASMA
   // Compute initial PhiV
   amrex::Real cur_time = state[State_Type].curTime();
-  solveEF( cur_time, 0.0 );
+  ProbParmDevice const* lprobparm = prob_parm_device.get();
+  solveEF( cur_time, 0.0, *lprobparm );
   if ( ef_debug) {
      amrex::MultiFab phiV_a(S_new,amrex::make_alias,PhiV,1);
      amrex::VisMF::Write(phiV_a,"InitialPhiV");

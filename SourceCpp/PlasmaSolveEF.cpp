@@ -14,7 +14,8 @@ using std::string;
 
 void
 PeleC::solveEF ( Real time,
-                 Real dt )
+                 Real dt,
+                 ProbParmDevice const& prob_parm )
 {
    BL_PROFILE("PeleC::solveEF()");
 
@@ -87,10 +88,10 @@ PeleC::solveEF ( Real time,
 
 // Linear operator (EB aware if need be)
 #ifdef AMREX_USE_EB
-   const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
-   MLEBABecLap poissonOP({geom}, {grids}, {dmap}, info, {ebf});
+    const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
+    MLEBABecLap poissonOP({geom}, {grids}, {dmap}, info, {ebf});
 #else
-   MLABecLaplacian poissonOP({geom}, {grids}, {dmap}, info);
+    MLABecLaplacian poissonOP({geom}, {grids}, {dmap}, info);
 #endif
 
    poissonOP.setMaxOrder(2);
@@ -133,9 +134,9 @@ PeleC::solveEF ( Real time,
 	// TODO : for now set upper y-dir half to X and lower y-dir to 0
 	//        will have to find a better way to specify EB dirich values 
 #ifdef AMREX_USE_EB
+   MultiFab phiV_BC(grids, dmap, 1, 0, MFInfo(), Factory());
    MultiFab beta(grids, dmap, 1, 0, MFInfo(), Factory());
    beta.setVal(1.0);
-   MultiFab phiV_BC(grids, dmap, 1, 0, MFInfo(), Factory());
 #ifdef _OPENMP
 #pragma omp parallel
 #endif
@@ -151,9 +152,9 @@ PeleC::solveEF ( Real time,
        {   
            Real y = problo[1] + (j + 0.5)*dx[1]; 
            if (y >= probhi[1] / 2.0) {
-               phiV_ar(i,j,k) = 1.0;
+               phiV_ar(i,j,k) = prob_parm.PhiV_top;
            } else {
-               phiV_ar(i,j,k) = 0.0;
+               phiV_ar(i,j,k) = prob_parm.PhiV_bottom;
            }   
        }); 
    }
@@ -198,8 +199,24 @@ PeleC::solveEF ( Real time,
    gphi.define(this,1,NUM_GROW);
    gradPhiV = gphi.get();
 
-   ef_calcGradPhiV(time, phiV_borders, gradPhiV);
+   gradPhiV[0]->setVal(0.0);
+   gradPhiV[1]->setVal(0.0);
+#if AMREX_SPACEDIM == 3
+   gradPhiV[2]->setVal(0.0);
+#endif
+   std::array<MultiFab*,AMREX_SPACEDIM> fp{D_DECL(gradPhiV[0],gradPhiV[1],gradPhiV[2])};
+   mlmg.getFluxes({fp},{&phiV_borders});
+
    Efield_edge = {AMREX_D_DECL(gradPhiV[0], gradPhiV[1], gradPhiV[2])};
-   average_face_to_cellcenter(Efield, 0, Efield_edge);
+   EB_average_face_to_cellcenter(Efield, 0, Efield_edge);
+
+#ifdef PELEC_USE_EB
+   // If using EB, get flux at EB surface, and overwrite the Efield MF for cut cells
+    
+   // Create MFs for each this AMR level and all coarser levels, to pass into function
+
+
+#endif
+
 }
 

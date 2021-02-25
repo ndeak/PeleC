@@ -127,7 +127,14 @@ void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
    info.setConsolidation(1);
    info.setMetricTerm(false);
    info.setMaxCoarseningLevel(0);
-   MLPoisson poisson({geom}, {grids}, {dmap}, info);
+#ifdef AMREX_USE_EB
+   const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
+   MLEBABecLap poisson({geom}, {grids}, {dmap}, info, {ebf});
+#else
+   MLABecLaplacian poisson({geom}, {grids}, {dmap}, info);
+#endif
+   // MLPoisson poisson({geom}, {grids}, {dmap}, info);
+
    poisson.setMaxOrder(ef_PoissonMaxOrder);
 
    // BCs
@@ -146,7 +153,7 @@ void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
       poisson.setCoarseFineBC(&phiV_crse, crse_ratio[0]);
    }
    poisson.setLevelBC(0, &a_phiv);
-
+  
    grad_phiV[0]->setVal(0.0);
    grad_phiV[1]->setVal(0.0);
 #if AMREX_SPACEDIM == 3

@@ -101,7 +101,8 @@ PeleC::do_mol_advance(
 
 #ifdef PELEC_USE_PLASMA
   // Compute PhiV
-  solveEF( time, dt );
+  ProbParmDevice const* lprobparm = prob_parm_device.get();
+  solveEF( time, dt, *lprobparm );
 
   // Print the potential to verify BCs
   // for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
@@ -112,11 +113,12 @@ PeleC::do_mol_advance(
   //   for(int d=0; d<AMREX_SPACEDIM; d++){
   //     // const auto Eedge = Efield_edge[d]->array(mfi);
   //     amrex::ParallelFor(
-  //       gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //         printf("edge efield(%i, %i, %i, %i) = %.6e\n", i, j, k, d, E_edge_arr[d](i, j, k, 0));
+  //       tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //         if(d == 1)printf("edge efield(%i, %i, %i, %i) = %.6e\n", i, j, k, d, E_edge_arr[d](i, j, k, 0));
   //       });
   //   }
   // }
+  // exit(1);
 
   amrex::Real mwt[NUM_SPECIES];
   EOS::molecular_weight(mwt);   // CGS
@@ -135,6 +137,7 @@ PeleC::do_mol_advance(
          amrex::Real ndens = 0.0;
          for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
          redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Efab(i,j,k,0)*Efab(i,j,k,0), + Efab(i,j,k,1)*Efab(i,j,k,1), + Efab(i,j,k,2)*Efab(i,j,k,2))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
+         // printf("redEfab(%i, %i, %i) = %.6e\n", i,j,k,redEfab(i,j,k));
        });
   }
 #endif

@@ -98,7 +98,8 @@
 
   // Electric potential Poisson solve
   void solveEF (amrex::Real time,
-                amrex::Real dt );
+                amrex::Real dt, 
+                ProbParmDevice const& prob_parm);
 
   // Transport coefficients
   void ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time);
