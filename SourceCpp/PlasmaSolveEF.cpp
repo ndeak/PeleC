@@ -208,7 +208,11 @@ PeleC::solveEF ( Real time,
    mlmg.getFluxes({fp},{&phiV_borders});
 
    Efield_edge = {AMREX_D_DECL(gradPhiV[0], gradPhiV[1], gradPhiV[2])};
+#ifdef PELEC_USE_EB
    EB_average_face_to_cellcenter(Efield, 0, Efield_edge);
+#else
+   average_face_to_cellcenter(Efield, 0, Efield_edge);
+#endif
 
 #ifdef PELEC_USE_EB
    // If using EB, get flux at EB surface, and overwrite the Efield MF for cut cells

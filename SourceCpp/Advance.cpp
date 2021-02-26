@@ -147,15 +147,6 @@ PeleC::do_mol_advance(
     amrex::Print() << "... Computing MOL source term at t^{n} " << std::endl;
   }
   FillPatch(*this, Sborder, NUM_GROW + nGrowF, time, State_Type, 0, NVAR);
-  //TODO remove later
-  // for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid();
-  //      ++mfi) {
-  //   const amrex::Box& bx = mfi.tilebox();
-  //   auto const& s_arr = Sborder.array(mfi);
-  //   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //     for(int n=0; n<NUM_SPECIES; n++) printf("sbord(%i, %i, %i, %i) = %.6e\n", i, j, k, n, s_arr(i, j, k, UFS+n));      
-  //   });
-  // }
   amrex::Real flux_factor = 0;
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
 

@@ -6,12 +6,12 @@ stop_time = 100.0
 geometry.is_periodic =  1   0  1
 geometry.coord_sys   =  0       # 0 => cart
 geometry.prob_lo     =  0    0    0 
-#geometry.prob_hi     =  0.15  1.2  0.15
-geometry.prob_hi     =  0.125  1.0  0.125
+#geometry.prob_hi     =  0.125  1.0  0.125
+geometry.prob_hi     =  0.125  2.0  0.125
 #geometry.prob_hi     =  11.0  11.0  11.0
 #amr.n_cell           =  256 256 256
 #amr.n_cell           =  128 128 128
-amr.n_cell           =  8 64 8
+amr.n_cell           =  8 128 8
 #amr.n_cell           =  32 32 32
 #amr.n_cell           =  64   80   64
 
@@ -72,6 +72,7 @@ tagging.efielderr = 200
 tagging.max_efield_lev = 10
 tagging.negraderr = 1.0e-34
 tagging.max_negrad_lev = 10
+tagging.max_vfracerr_lev = 0
 
 # CHECKPOINT FILES
 amr.checkpoint_files_output = 0
@@ -102,9 +103,9 @@ eb2.use_eb2 = 1
 eb2.geom_type = boxes
 boxes.num_boxes = 2
 boxes.box_0_lo = -1.0 -1.0 -1.0
-boxes.box_0_hi = 2.0 0.001 2.0
-boxes.box_1_lo = -1.0 0.999 -1.0
-boxes.box_1_hi = 2.0 2.0 2.0
+boxes.box_0_hi = 2.0 0.433 2.0
+boxes.box_1_lo = -1.0 1.433 -1.0
+boxes.box_1_hi = 2.0 3.0 2.0
 #boxes.box_0_lo = -1.0 -1.0 -1.0
 #boxes.box_0_hi = 2.0 0.1 2.0
 #boxes.box_1_lo = -1.0 1.1 -1.0

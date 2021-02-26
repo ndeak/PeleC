@@ -572,8 +572,8 @@ pc_compute_hyp_mol_flux(
       int iv[3] = {i,j,k};
       amrex::Real ionFlux = 0.0;
 
-      // Calculate the electric field normal to the EB face (pointing into the fluid?)
-      amrex::Real Enorm = -(E_cc(i, j, k, 0) * ebnorm[0] + E_cc(i, j, k, 1) * ebnorm[1] + E_cc(i, j, k, 2) * ebnorm[2]);
+      // Calculate the electric field normal to the EB face (pointing into the fluid)
+      amrex::Real Enorm = (E_cc(i, j, k, 0) * ebnorm[0] + E_cc(i, j, k, 1) * ebnorm[1] + E_cc(i, j, k, 2) * ebnorm[2]);
 
       // overwrite fluxes on all ext_dir boundaries
       // Use EoN to get Te for electron flux at the boundary
@@ -582,15 +582,15 @@ pc_compute_hyp_mol_flux(
       for(int n=0; n<NUM_SPECIES; n++){
         flux_tmp[UFS + n] = 0.0;
         if(n == E_ID){
-          flux_tmp[UFS + n] = -0.5 * q(i,j,k,R_RHO) * q(i,j,k,R_Y+n) * pow( (8.0*kB*Te) / ((mwt[n]/NA) * constants::PI()) ,0.5);
+          flux_tmp[UFS + n] = -0.5 * q(i,j,k,QRHO) * q(i,j,k,  QFS + n) * pow( (8.0*kB*Te) / ((mwt[n]/NA) * constants::PI()) ,0.5);
         }
         if(n != E_ID && K_cc(i,j,k,n) != 0){
           if(ion_bc_type == 0){
-            flux_tmp[UFS + n] = -0.5 * q(i,j,k,R_RHO) * q(i,j,k,R_Y+n) * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5);
+            flux_tmp[UFS + n] = -0.5 * q(i,j,k,QRHO) * q(i,j,k,QFS + n) * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5);
           }
           else if(ion_bc_type == 1){
             if((K_cc(i,j,k,n) < 0 && Enorm > 0) || (K_cc(i,j,k,n) > 0 && Enorm < 0)){
-              flux_tmp[UFS + n] = q(i,j,k,R_RHO) * q(i,j,k,R_Y+n) * K_cc(i,j,k,n) * Enorm;
+              flux_tmp[UFS + n] = q(i,j,k,QRHO) * q(i,j,k,QFS + n) * K_cc(i,j,k,n) * Enorm;
             }
             else{
               flux_tmp[UFS + n] = 0.0;
@@ -606,6 +606,8 @@ pc_compute_hyp_mol_flux(
         flux_tmp[URHO] += flux_tmp[UFS + n];
       }
       flux_tmp[UFS + E_ID] += 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+      // flux_tmp is directed into the EB, so positive values imply electrode losses, and vice versa
+      for(int n = 0; n<NUM_SPECIES; n++) flux_tmp[UFS + n] *= -1.0;
 #endif
   
       // Copy result into ebflux vector. Being a bit chicken here and only
