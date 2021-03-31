@@ -68,6 +68,9 @@ int PeleC::pstateNum = 0;
 #ifdef PELEC_USE_PLASMA
 int PeleC::PhiV = -1;
 int PeleC::nE = -1;
+int PeleC::Efieldx = -1;
+int PeleC::Efieldy = -1;
+int PeleC::Efieldz = -1;
 int PeleC::ef_verbose = 0;
 int PeleC::ef_debug = 0;
 int PeleC::ef_use_NLsolve = 0;

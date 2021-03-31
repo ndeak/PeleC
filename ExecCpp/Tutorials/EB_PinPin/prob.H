@@ -112,13 +112,26 @@ bcnormal(
     s_ext[UFS + n] = prob_parm.rho * prob_parm.massfrac[n];
 
 #ifdef PELEC_USE_PLASMA  
-  // Handle phiV bc in y-direction
+  // Handle phiV bc in y-direction (PIN PIN CASE)
+  // const amrex::Real* prob_lo = geomdata.ProbLo();
+  // const amrex::Real* prob_hi = geomdata.ProbHi();
+  // amrex::Real halfy = (prob_hi[1] + prob_lo[1]) * 0.5;
+  // if (x[1] >= halfy) {
+  //     s_ext[UFX] = prob_parm.PhiV_top;
+  // } else if (x[1] < halfy) {
+  //     s_ext[UFX] = prob_parm.PhiV_bottom;
+  // }
+  // // Zero dirichlet on nE if needed
+  // s_ext[UFX+1] = 0.0;
+
+  // Set PhiV on spherical electrodes (SPHERICAL DISCHARGE CASE)
   const amrex::Real* prob_lo = geomdata.ProbLo();
   const amrex::Real* prob_hi = geomdata.ProbHi();
-  amrex::Real halfy = (prob_hi[1] + prob_lo[1]) * 0.5;
-  if (x[1] >= halfy) {
+  const amrex::Real* dx      = geomdata.CellSize();
+  amrex::Real r = sqrt((x[0]-2.0)*(x[0]-2.0) + (x[1]-2.0)*(x[1]-2.0) + (x[2]-2.0)*(x[2]-2.0));
+  if (r >= 1.0) {
       s_ext[UFX] = prob_parm.PhiV_top;
-  } else if (x[1] < halfy) {
+  } else {
       s_ext[UFX] = prob_parm.PhiV_bottom;
   }
   // Zero dirichlet on nE if needed

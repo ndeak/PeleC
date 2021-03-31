@@ -10,6 +10,7 @@
 #include <AMReX_EB2.H>
 #include <AMReX_EB2_IF_Union.H>
 #include <AMReX_EB2_IF_Intersection.H>
+#include <AMReX_EB2_IF_Rotation.H>
 #include <AMReX_EB2_IF_Complement.H>
 #include <AMReX_EB2_IF_Scale.H>
 #include <AMReX_EB2_IF_Translation.H>

@@ -930,7 +930,142 @@ initialize_EB2(
 
       auto gshop = amrex::EB2::makeShop(allbox_IF);
       amrex::EB2::Build(gshop, geom, max_level, max_level);
-  } else if (geom_type == "sco2-combustor") {
+  }
+  else if (geom_type == "rboxes")
+  {
+      //setting some constants
+      //we can only do a maximum of 2 boxes (change if needed)
+      const int max_box=2;
+      
+      //number of user defined boxes
+      int num_box;
+      amrex::Real box_rot_angle = 0.0;
+      
+      amrex::ParmParse pp("rboxes");
+      amrex::Vector<amrex::Array<amrex::Real,AMREX_SPACEDIM>> allboxlo(max_box);
+      amrex::Vector<amrex::Array<amrex::Real,AMREX_SPACEDIM>> allboxhi(max_box);
+
+      //initalize boxes with some dummy values
+      //that fall outside of the domain
+      //
+      const amrex::Real *problo,*probhi;
+      amrex::Real maxlen;
+
+      problo=geom.ProbLo();
+      probhi=geom.ProbHi();
+
+      maxlen=std::max(std::max(geom.ProbLength(0),geom.ProbLength(1)),geom.ProbLength(2));
+
+      //setting boxes to be way outside the domain initially
+      for(int ibox=0;ibox<max_box;ibox++)
+      {
+         allboxlo[ibox][0] = problo[0]-100.0*maxlen;
+         allboxlo[ibox][1] = problo[1]-100.0*maxlen;
+         allboxlo[ibox][2] = problo[2]-100.0*maxlen;
+
+         allboxhi[ibox][0] = problo[0]-100.0*maxlen;
+         allboxhi[ibox][1] = problo[1]-100.0*maxlen;
+         allboxhi[ibox][2] = problo[2]-100.0*maxlen;
+      }
+            
+      //get user defined number of boxes
+      pp.get("num_boxes", num_box);
+      pp.get("box_rot_angle", box_rot_angle);
+
+      amrex::Vector <std::unique_ptr<amrex::EB2::RotationIF<amrex::EB2::BoxIF>>> impfunc_boxes(max_box);
+      for(int ibox = 0; ibox < num_box; ibox++)
+      {
+          amrex::Array<amrex::Real,AMREX_SPACEDIM> boxlo{0.0,0.0,0.0};
+          amrex::Array<amrex::Real,AMREX_SPACEDIM> boxhi{0.0,0.0,0.0};
+
+          std::string  boxlostr = "box_" + convertIntGG(ibox) + "_lo"; 
+          std::string  boxhistr = "box_" + convertIntGG(ibox) + "_hi"; 
+          amrex::Vector<amrex::Real> vecboxlo;
+          amrex::Vector<amrex::Real> vecboxhi;
+          pp.getarr(boxlostr.c_str(), vecboxlo,  0, AMREX_SPACEDIM);
+          pp.getarr(boxhistr.c_str(), vecboxhi,  0, AMREX_SPACEDIM);
+          for(int idir = 0; idir < AMREX_SPACEDIM; idir++)
+          {
+              boxlo[idir] = vecboxlo[idir] ;
+              boxhi[idir] = vecboxhi[idir] ;
+          }
+          allboxlo[ibox] = boxlo;
+          allboxhi[ibox] = boxhi;
+
+          amrex::EB2::BoxIF box0(allboxlo[ibox], allboxhi[ibox], false);
+
+          impfunc_boxes[ibox] = std::make_unique<amrex::EB2::RotationIF<amrex::EB2::BoxIF>> (box0, box_rot_angle, 0);
+      }
+
+      auto allbox_IF = amrex::EB2::makeUnion(*impfunc_boxes[0],*impfunc_boxes[1]);
+
+      auto gshop = amrex::EB2::makeShop(allbox_IF);
+      amrex::EB2::Build(gshop, geom, max_level, max_level);
+  } 
+  else if (geom_type == "spheres")
+  {
+      //setting some constants
+      //we can only do a maximum of 2 spheres (change if needed)
+      const int max_sphere=2;
+      
+      //number of user defined spheres
+      int num_sphere;
+      
+      amrex::ParmParse pp("spheres");
+      amrex::Vector<amrex::Array<amrex::Real,AMREX_SPACEDIM>> allspherecent(max_sphere);
+
+      //initalize spheres with some dummy values
+      //that fall outside of the domain
+      //
+      const amrex::Real *problo,*probhi;
+      amrex::Real maxlen;
+
+      problo=geom.ProbLo();
+      probhi=geom.ProbHi();
+
+      maxlen=std::max(std::max(geom.ProbLength(0),geom.ProbLength(1)),geom.ProbLength(2));
+
+      //setting spheres to be way outside the domain initially
+      for(int isphere=0;isphere<max_sphere;isphere++)
+      {
+         allspherecent[isphere][0] = problo[0]-100.0*maxlen;
+         allspherecent[isphere][1] = problo[1]-100.0*maxlen;
+         allspherecent[isphere][2] = problo[2]-100.0*maxlen;
+      }
+            
+      //get user defined number of spheres
+      pp.get("num_spheres", num_sphere);
+
+      amrex::Vector <std::unique_ptr<amrex::EB2::SphereIF>> impfunc_spheres(max_sphere);
+      for(int isphere = 0; isphere < num_sphere; isphere++)
+      {
+          amrex::Array<amrex::Real,AMREX_SPACEDIM> spherecent{0.0,0.0,0.0};
+          amrex::Real  sphereR;
+          bool  fluidInside;
+
+          std::string  spherecentstr = "sphere_" + convertIntGG(isphere) + "_cent"; 
+          std::string  rstr = "sphere_" + convertIntGG(isphere) + "_r"; 
+          std::string  insidestr = "sphere_" + convertIntGG(isphere) + "_inside"; 
+          amrex::Vector<amrex::Real> vecspherecent;
+          pp.getarr(spherecentstr.c_str(), vecspherecent,  0, AMREX_SPACEDIM);
+          pp.get(rstr.c_str(), sphereR);
+          pp.get(insidestr.c_str(), fluidInside);
+          for(int idir = 0; idir < AMREX_SPACEDIM; idir++)
+          {
+              spherecent[idir] = vecspherecent[idir] ;
+          }
+          allspherecent[isphere] = spherecent;
+
+          impfunc_spheres[isphere] = std::unique_ptr<amrex::EB2::SphereIF>
+                              (new amrex::EB2::SphereIF(sphereR, allspherecent[isphere], fluidInside));
+      }
+
+      auto allsphere_IF = amrex::EB2::makeUnion(*impfunc_spheres[0],*impfunc_spheres[1]);
+
+      auto gshop = amrex::EB2::makeShop(allsphere_IF);
+      amrex::EB2::Build(gshop, geom, max_level, max_level);
+    }
+    else if (geom_type == "sco2-combustor") {
 #ifdef sCO2Combustor
     EBsCO2Combustor(geom, max_level);
 #else

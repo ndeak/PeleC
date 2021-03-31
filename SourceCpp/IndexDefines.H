@@ -63,7 +63,7 @@
 
 #ifdef PELEC_USE_PLASMA
 #define NUM_ADV 0
-#define NUM_AUX 2
+#define NUM_AUX 5
 #define NUM_E 3
 #define E_X 0
 #define E_Y 1

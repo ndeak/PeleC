@@ -655,17 +655,12 @@ pc_apply_eb_boundry_flux_stencil(
               sum += sten[L].val[kk][jj][ii] *
                      s(sten[L].iv_base[0] + ii, sten[L].iv_base[1] + jj,
                        sten[L].iv_base[2] + kk, scomp + n);
-              printf("(%i, %i, %i) val = %.6e, s = %.6e\n", ii, jj, kk, sten[L].val[kk][jj][ii], s(sten[L].iv_base[0] + ii, sten[L].iv_base[1] + jj, sten[L].iv_base[2] + kk, scomp + n));
             }
           }
         }
         bcflux[n * Nflux + L] =
           D(i, j, k, Dcomp + n) *
           (bcval[n * Nsten + L] * sten[L].bcval_sten + sum);
-          printf("bcval = %.6e\n", bcval[n * Nsten + L]);
-          printf("bcval_sten = %.6e\n", sten[L].bcval_sten);
-          printf("sum = %.6e\n", sum);
-          exit(1);
       }
     }
   });

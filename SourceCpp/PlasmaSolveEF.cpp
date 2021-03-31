@@ -140,6 +140,27 @@ PeleC::solveEF ( Real time,
 #ifdef _OPENMP
 #pragma omp parallel
 #endif
+   // EB Dirichlet conditions for plane plane and pin pin
+   // for (MFIter mfi(beta,true); mfi.isValid(); ++mfi)
+   // {   
+   //     const Box& bx = mfi.growntilebox();
+   //     const auto& phiV_ar = phiV_BC.array(mfi);
+   //     const Real* dx      = geom.CellSize();
+   //     const Real* problo  = geom.ProbLo();
+   //     const Real* probhi  = geom.ProbHi();
+   //     amrex::ParallelFor(bx,
+   //     [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+   //     {   
+   //         Real y = problo[1] + (j + 0.5)*dx[1]; 
+   //         if (y >= probhi[1] / 2.0) {
+   //             phiV_ar(i,j,k) = prob_parm.PhiV_top;
+   //         } else {
+   //             phiV_ar(i,j,k) = prob_parm.PhiV_bottom;
+   //         }   
+   //     }); 
+   // }
+
+   // EB Dirichlet conditions for spherical discharge test case
    for (MFIter mfi(beta,true); mfi.isValid(); ++mfi)
    {   
        const Box& bx = mfi.growntilebox();
@@ -150,11 +171,14 @@ PeleC::solveEF ( Real time,
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {   
+           Real x = problo[0] + (i + 0.5)*dx[0]; 
            Real y = problo[1] + (j + 0.5)*dx[1]; 
-           if (y >= probhi[1] / 2.0) {
-               phiV_ar(i,j,k) = prob_parm.PhiV_top;
-           } else {
-               phiV_ar(i,j,k) = prob_parm.PhiV_bottom;
+           Real z = problo[2] + (k + 0.5)*dx[2]; 
+           Real r = sqrt((x-2.0)*(x-2.0) + (y-2.0)*(y-2.0) + (z-2.0)*(z-2.0));
+           if (r >= 1.0) {
+               phiV_ar(i,j,k) = prob_parm.PhiV_top;     // outer sphere
+           } else { 
+               phiV_ar(i,j,k) = prob_parm.PhiV_bottom;  // inner sphere
            }   
        }); 
    }
@@ -205,7 +229,25 @@ PeleC::solveEF ( Real time,
    gradPhiV[2]->setVal(0.0);
 #endif
    std::array<MultiFab*,AMREX_SPACEDIM> fp{D_DECL(gradPhiV[0],gradPhiV[1],gradPhiV[2])};
-   mlmg.getFluxes({fp},{&phiV_borders});
+   mlmg.getGradSolution({fp});
+
+   for(int d=0; d<AMREX_SPACEDIM; d++){
+     for (amrex::MFIter mfi(*gradPhiV[d], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+       const amrex::Box& tbox = mfi.tilebox();
+       int ng = gradPhiV[d]->nGrow();
+       const amrex::Box gbox = amrex::grow(tbox, ng);
+       std::array<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> E_edge_arr = {AMREX_D_DECL(gradPhiV[0]->array(mfi), gradPhiV[1]->array(mfi), gradPhiV[2]->array(mfi))} ;
+       const Real* problo  = geom.ProbLo();
+       const Real* dx      = geom.CellSize();
+         amrex::ParallelFor(
+           tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+             E_edge_arr[d](i, j, k, 0) *= -1.0;
+           });
+       }
+   }
+
+   // Need to unscale fluxes for cut cells
+   // By default they are scaled by (EB area/uncut cell face area) 
 
    Efield_edge = {AMREX_D_DECL(gradPhiV[0], gradPhiV[1], gradPhiV[2])};
 #ifdef PELEC_USE_EB
@@ -214,13 +256,22 @@ PeleC::solveEF ( Real time,
    average_face_to_cellcenter(Efield, 0, Efield_edge);
 #endif
 
-#ifdef PELEC_USE_EB
-   // If using EB, get flux at EB surface, and overwrite the Efield MF for cut cells
-    
-   // Create MFs for each this AMR level and all coarser levels, to pass into function
-
-
+  // Copy Efield cell-center values into State variable MF for plotting (TODO : probably better way to do this...)
+  for (amrex::MFIter mfi(Ucurr, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+     const amrex::Box& tbox = mfi.tilebox();
+     int ng = Ucurr.nGrow();
+     const amrex::Box gbox = amrex::grow(tbox, ng);
+     const auto Efab = Efield.array(mfi);
+     const auto Sfab = Ucurr.array(mfi);
+     amrex::ParallelFor(
+       tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         Sfab(i, j, k, UFX+2) = Efab(i, j, k, 0);
+         Sfab(i, j, k, UFX+3) = Efab(i, j, k, 1);
+#if AMREX_SPACEDIM == 3
+         Sfab(i, j, k, UFX+4) = Efab(i, j, k, 2);
 #endif
+     });
+   }
 
 }
 

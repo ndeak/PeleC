@@ -19,6 +19,7 @@ pc_compute_hyp_mol_flux(
   const int plm_iorder
 #ifdef PELEC_USE_PLASMA
   ,
+  const amrex::Array4<const amrex::Real>& s_cc,
   const amrex::Array4<const amrex::Real>& K_cc,
   const amrex::Array4<const amrex::Real>& E_cc,
   const amrex::Array4<amrex::Real>& drift_cc,
@@ -360,7 +361,7 @@ pc_compute_hyp_mol_flux(
             }
             flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
           }
-          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) += 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
         }
         if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
           ExtrapTe(eon(ii, jj, kk, 0), &Te);
@@ -572,8 +573,8 @@ pc_compute_hyp_mol_flux(
       int iv[3] = {i,j,k};
       amrex::Real ionFlux = 0.0;
 
-      // Calculate the electric field normal to the EB face (pointing into the fluid)
-      amrex::Real Enorm = (E_cc(i, j, k, 0) * ebnorm[0] + E_cc(i, j, k, 1) * ebnorm[1] + E_cc(i, j, k, 2) * ebnorm[2]);
+      // Calculate the electric field normal to the EB face (pointing into the fluid, negative value indicates into the surface)
+      amrex::Real Enorm = (s_cc(i, j, k, UFX+2) * ebnorm[0] + s_cc(i, j, k, UFX+3) * ebnorm[1] + s_cc(i, j, k, UFX+4) * ebnorm[2]);
 
       // overwrite fluxes on all ext_dir boundaries
       // Use EoN to get Te for electron flux at the boundary

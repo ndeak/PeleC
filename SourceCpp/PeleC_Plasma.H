@@ -6,7 +6,7 @@
   // Data
 
   // Static variables/options
-  static int         PhiV, nE;                              // Additional scalar indices
+  static int         PhiV, nE, Efieldx, Efieldy, Efieldz;   // Additional scalar indices
   static int         ef_verbose;                            // Runtime verbose
   static int         ef_debug;                              // Use VisMF to dump data (a lot ...)
   static int         ef_use_NLsolve;                        // Switch nonlinear solve ON/OFF

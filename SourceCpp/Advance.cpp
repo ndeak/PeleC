@@ -111,14 +111,12 @@ PeleC::do_mol_advance(
   //   const amrex::Box gbox = amrex::grow(tbox, ng);
   //   std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge_arr = {AMREX_D_DECL(Efield_edge[0]->array(mfi), Efield_edge[1]->array(mfi), Efield_edge[2]->array(mfi))} ;
   //   for(int d=0; d<AMREX_SPACEDIM; d++){
-  //     // const auto Eedge = Efield_edge[d]->array(mfi);
   //     amrex::ParallelFor(
   //       tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //         if(d == 1)printf("edge efield(%i, %i, %i, %i) = %.6e\n", i, j, k, d, E_edge_arr[d](i, j, k, 0));
+  //         printf("edge efield(%i, %i, %i, %i) = %.6e\n", i, j, k, d, E_edge_arr[d](i, j, k, 0));
   //       });
   //   }
   // }
-  // exit(1);
 
   amrex::Real mwt[NUM_SPECIES];
   EOS::molecular_weight(mwt);   // CGS
@@ -136,8 +134,7 @@ PeleC::do_mol_advance(
        gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          amrex::Real ndens = 0.0;
          for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
-         redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Efab(i,j,k,0)*Efab(i,j,k,0), + Efab(i,j,k,1)*Efab(i,j,k,1), + Efab(i,j,k,2)*Efab(i,j,k,2))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
-         // printf("redEfab(%i, %i, %i) = %.6e\n", i,j,k,redEfab(i,j,k));
+         redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
        });
   }
 #endif

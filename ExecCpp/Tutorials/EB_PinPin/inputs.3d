@@ -1,26 +1,31 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
-max_step = 2500
+max_step = 100
 stop_time = 100.0
 
 # PROBLEM SIZE & GEOMETRY
-geometry.is_periodic =  1   0  1
+ geometry.is_periodic =  1  1  1
+#geometry.is_periodic =  1  0  1
 geometry.coord_sys   =  0       # 0 => cart
 geometry.prob_lo     =  0    0    0 
 #geometry.prob_hi     =  0.125  1.0  0.125
-geometry.prob_hi     =  0.125  2.0  0.125
+#geometry.prob_hi     =  0.125  2.0  0.125    # EB test case 1
+geometry.prob_hi     =  4.0  4.0  4.0     # EB test case 2
 #geometry.prob_hi     =  11.0  11.0  11.0
+#amr.n_cell           =  64 64 64
 #amr.n_cell           =  256 256 256
 #amr.n_cell           =  128 128 128
-amr.n_cell           =  8 128 8
-#amr.n_cell           =  32 32 32
-#amr.n_cell           =  64   80   64
+amr.n_cell           =  64   64   64
+#amr.n_cell           =  8   128   8
+
 
 # >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
 # Interior, UserBC, Symmetry, SlipWall, NoSlipWall
 # >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
 
-pelec.lo_bc       =  "Interior" "SlipWall" "Interior"
-pelec.hi_bc       =  "Interior" "SlipWall" "Interior"
+#pelec.lo_bc       =  "Interior" "SlipWall" "Interior"
+#pelec.hi_bc       =  "Interior" "SlipWall" "Interior"
+pelec.lo_bc       =  "Interior" "Interior" "Interior"
+pelec.hi_bc       =  "Interior" "Interior" "Interior"
 
 # Problem setup
 pelec.eb_boundary_T = 300.
@@ -72,7 +77,7 @@ tagging.efielderr = 200
 tagging.max_efield_lev = 10
 tagging.negraderr = 1.0e-34
 tagging.max_negrad_lev = 10
-tagging.max_vfracerr_lev = 0
+tagging.max_vfracerr_lev = 10
 
 # CHECKPOINT FILES
 amr.checkpoint_files_output = 0
@@ -82,7 +87,7 @@ amr.check_int       = -1       # number of timesteps between checkpoints
 # PLOTFILES
 amr.plot_files_output = 1
 amr.plot_file       = plt
-amr.plot_int        = 500
+amr.plot_int        = 10
 amr.derive_plot_vars=ALL
 pelec.plot_massfrac = true
 
@@ -98,18 +103,37 @@ pelec.plot_massfrac = true
 # pins.pin_1_dir = 1
 # ebd.boundary_grad_stencil_type = 0
 
-# EB TEST CASE 1
-eb2.use_eb2 = 1
-eb2.geom_type = boxes
-boxes.num_boxes = 2
-boxes.box_0_lo = -1.0 -1.0 -1.0
-boxes.box_0_hi = 2.0 0.433 2.0
-boxes.box_1_lo = -1.0 1.433 -1.0
-boxes.box_1_hi = 2.0 3.0 2.0
+# EB TEST CASE 1 (PLATE TO PLATE, ALIGNED W X-Z PLANE)
+#eb2.use_eb2 = 1
+#eb2.geom_type = boxes
+#boxes.num_boxes = 2
 #boxes.box_0_lo = -1.0 -1.0 -1.0
-#boxes.box_0_hi = 2.0 0.1 2.0
-#boxes.box_1_lo = -1.0 1.1 -1.0
-#boxes.box_1_hi = 2.0 2.0 2.0
+#boxes.box_0_hi = 2.0 0.433 2.0
+#boxes.box_1_lo = -1.0 1.433 -1.0
+#boxes.box_1_hi = 2.0 3.0 2.0
+#ebd.boundary_grad_stencil_type = 0
+
+#EB TEST CASE 2 (SLANTED PLATE TO PLATE, NEED TO ADDRESS X AND Z BCs) - NOT WORKING!!
+#eb2.use_eb2 = 1
+#eb2.geom_type = rboxes
+#rboxes.num_boxes = 2
+#rboxes.box_0_lo = -1.0 -1.0 -1.0
+#rboxes.box_0_hi = 2.0 0.433 2.0
+#rboxes.box_1_lo = -1.0 1.433 -1.0
+#rboxes.box_1_hi = 2.0 3.0 2.0
+#rboxes.box_rot_angle = 0.261799   # rad
+#ebd.boundary_grad_stencil_type = 0
+
+#EB TEST CASE 2 (SPHERICAL ELECTRODE IN GROUNDED SPHEREICAL DOMAIN)
+eb2.use_eb2 = 1
+eb2.geom_type = spheres
+spheres.num_spheres = 2
+spheres.sphere_0_cent = 2.0 2.0 2.0
+spheres.sphere_0_r =  0.5
+spheres.sphere_0_inside = false
+spheres.sphere_1_cent = 2.0 2.0 2.0
+spheres.sphere_1_r =  1.5
+spheres.sphere_1_inside = true
 ebd.boundary_grad_stencil_type = 0
 
 prob.p = 1013250.0
@@ -118,7 +142,8 @@ prob.vx_in =  0.0
 prob.vy_in =  0.0
 prob.Re_L = 1.0
 prob.Pr = 0.7
-prob.phiV_bottom = 24463.e7
+#prob.phiV_bottom = 24463.e7
+prob.phiV_bottom = 12231.e7
 
 #fabarray.mfiter_tile_size = 1024 1024 1024
 amrex.fpe_trap_invalid = 1
