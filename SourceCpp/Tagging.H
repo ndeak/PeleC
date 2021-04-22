@@ -43,6 +43,8 @@ struct TaggingParm
 
   amrex::Real negraderr = 1.0e10;
   int max_negrad_lev = 10;
+
+  int plasma_channel_lev = 10;
 #endif
 };
 
@@ -130,6 +132,27 @@ tag_error_bounds(
 {
   // Tag on regions inside bounds
   if ((lbnd < field(i, j, k)) && (field(i, j, k) < ubnd)) {
+    tag(i, j, k) = tagval;
+  }
+}
+
+AMREX_GPU_DEVICE
+AMREX_FORCE_INLINE
+void
+tag_plasma_channel(
+  const int i,
+  const int j,
+  const int k,
+  amrex::Real x,
+  amrex::Real y,
+  amrex::Real z, 
+  amrex::Array4<char> const& tag,
+  char tagval) noexcept
+{
+  // Tag in central pin to pin region (hard code for time being)
+  amrex::Real r = sqrt((x-2.0)*(x-2.0) + (z-2.0)*(z-2.0));
+  if (r < 0.15 && y > 1.4 && y < 2.6)
+  {
     tag(i, j, k) = tagval;
   }
 }

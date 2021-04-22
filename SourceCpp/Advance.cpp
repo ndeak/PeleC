@@ -100,6 +100,9 @@ PeleC::do_mol_advance(
 
 
 #ifdef PELEC_USE_PLASMA
+  // Get the driven voltage
+  getCurrVoltage(time);
+
   // Compute PhiV
   ProbParmDevice const* lprobparm = prob_parm_device.get();
   solveEF( time, dt, *lprobparm );

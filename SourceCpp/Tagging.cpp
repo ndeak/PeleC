@@ -45,5 +45,7 @@ PeleC::read_tagging_params()
 
   pp.query("negraderr", tagging_parm->negraderr);
   pp.query("max_negrad_lev", tagging_parm->max_negrad_lev);
+
+  pp.query("plasma_channel_lev", tagging_parm->plasma_channel_lev);
 #endif
 }

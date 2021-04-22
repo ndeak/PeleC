@@ -13,6 +13,16 @@
   static bool        def_harm_avg_cen2edge;                 // Face averaging type
   static int         ion_bc_type;
   static amrex::Real secondary_em_coef;                     // Boundary emission
+  static amrex::Real pulse_freq;                            // Pulse frequency (Hz)
+  static amrex::Real pulse_fwhm;                            // Pulse FWHM (s)
+  static amrex::Real pulse_peak;                            // Pulse peak voltage (erg/C)
+  static amrex::Real pulse_timing;                          // Timing of first pulse peak (s)
+  static int         pulse_num;                             // Number of pulses
+  static amrex::Real pulse_dt;                              // Constant time step size taken around each plasma pulse (s)
+  static amrex::Real pulse_sigma;     
+  static amrex::Real curr_voltage;                          // Voltage at time t=n (erg/C)
+  static amrex::Real dfact;
+  static amrex::Real sfact;
   static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;      // Species charges
 
   // Efield Poisson solve options
@@ -95,6 +105,9 @@
 
   // Build MFs/FluxBoxes ...
   void plasma_define_data();
+
+  // Get voltage at a given time
+  void getCurrVoltage(amrex::Real time);
 
   // Electric potential Poisson solve
   void solveEF (amrex::Real time,

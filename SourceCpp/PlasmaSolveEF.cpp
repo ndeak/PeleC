@@ -48,6 +48,9 @@ PeleC::solveEF ( Real time,
 #ifdef _OPENMP
 #pragma omp parallel
 #endif
+    amrex::Real mwt[NUM_SPECIES];
+    EOS::molecular_weight(mwt);   // CGS
+
    // TODO set charge to be equal to sum of ion/electron num densities
    for (MFIter mfi(chargeDistib,true); mfi.isValid(); ++mfi)
    {   
@@ -58,20 +61,14 @@ PeleC::solveEF ( Real time,
        const Real* dx      = geom.CellSize();
        const Real* problo  = geom.ProbLo();
        int useNL = ef_use_NLsolve;
-       Real        factor = -1.0 / ( EFConst::eps0_cgs  * EFConst::epsr);
+       Real        factor = -1.0 * EFConst::elemCharge / ( EFConst::eps0_cgs  * EFConst::epsr);
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {
-           Real x_rel = problo[0] + (i + 0.5)*dx[0] - 2.0;
-           Real y_rel = problo[1] + (j + 0.5)*dx[1] - 2.0;
-           Real z_rel = problo[2] + (k + 0.5)*dx[2] - 2.0;
-           Real r = std::sqrt(x_rel*x_rel+2.0*y_rel*y_rel+z_rel*z_rel);
-           if (r < 0.5) {
-               //chrg_ar(i,j,k) = 1.0e4*(0.5 - r)/0.5;
-               chrg_ar(i,j,k) = 0.0;
-           } else {
-               chrg_ar(i,j,k) = 0.0;
-           }   
+          Real tmp_chrg = 0.0;
+          for(int n=0; n<NUM_SPECIES; n++) tmp_chrg += rhoY_ar(i,j,k,n) * (1.0/mwt[n]) * EFConst::Na * zk[n];
+          chrg_ar(i,j,k) = tmp_chrg * factor;
+          // chrg_ar(i,j,k) = 0.0;
        }); 
    }
 // If need be, visualize the charge distribution.
@@ -141,26 +138,6 @@ PeleC::solveEF ( Real time,
 #pragma omp parallel
 #endif
    // EB Dirichlet conditions for plane plane and pin pin
-   // for (MFIter mfi(beta,true); mfi.isValid(); ++mfi)
-   // {   
-   //     const Box& bx = mfi.growntilebox();
-   //     const auto& phiV_ar = phiV_BC.array(mfi);
-   //     const Real* dx      = geom.CellSize();
-   //     const Real* problo  = geom.ProbLo();
-   //     const Real* probhi  = geom.ProbHi();
-   //     amrex::ParallelFor(bx,
-   //     [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-   //     {   
-   //         Real y = problo[1] + (j + 0.5)*dx[1]; 
-   //         if (y >= probhi[1] / 2.0) {
-   //             phiV_ar(i,j,k) = prob_parm.PhiV_top;
-   //         } else {
-   //             phiV_ar(i,j,k) = prob_parm.PhiV_bottom;
-   //         }   
-   //     }); 
-   // }
-
-   // EB Dirichlet conditions for spherical discharge test case
    for (MFIter mfi(beta,true); mfi.isValid(); ++mfi)
    {   
        const Box& bx = mfi.growntilebox();
@@ -171,17 +148,39 @@ PeleC::solveEF ( Real time,
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {   
-           Real x = problo[0] + (i + 0.5)*dx[0]; 
            Real y = problo[1] + (j + 0.5)*dx[1]; 
-           Real z = problo[2] + (k + 0.5)*dx[2]; 
-           Real r = sqrt((x-2.0)*(x-2.0) + (y-2.0)*(y-2.0) + (z-2.0)*(z-2.0));
-           if (r >= 1.0) {
-               phiV_ar(i,j,k) = prob_parm.PhiV_top;     // outer sphere
-           } else { 
-               phiV_ar(i,j,k) = prob_parm.PhiV_bottom;  // inner sphere
+           if (y >= probhi[1] / 2.0) {
+               phiV_ar(i,j,k) = prob_parm.PhiV_top;
+               // phiV_ar(i,j,k) = curr_voltage;
+           } else {
+               phiV_ar(i,j,k) = prob_parm.PhiV_bottom;
+               // phiV_ar(i,j,k) = 0.0;
            }   
        }); 
    }
+
+   // EB Dirichlet conditions for spherical discharge test case
+   // for (MFIter mfi(beta,true); mfi.isValid(); ++mfi)
+   // {   
+   //     const Box& bx = mfi.growntilebox();
+   //     const auto& phiV_ar = phiV_BC.array(mfi);
+   //     const Real* dx      = geom.CellSize();
+   //     const Real* problo  = geom.ProbLo();
+   //     const Real* probhi  = geom.ProbHi();
+   //     amrex::ParallelFor(bx,
+   //     [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+   //     {   
+   //         Real x = problo[0] + (i + 0.5)*dx[0]; 
+   //         Real y = problo[1] + (j + 0.5)*dx[1]; 
+   //         Real z = problo[2] + (k + 0.5)*dx[2]; 
+   //         Real r = sqrt((x-2.0)*(x-2.0) + (y-2.0)*(y-2.0) + (z-2.0)*(z-2.0));
+   //         if (r >= 1.0) {
+   //             phiV_ar(i,j,k) = prob_parm.PhiV_top;     // outer sphere
+   //         } else { 
+   //             phiV_ar(i,j,k) = prob_parm.PhiV_bottom;  // inner sphere
+   //         }   
+   //     }); 
+   // }
 
    poissonOP.setEBDirichlet(0,phiV_BC,beta);
 #endif

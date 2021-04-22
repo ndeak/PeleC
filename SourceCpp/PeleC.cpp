@@ -93,6 +93,17 @@ amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
 amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
 amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
 amrex::Real PeleC::secondary_em_coef = 0.0;
+amrex::Real PeleC::pulse_freq = 0.0;
+amrex::Real PeleC::pulse_fwhm = 0.0;
+amrex::Real PeleC::pulse_peak = 0.0;
+amrex::Real PeleC::pulse_timing = 0.0;
+amrex::Real PeleC::pulse_dt = 0.0;
+amrex::Real PeleC::pulse_sigma = 0.0;
+amrex::Real PeleC::curr_voltage = 0.0;
+amrex::Real PeleC::dfact = 0.0;
+amrex::Real PeleC::sfact = 0.0;
+int PeleC::pulse_num = 0;
+
 amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
 #endif
 
@@ -376,6 +387,12 @@ PeleC::read_params()
 #ifdef PELEC_USE_PLASMA
   pp.query("ion_bc_type", ion_bc_type);
   pp.query("secondary_em_coef", secondary_em_coef);
+  pp.query("pulse_freq", pulse_freq);
+  pp.query("pulse_fwhm", pulse_fwhm);
+  pp.query("pulse_peak", pulse_peak);
+  pp.query("pulse_timing", pulse_timing);
+  pp.query("pulse_num", pulse_num);
+  pp.query("pulse_dt", pulse_dt);
 #endif
 
   // Read tagging parameters
@@ -731,11 +748,15 @@ PeleC::initData()
   // Compute initial PhiV
   amrex::Real cur_time = state[State_Type].curTime();
   ProbParmDevice const* lprobparm = prob_parm_device.get();
+  getCurrVoltage(0.0);
   solveEF( cur_time, 0.0, *lprobparm );
   if ( ef_debug) {
      amrex::MultiFab phiV_a(S_new,amrex::make_alias,PhiV,1);
      amrex::VisMF::Write(phiV_a,"InitialPhiV");
   }
+  pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0))); 
+  dfact = 2.0;
+  sfact = 1.0;
 #endif
 
   // computeTemp(S_new,0);
@@ -1018,6 +1039,20 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
       estdt = estdt_particle;
     }
   }
+#endif
+ 
+#ifdef PELEC_USE_PLASMA
+  // Smoothly transition to smaller time step around plasma pulses
+  amrex::Real cur_time = state[State_Type].curTime();
+  amrex::Real pulse_dist=1.0e10;
+  amrex::Real pulse_timing_tmp = 0.0;
+  amrex::Real fact = 0.0;
+  for(int i=0; i<pulse_num; i++){
+    pulse_timing_tmp = pulse_timing + fact*(1.0/pulse_freq);
+    pulse_dist = amrex::min<amrex::Real>(amrex::Math::abs(cur_time - pulse_timing_tmp), pulse_dist);
+    fact += 1.0;
+  }
+  estdt = pulse_dt + (estdt - pulse_dt) * 0.5 * (1.0 + tanh((pulse_dist - dfact*pulse_sigma) / (sfact*pulse_sigma)));
 #endif
 
   if (verbose) {
@@ -1857,6 +1892,21 @@ PeleC::errorEst(
               i, j, k, tag_arr, ne_arr, captured_negraderr, tagval);
           });
       }
+
+      // Tagging central plasma channel
+      if (level < tagging_parm->plasma_channel_lev) {
+        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> problo = geom.ProbLoArray();
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            amrex::Real x = problo[0] + (i + 0.5)*dx[0];
+            amrex::Real y = problo[1] + (j + 0.5)*dx[1];
+            amrex::Real z = problo[2] + (k + 0.5)*dx[2];
+            tag_plasma_channel(
+              i, j, k, x, y, z, tag_arr, tagval);
+          });
+      }
+
 #endif
 
       // Problem specific tagging

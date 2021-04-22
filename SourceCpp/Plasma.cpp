@@ -438,3 +438,19 @@ void PeleC::setBCPhiV(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
       }
    }
 }
+
+// Get the voltage at a given time
+void PeleC::getCurrVoltage(Real time) {
+  amrex::Real pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0)));     // Pulse sigma
+  amrex::Real pulse_time_tmp;
+
+  curr_voltage = 0.0;
+  for(int i=0; i<pulse_num; i++){
+    pulse_time_tmp = pulse_timing  + (i)*(1.0/pulse_freq);
+    curr_voltage += pulse_peak * exp(-0.5 * pow( (time - pulse_time_tmp) / pulse_sigma, 2) );
+  }
+
+  ProbParmDevice * lprobparm = prob_parm_device.get();
+  lprobparm->PhiV_top = curr_voltage;
+  lprobparm->PhiV_bottom = 0.0;
+}

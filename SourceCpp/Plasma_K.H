@@ -12,6 +12,7 @@ void
 getKappaE(int i, int j, int k, int Ecomp,
           amrex::Array4<      amrex::Real> const& Ks) noexcept
 {
+  // TODO : CALCULATE ELECTRON MOBILITY AS A FUNCTION OF |E|
   // ndeak note - calculates mobility in units of cm2/erg-s
    using namespace amrex::literals;
 
@@ -32,6 +33,7 @@ getDiffE(int i, int j, int k, int Ecomp,
          amrex::Array4<const amrex::Real> const& Ks,
          amrex::Array4<      amrex::Real> const& rhoD) noexcept
 {
+  // TODO : MAKE SURE T_E IS BEING PASSED IN...
   // ndeak note - calculates diffusivity in units of (cm2/s)*(g/cm3)
   // factor has units of J/K-C
    using namespace amrex::literals;
@@ -64,6 +66,7 @@ getKappaSp(int i, int j, int k,
            amrex::Array4<const amrex::Real> const& T,
            amrex::Array4<      amrex::Real> const& Ksp) noexcept
 {
+   // TODO : CALCULATE MOBILITIES FROM DIFFUSIVITIES
    // ndeak note - returns mobility in units of cm2/erg-s
    // mwt in units of g/mol
    // a_zk in units of C/g
