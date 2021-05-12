@@ -11,6 +11,7 @@
 #include <AMReX_Utility.H>
 #include <AMReX_buildInfo.H>
 #include <AMReX_ParmParse.H>
+#include <AMReX_PlotFileUtil.H>
 #ifdef PELEC_USE_EB
 #include <AMReX_EBMultiFabUtil.H>
 #endif
@@ -1130,4 +1131,41 @@ PeleC::writeSmallPlotFile(
   std::string TheFullPath = FullPath;
   TheFullPath += BaseName;
   amrex::VisMF::Write(plotMF, TheFullPath, how, true);
+}
+
+void PeleC::writeDebugPlotFile(const amrex::Vector<const amrex::MultiFab*> &a_MF,
+                               const std::string &pltname,
+                               int firstLevel,
+                               int firstComp,
+                               int nComp)
+{
+   // Component and level sizes
+   AMREX_ASSERT(a_MF[0]->nComp() >= firstComp+nComp);
+   AMREX_ASSERT(parent->finestLevel() >= firstLevel + a_MF.size());
+
+   // Generate dumb names
+   amrex::Vector<std::string> names(nComp);
+   for (int n = 0; n < nComp; n++) {
+      names[n] = "comp"+std::to_string(n);
+   }
+
+   // Dumb level steps
+   amrex::Vector<int> istep(a_MF.size(), 0);
+
+   // Make a vector of aliases with required components
+   amrex::Vector<amrex::MultiFab> aliases;
+   for (int lev = 0; lev < a_MF.size(); lev++ ) {
+      aliases.emplace_back(*a_MF[lev],amrex::make_alias,firstComp,nComp);
+   }
+
+   // Vector of geometries/ref_ratios
+   amrex::Vector<amrex::Geometry> Geoms(a_MF.size());
+   amrex::Vector<amrex::IntVect> RefRatios(a_MF.size());
+   for (int lev = 0; lev < a_MF.size(); lev++ ) {
+      Geoms[lev] = parent->Geom(firstLevel+lev);
+      RefRatios[lev] = {AMREX_D_DECL(2,2,2)};
+   }
+
+   amrex::WriteMultiLevelPlotfile(pltname, a_MF.size(), GetVecOfConstPtrs(aliases),
+                                  names, Geoms, 0.0, istep, RefRatios);
 }
