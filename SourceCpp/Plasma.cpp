@@ -451,6 +451,6 @@ void PeleC::getCurrVoltage(Real time) {
   }
 
   ProbParmDevice * lprobparm = prob_parm_device.get();
-  lprobparm->PhiV_top = curr_voltage;
-  lprobparm->PhiV_bottom = 0.0;
+  lprobparm->PhiV_top = 0.0;
+  lprobparm->PhiV_bottom = curr_voltage;
 }

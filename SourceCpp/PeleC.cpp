@@ -755,7 +755,7 @@ PeleC::initData()
      amrex::VisMF::Write(phiV_a,"InitialPhiV");
   }
   pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0))); 
-  dfact = 2.0;
+  dfact = 5.0;
   sfact = 1.0;
 #endif
 
