@@ -121,6 +121,11 @@ public:
   virtual void writeSmallPlotFile(
     const std::string& dir, std::ostream& os, amrex::VisMF::How how) override;
   void writeJobInfo(const std::string& dir);
+  void writeDebugPlotFile(const amrex::Vector<const amrex::MultiFab*> &a_MF,
+                          const std::string &pltname,
+                          int firstLevel,
+                          int firstComp,
+                          int nComp);
   static void writeBuildInfo(std::ostream& os);
 
   // Define data descriptors.

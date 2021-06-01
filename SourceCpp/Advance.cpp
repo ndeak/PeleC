@@ -141,6 +141,16 @@ PeleC::do_mol_advance(
        });
   }
 #endif
+  if (level == parent->finestLevel()) {
+     // ------------- Using writeDebugPlotFile examples
+     // Let's write old data of the finest two levels
+     //auto &SoldLevelfinest = getLevel(parent->finestLevel()).get_old_data(State_Type);   
+     //auto &SoldLevelnexttofinest = getLevel(parent->finestLevel()-1).get_old_data(State_Type);  
+     //writeDebugPlotFile({&SoldLevelnexttofinest,&SoldLevelfinest}, "TestPltTwoLevel",parent->finestLevel()-1,PhiV,1);
+
+     // Let's write Sborder of the finest
+     //writeDebugPlotFile({&Sborder},"TestPltSingleLevel",parent->finestLevel(),PhiV,1);
+  }
 
   // Compute S^{n} = MOLRhs(U^{n})
   if (verbose) {
