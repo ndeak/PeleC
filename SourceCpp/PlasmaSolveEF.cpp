@@ -41,6 +41,7 @@ PeleC::solveEF ( Real time,
 
    MultiFab phiV_alias(Ucurr, amrex::make_alias, PhiV, 1);
    MultiFab phiV_borders(Sborder, amrex::make_alias, 0, 1);
+   // VisMF::Write(phiV_borders,"phiv");
 
 // Charge distribution MF
    MultiFab chargeDistib(grids,dmap,1,0,MFInfo(),Factory());
@@ -65,10 +66,14 @@ PeleC::solveEF ( Real time,
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {
-          Real tmp_chrg = 0.0;
-          for(int n=0; n<NUM_SPECIES; n++) tmp_chrg += rhoY_ar(i,j,k,n) * (1.0/mwt[n]) * EFConst::Na * zk[n];
-          chrg_ar(i,j,k) = tmp_chrg * factor;
-          // chrg_ar(i,j,k) = 0.0;
+          if(ef_noSpaceCharge == 0){
+            Real tmp_chrg = 0.0;
+            for(int n=0; n<NUM_SPECIES; n++) tmp_chrg += rhoY_ar(i,j,k,n) * (1.0/mwt[n]) * EFConst::Na * zk_num[n];
+            chrg_ar(i,j,k) = tmp_chrg * factor;
+          }
+          else{
+            chrg_ar(i,j,k) = 0.0;
+          }
        }); 
    }
 // If need be, visualize the charge distribution.

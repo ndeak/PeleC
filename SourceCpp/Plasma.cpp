@@ -21,6 +21,7 @@ namespace EFConst
    amrex::Real kB = 1.380649e-16;
    amrex::Real PP_RU_MKS = 8.31446261815324;    //Universal gas constant (J/mol-K)
    amrex::Real PP_RU_CGS = 83144626.1815324;    // (erg/mol-K)
+   amrex::Real me_cgs = 9.10938356e-28;         // electron mass (g)
 }
 
 void 
@@ -42,6 +43,8 @@ PeleC::plasma_init()
 
     pp.query("Poisson_tol",ef_PoissonTol);
     pp.query("Poisson_verbose",ef_PoissonVerbose);
+    pp.query("noSpaceCharge",ef_noSpaceCharge);
+    pp.query("constVoltage",ef_constVoltage);
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);
@@ -70,9 +73,12 @@ PeleC::plasma_init()
 
     // get charge per unit mass (C/g) CGS
     Real zk_temp[NUM_SPECIES] = {0.0};
+    int zk_num_temp[NUM_SPECIES] = {0};
     EOS::charge_mass(zk_temp);
+    CKCHRG(zk_num_temp);
     for (int k = 0; k < NUM_SPECIES; k++) {
        zk[k] = zk_temp[k];
+       zk_num[k] = zk_num_temp[k];
     }
 }
 
@@ -197,6 +203,8 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
 
   // ndeak add - get BCs for species (used in center->edge extrap)
   const amrex::BCRec& bcspec = get_desc_lst()[State_Type].getBC(UFS);
+  amrex::Real mwt[NUM_SPECIES];
+  EOS::molecular_weight(mwt);   // CGS
 
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -210,17 +218,18 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      auto const& Ke   = Ke_cc.array(mfi);
      auto const& De   = De_cc.array(mfi);
      auto const& Ks   = KSpec_old.array(mfi);
+     auto const& redEfab = redEfield.array(mfi);
      Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
      int useNL   = ef_use_NLsolve;
-     amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rhoD, Ke, De, useNL]
+     amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rhoD, Ke, De, useNL, redEfab, mwt]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
         if (useNL) {
-           getKappaE(i,j,k,0,Ke);
-           getDiffE(i,j,k,0,useNL,factor,T,rhoY,Ke,De);
+           getKappaE(i,j,k,0,Ke,redEfab,rhoY,mwt);
+           getDiffE(i,j,k,0,useNL,factor,T,rhoY,Ke,De,redEfab,mwt);
         } else {
-           getKappaE(i,j,k,E_ID,Ks);
-           getDiffE(i,j,k,E_ID,useNL,factor,T,rhoY,Ks,rhoD);
+           getKappaE(i,j,k,E_ID,Ks,redEfab,rhoY,mwt);
+           getDiffE(i,j,k,E_ID,useNL,factor,T,rhoY,Ks,rhoD,redEfab,mwt);
         }
      });
      Real mwt[NUM_SPECIES];
@@ -449,6 +458,8 @@ void PeleC::getCurrVoltage(Real time) {
     pulse_time_tmp = pulse_timing  + (i)*(1.0/pulse_freq);
     curr_voltage += pulse_peak * exp(-0.5 * pow( (time - pulse_time_tmp) / pulse_sigma, 2) );
   }
+
+  if(ef_constVoltage == 1) curr_voltage = pulse_peak;
 
   ProbParmDevice * lprobparm = prob_parm_device.get();
   lprobparm->PhiV_top = 0.0;

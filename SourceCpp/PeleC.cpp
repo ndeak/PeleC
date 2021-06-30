@@ -43,6 +43,7 @@ using namespace MASA;
 
 bool PeleC::signalStopJob = false;
 bool PeleC::dump_old = false;
+bool PeleC::monitor_file = false;
 int PeleC::verbose = 0;
 int PeleC::radius_grow = 1;
 amrex::BCRec PeleC::phys_bc;
@@ -83,16 +84,20 @@ int PeleC::ef_GMRES_verbose = 0;
 int PeleC::ef_PoissonVerbose = 0;
 int PeleC::ef_PoissonMaxOrder = 2;
 int PeleC::ef_PoissonMaxIter = 100;
+int PeleC::ef_noSpaceCharge = 0;
+int PeleC::ef_constVoltage = 0;
 int PeleC::ion_bc_type = 0;
+int PeleC::zero_bc_flux = 0;
 int PeleC::ef_PC_fixedIter = -1;
 int PeleC::ef_PC_approx = 1;
 bool PeleC::def_harm_avg_cen2edge  = false;
-amrex::Real PeleC::ef_PoissonTol = 1.0e-12;
+amrex::Real PeleC::ef_PoissonTol = 1.0e-8;
 amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
 amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
 amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
 amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
 amrex::Real PeleC::secondary_em_coef = 0.0;
+amrex::Real PeleC::electron_emit_const = 0.0;
 amrex::Real PeleC::pulse_freq = 0.0;
 amrex::Real PeleC::pulse_fwhm = 0.0;
 amrex::Real PeleC::pulse_peak = 0.0;
@@ -105,6 +110,7 @@ amrex::Real PeleC::sfact = 0.0;
 int PeleC::pulse_num = 0;
 
 amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
+amrex::GpuArray<int,NUM_SPECIES> PeleC::zk_num;
 #endif
 
 #include "pelec_defaults.H"
@@ -209,6 +215,7 @@ PeleC::read_params()
   pp.query("v", verbose);
   pp.query("sum_interval", sum_interval);
   pp.query("dump_old", dump_old);
+  pp.query("monitor_file", monitor_file);
 
   // Get boundary conditions
   amrex::Vector<std::string> lo_bc_char(AMREX_SPACEDIM);
@@ -386,7 +393,9 @@ PeleC::read_params()
 
 #ifdef PELEC_USE_PLASMA
   pp.query("ion_bc_type", ion_bc_type);
+  pp.query("zero_bc_flux", zero_bc_flux);
   pp.query("secondary_em_coef", secondary_em_coef);
+  pp.query("electron_emit_const", electron_emit_const);
   pp.query("pulse_freq", pulse_freq);
   pp.query("pulse_fwhm", pulse_fwhm);
   pp.query("pulse_peak", pulse_peak);
@@ -754,9 +763,6 @@ PeleC::initData()
      amrex::MultiFab phiV_a(S_new,amrex::make_alias,PhiV,1);
      amrex::VisMF::Write(phiV_a,"InitialPhiV");
   }
-  pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0))); 
-  dfact = 5.0;
-  sfact = 1.0;
 #endif
 
   // computeTemp(S_new,0);
@@ -1044,6 +1050,9 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #ifdef PELEC_USE_PLASMA
   // Smoothly transition to smaller time step around plasma pulses
   amrex::Real cur_time = state[State_Type].curTime();
+  pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0))); 
+  dfact = 5.0;
+  sfact = 1.0;
   amrex::Real pulse_dist=1.0e10;
   amrex::Real pulse_timing_tmp = 0.0;
   amrex::Real fact = 0.0;
@@ -1294,6 +1303,12 @@ PeleC::post_restart()
   plasma_define_data();
 #endif
 
+  // Set up Monitor file Headers
+  // if(monitor_file){
+  //   int nlevs = parent->maxLevel() + 1;
+  //   for(int i=0; i<nlevs; i++) monitorFileSetup(i);
+  // }
+
   problem_post_restart();
 }
 
@@ -1384,6 +1399,12 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
 
   if (sum_int_test || sum_per_test) {
     sum_integrated_quantities();
+  }
+
+  // Set up Monitor file Headers
+  if(monitor_file){
+    int nlevs = parent->maxLevel() + 1;
+    for(int i=0; i<nlevs; i++) monitorFileSetup(i);
   }
 }
 

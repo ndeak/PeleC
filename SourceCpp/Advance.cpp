@@ -151,6 +151,7 @@ PeleC::do_mol_advance(
      // Let's write Sborder of the finest
      //writeDebugPlotFile({&Sborder},"TestPltSingleLevel",parent->finestLevel(),PhiV,1);
   }
+  // VisMF::Write(Efield,"GradPhiCC");
 
   // Compute S^{n} = MOLRhs(U^{n})
   if (verbose) {
@@ -300,6 +301,10 @@ PeleC::do_mol_advance(
   set_body_state(S_new);
 #endif
 
+  // ndead addition - add to monitor file
+  if(monitor_file){
+    writeMonitorFile(S_new, mwt, dt, time, level);
+  }
 
   return dt;
 }

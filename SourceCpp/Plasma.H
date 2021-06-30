@@ -13,5 +13,6 @@ namespace EFConst
    extern amrex::Real kB;            //Boltzman constant
    extern amrex::Real PP_RU_MKS;     //Universal gas constant (J/mol-K)
    extern amrex::Real PP_RU_CGS;     //(erg/mol-K)
+   extern amrex::Real me_cgs;        // electron mass (g)
 }
 #endif

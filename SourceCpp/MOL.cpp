@@ -1,6 +1,7 @@
 #include "MOL.H"
 #ifdef PELEC_USE_PLASMA
 #include "mechanism.h"
+#include <Plasma.H>
 #endif
 
 void
@@ -30,8 +31,10 @@ pc_compute_hyp_mol_flux(
   const amrex::Geometry& geom,
   const int do_harmonic,
   const int ion_bc_type,
+  const int zero_bc_flux,
   const int use_NL,
-  const amrex::Real secondary_em_coef
+  const amrex::Real secondary_em_coef,
+  const amrex::Real electron_emit_const
 #endif
 #ifdef PELEC_USE_EB
   ,
@@ -205,9 +208,9 @@ pc_compute_hyp_mol_flux(
 
         // Store cell-center drift velocity for time step estimation
         for(int n=0; n<NUM_SPECIES; n++){
-          drift_cc(i, j, k, NUM_E*n + 0) = K_cc(i, j, k, n) * E_cc(i, j, k, 0);
-          drift_cc(i, j, k, NUM_E*n + 1) = K_cc(i, j, k, n) * E_cc(i, j, k, 1);
-          drift_cc(i, j, k, NUM_E*n + 2) = K_cc(i, j, k, n) * E_cc(i, j, k, 2);
+          drift_cc(i, j, k, NUM_E*n + 0) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 0));
+          drift_cc(i, j, k, NUM_E*n + 1) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 1));
+          drift_cc(i, j, k, NUM_E*n + 2) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 2));
         }
 #endif
         amrex::Real flux_tmp[NVAR] = {0.0};
@@ -252,7 +255,7 @@ pc_compute_hyp_mol_flux(
         amrex::Real ndens = 0.0;
         amrex::Real kB = 1.380649e-16; // cm^2.g.s^-2/K
         amrex::Real NA = 6.0221409e23; // 1/mol
-        amrex::Real Ttemp;
+        amrex::Real Ttemp = 300.0;    // TODO remove hard code
         double EoN, Te;
         amrex::Real mwt[NUM_SPECIES];
         EOS::molecular_weight(mwt);
@@ -263,7 +266,7 @@ pc_compute_hyp_mol_flux(
           // Calculate species density flux using left or right state (based on effective velocity)
           flux_tmp[UFS + n] = (ustar + drift_tmp[n] > 0.0) ? tmp5 * (tmp0 + drift_tmp[n]) * qtempl[R_Y + n]
                                                            : tmp5 * (tmp0 + drift_tmp[n]) * qtempr[R_Y + n];
-          
+
           // Calculate u momentum density flux using left or right state (based on effective velocity)
           uflux_tmp = (ustar + drift_tmp[n] > 0.0) ? tmp5 * pow((tmp0 + drift_tmp[n]), 2) * qtempl[R_Y + n]
                                                    : tmp5 * pow((tmp0 + drift_tmp[n]), 2) * qtempr[R_Y + n];
@@ -332,74 +335,85 @@ pc_compute_hyp_mol_flux(
           ExtrapTe(eon(i, j, k, 0), &Te);
           flx[dir](i, j, k, URHO) = 0.0;
           for(int n=0; n<NUM_SPECIES; n++){
-            flx[dir](i, j, k, UFS + n) = 0.0;
-            if(n == E_ID && !use_NL){
-              flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * constants::PI()) ,0.5) * a[dir](i, j, k);
-            }
-            if(n != E_ID && K_cc(i,j,k,n) != 0){
-              if(ion_bc_type == 0){
-                flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5) * a[dir](i, j, k);
+            if(zero_bc_flux == 0){
+              flx[dir](i, j, k, UFS + n) = 0.0;
+              if(n == E_ID && !use_NL){
+                flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5) * a[dir](i, j, k);
               }
-              else if(ion_bc_type == 1){
-                if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) > 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) < 0)){
-                  flx[dir](i, j, k, UFS + n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](i,j,k) * a[dir](i, j, k);
+              if(n != E_ID && K_cc(i,j,k,n) != 0){
+                if(ion_bc_type == 0){
+                  flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5) * a[dir](i, j, k);
+                }
+                else if(ion_bc_type == 1){
+                  if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) > 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) < 0)){
+                    flx[dir](i, j, k, UFS + n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](i,j,k) * a[dir](i, j, k);
+                  }
+                  else{
+                    flx[dir](i, j, k, UFS + n) = 0.0;
+                  }
                 }
                 else{
-                  flx[dir](i, j, k, UFS + n) = 0.0;
+                  printf("Ion BC type not supported!\n");
+                  exit(1);
+                }
+                // Save ion flux for secondary electron emissions and convert to number density
+                if ( use_NL ) {
+                   ionFlux_arr[dir](i,j,k) += flx[dir](i, j, k, UFS + n) / mwt[n] * NA; 
+                } else {
+                   ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
                 }
               }
-              else{
-                printf("Ion BC type not supported!\n");
-                exit(1);
-              }
-              // Save ion flux for secondary electron emissions and convert to number density
-              if ( use_NL ) {
-                 ionFlux_arr[dir](i,j,k) += flx[dir](i, j, k, UFS + n) / mwt[n] * NA; 
-              } else {
-                 ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
-              }
+              flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
             }
-            flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
           }
-          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+          // Subtrat from source since ionFlux is negative and contribution should be positive
+          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * EFConst::me_cgs;
         }
         if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
           ExtrapTe(eon(ii, jj, kk, 0), &Te);
           flx[dir](i, j, k, URHO) = 0.0;
           for(int n=0; n<NUM_SPECIES; n++){
-            flx[dir](i, j, k, UFS + n) = 0.0;
-            if(n == E_ID && !use_NL){
-              flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Te) / ((mwt[n]/NA) * constants::PI()) ,0.5) * a[dir](i, j, k);
-            }
-            if(n != E_ID && K_cc(i,j,k,n) != 0){
-              if(ion_bc_type == 0){
-                flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5) * a[dir](i, j, k);
+            if(zero_bc_flux == 0){
+              flx[dir](i, j, k, UFS + n) = 0.0;
+              if(n == E_ID && !use_NL){
+                flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5) * a[dir](i, j, k);
               }
-              else if(ion_bc_type == 1){
-                if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) < 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) > 0)){
-                  flx[dir](i, j, k, UFS + n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](i,j,k) * a[dir](i, j, k);
+              if(n != E_ID && K_cc(i,j,k,n) != 0){
+                if(ion_bc_type == 0){
+                  flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5) * a[dir](i, j, k);
+                }
+                else if(ion_bc_type == 1){
+                  if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) < 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) > 0)){
+                    flx[dir](i, j, k, UFS + n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](i,j,k) * a[dir](i, j, k);
+                  }
+                  else{
+                    flx[dir](i, j, k, UFS + n) = 0.0;
+                  }
                 }
                 else{
-                  flx[dir](i, j, k, UFS + n) = 0.0;
+                  printf("Ion BC type not supported!\n");
+                  exit(1);
+                }
+                // Save ion flux for secondary electron emissions and convert to number density
+                if ( use_NL ) {
+                   ionFlux_arr[dir](i,j,k) -= flx[dir](i, j, k, UFS + n) / mwt[n] * NA; 
+                } else {
+                   ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
                 }
               }
-              else{
-                printf("Ion BC type not supported!\n");
-                exit(1);
-              }
-              // Save ion flux for secondary electron emissions and convert to number density
-              if ( use_NL ) {
-                 ionFlux_arr[dir](i,j,k) += flx[dir](i, j, k, UFS + n) / mwt[n] * NA; 
-              } else {
-                 ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
-              }
+              flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
             }
-            flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
           }
 
           // Add on secondary electron emission based on ion fluxes
           // It is assumed that electrode boundary is an absolutely absorbing wall
-          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+          // Subtract from flux, since ion flux is positive (out of the domain), and a negative flux means a positive electron contribution
+          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * EFConst::me_cgs;
+
+          // Imposed cathode flux (used to test space charge-induced electric field calculations) 
+          // Subtracted from flux to ensure electrons move into the domain
+          // electron_emit_const provided in [1/cm3]
+          if (!use_NL) flx[dir](i, j, k, UFS + E_ID) -= electron_emit_const * 0.5 * (pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5)) * EFConst::me_cgs * a[dir](i,j,k);
         }
 #endif
 
@@ -566,7 +580,7 @@ pc_compute_hyp_mol_flux(
       amrex::Real ndens = 0.0;
       amrex::Real kB = 1.380649e-16; // erg/K
       amrex::Real NA = 6.0221409e23; // 1/mol
-      amrex::Real Ttemp;
+      amrex::Real Ttemp = 300.0;      // TODO remove hard code
       double EoN, Te;
       amrex::Real mwt[NUM_SPECIES];
       EOS::molecular_weight(mwt);
@@ -581,32 +595,35 @@ pc_compute_hyp_mol_flux(
       ExtrapTe(eon(i, j, k, 0), &Te);
       flux_tmp[URHO] = 0.0;
       for(int n=0; n<NUM_SPECIES; n++){
-        flux_tmp[UFS + n] = 0.0;
-        if(n == E_ID){
-          flux_tmp[UFS + n] = -0.5 * q(i,j,k,QRHO) * q(i,j,k,  QFS + n) * pow( (8.0*kB*Te) / ((mwt[n]/NA) * constants::PI()) ,0.5);
-        }
-        if(n != E_ID && K_cc(i,j,k,n) != 0){
-          if(ion_bc_type == 0){
-            flux_tmp[UFS + n] = -0.5 * q(i,j,k,QRHO) * q(i,j,k,QFS + n) * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5);
+        if(zero_bc_flux == 0){
+          flux_tmp[UFS + n] = 0.0;
+          if(n == E_ID){
+            flux_tmp[UFS + n] = -0.5 * q(i,j,k,QRHO) * q(i,j,k,  QFS + n) * pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5);
           }
-          else if(ion_bc_type == 1){
-            if((K_cc(i,j,k,n) < 0 && Enorm > 0) || (K_cc(i,j,k,n) > 0 && Enorm < 0)){
-              flux_tmp[UFS + n] = q(i,j,k,QRHO) * q(i,j,k,QFS + n) * K_cc(i,j,k,n) * Enorm;
+          if(n != E_ID && K_cc(i,j,k,n) != 0){
+            if(ion_bc_type == 0){
+              flux_tmp[UFS + n] = -0.5 * q(i,j,k,QRHO) * q(i,j,k,QFS + n) * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5);
+            }
+            else if(ion_bc_type == 1){
+              if((K_cc(i,j,k,n) < 0 && Enorm > 0) || (K_cc(i,j,k,n) > 0 && Enorm < 0)){
+                flux_tmp[UFS + n] = q(i,j,k,QRHO) * q(i,j,k,QFS + n) * K_cc(i,j,k,n) * Enorm;
+              }
+              else{
+                flux_tmp[UFS + n] = 0.0;
+              }
             }
             else{
-              flux_tmp[UFS + n] = 0.0;
+              printf("Ion BC type not supported!\n");
+              exit(1);
             }
+            // Save ion flux for secondary electron emissions and convert to number density
+            ionFlux += flux_tmp[UFS + n] / mwt[n] * NA;
           }
-          else{
-            printf("Ion BC type not supported!\n");
-            exit(1);
-          }
-          // Save ion flux for secondary electron emissions and convert to number density
-          ionFlux += flux_tmp[UFS + n] / mwt[n] * NA;
+          flux_tmp[URHO] += flux_tmp[UFS + n];
         }
-        flux_tmp[URHO] += flux_tmp[UFS + n];
       }
-      flux_tmp[UFS + E_ID] += 2.0 * secondary_em_coef * ionFlux * mwt[E_ID] / NA;
+      // Negative sign, since flux contribution should be opposite sign from the ionFlux is
+      flux_tmp[UFS + E_ID] -= 2.0 * secondary_em_coef * ionFlux * EFConst::me_cgs;
       // flux_tmp is directed into the EB, so positive values imply electrode losses, and vice versa
       for(int n = 0; n<NUM_SPECIES; n++) flux_tmp[UFS + n] *= -1.0;
 #endif

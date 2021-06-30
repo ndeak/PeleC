@@ -132,8 +132,14 @@ pc_diffusion_flux(
     const amrex::Real Yface = 0.5 * (mass1[ns] + mass2[ns]);
     const amrex::Real hface = 0.5 * (hi1[ns] + hi2[ns]);
     const amrex::Real dXdx = dxinv * (mole1[ns] - mole2[ns]);
-    const amrex::Real Vd =
-      -coef[dComp_rhoD + ns] * (dXdx + (Xface - Yface) * dlnp);
+    const amrex::Real dYdx = dxinv * (mass1[ns] - mass2[ns]);
+    amrex::Real Vd = 0.0;
+    if(ns == E_ID){ 
+      Vd = -coef[dComp_rhoD + ns] * (dYdx);
+    }
+    else {
+      Vd = -coef[dComp_rhoD + ns] * (dXdx + (Xface - Yface) * dlnp);
+    }
     flx(i, j, k, UFS + ns) = Vd;
     Vc += Vd;
     flx(i, j, k, UEDEN) += Vd * hface;

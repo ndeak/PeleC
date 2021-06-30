@@ -12,6 +12,7 @@
 #include <AMReX_buildInfo.H>
 #include <AMReX_ParmParse.H>
 #include <AMReX_PlotFileUtil.H>
+#include <AMReX_VisMF.H>
 #ifdef PELEC_USE_EB
 #include <AMReX_EBMultiFabUtil.H>
 #endif
@@ -1168,4 +1169,66 @@ void PeleC::writeDebugPlotFile(const amrex::Vector<const amrex::MultiFab*> &a_MF
 
    amrex::WriteMultiLevelPlotfile(pltname, a_MF.size(), GetVecOfConstPtrs(aliases),
                                   names, Geoms, 0.0, istep, RefRatios);
+}
+
+void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::Real dt, amrex::Real time, int i){
+
+  // ndeak addition - create monitor files for each level
+  // Monitor file should output the following
+  //    - Min and max n_E, n_O4+, n_O2-
+  //    - Min and max phi, E/N
+  //    - Min and max electron diffusivity and mobility coefs
+  //    - dx and other relevant grid info
+  //    - CFL and diffusion stability criteria
+  // Variables used in monitor file claculations
+  amrex::Real NA = 6.0221409e23; // 1/mol
+  const amrex::Real* dx = geom.CellSize();
+
+
+  amrex::Real min_nE = S.min(UFS + E_ID, 0, false) * (1.0/mwt[E_ID]) * NA;
+  amrex::Real max_nE = S.max(UFS + E_ID, 0, false) * (1.0/mwt[E_ID]) * NA;
+  amrex::Real min_nO4p = S.min(UFS + 6, 0, false) * (1.0/mwt[6]) * NA;
+  amrex::Real max_nO4p = S.max(UFS + 6, 0, false) * (1.0/mwt[6]) * NA;
+  amrex::Real min_nO2m = S.min(UFS + 9, 0, false) * (1.0/mwt[9]) * NA;
+  amrex::Real max_nO2m = S.max(UFS + 9, 0, false) * (1.0/mwt[9]) * NA;
+  amrex::Real min_phiV = S.min(UFX, 0, false) * 1.0e-10;
+  amrex::Real max_phiV = S.max(UFX, 0, false) * 1.0e-10;
+  amrex::Real min_EN = redEfield.min(0, 0, false);
+  amrex::Real max_EN = redEfield.max(0, 0, false);
+  amrex::Real max_De = coeffs_old.max(E_ID, 0, false);
+  amrex::Real min_rho = S.min(0, 0, false);
+  amrex::Real max_Edrift_x = spec_drift.max(NUM_E*E_ID + 0, 0, false);
+  amrex::Real max_Edrift_y = spec_drift.max(NUM_E*E_ID + 1, 0, false);
+  amrex::Real max_Edrift_z = spec_drift.max(NUM_E*E_ID + 2, 0, false);
+  amrex::Real max_Edrift = amrex::max(max_Edrift_x, max_Edrift_y, max_Edrift_z);
+  amrex::Real Ddtodx2 = (max_De/min_rho) * dt / (dx[0] * dx[0]);
+  amrex::Real CFL = max_Edrift * dt / dx[0];
+
+  if (amrex::ParallelDescriptor::IOProcessor()) {
+    std::string baseName = "MonitorFile_Level";
+    std::string datString = ".dat";
+    std::string intString = std::to_string(i);
+    std::string monitorFileName = (baseName + intString + datString);
+
+    std::ofstream MonitorFile;
+    MonitorFile.open(monitorFileName.c_str(), std::ios::out | std::ios::app);
+    MonitorFile << time << "\t" << min_nE  << "\t" << max_nE  << "\t" << min_nO4p  << "\t" << max_nO4p  << "\t" << min_nO2m  << "\t" << max_nO2m  << "\t" << min_phiV  << "\t" << max_phiV  << "\t" << min_EN  << "\t" << max_EN  << "\t" << max_De/min_rho  << "\t" << Ddtodx2  << "\t" << CFL << dt << std::endl;
+    MonitorFile.close();
+  }
+}
+
+
+void PeleC::monitorFileSetup(int i){
+
+  if (amrex::ParallelDescriptor::IOProcessor()) {
+    std::string baseName = "MonitorFile_Level";
+    std::string datString = ".dat";
+    std::string intString = std::to_string(i);
+    std::string monitorFileName = (baseName + intString + datString);
+
+    std::ofstream MonitorFile;
+    MonitorFile.open(monitorFileName.c_str(), std::ios::out);
+    MonitorFile << "(1)time[s] \t (2)min_nE[1/cm3] \t (3)max_nE[1/cm3] \t (4)min_nO4+[1/cm3] \t (5)max_nO4+[1/cm3] \t (6)min_nO2-[1/cm3] \t (7)max_nO2-[1/cm3] \t (8)min_phiV[kV] \t (9)max_phiV[kV] \t (10)min_EN[Td] \t (11)max_EN[Td] \t (12)max_De[cm2/s] \t (13)Ddtodx2 \t (14)CFL \t (15)dt[s]" << std::endl;
+    MonitorFile.close();
+  }
 }

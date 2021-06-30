@@ -11,8 +11,10 @@
   static int         ef_debug;                              // Use VisMF to dump data (a lot ...)
   static int         ef_use_NLsolve;                        // Switch nonlinear solve ON/OFF
   static bool        def_harm_avg_cen2edge;                 // Face averaging type
-  static int         ion_bc_type;
+  static int         ion_bc_type;                           // Sets the ion electrode loss type (0 = weak efield approx., 1 = strong efield approx.)
+  static int         zero_bc_flux;                          // Set to 1 to zero out all electrode fluxes for electrons and ions
   static amrex::Real secondary_em_coef;                     // Boundary emission
+  static amrex::Real electron_emit_const;                     // Boundary emission
   static amrex::Real pulse_freq;                            // Pulse frequency (Hz)
   static amrex::Real pulse_fwhm;                            // Pulse FWHM (s)
   static amrex::Real pulse_peak;                            // Pulse peak voltage (erg/C)
@@ -23,13 +25,16 @@
   static amrex::Real curr_voltage;                          // Voltage at time t=n (erg/C)
   static amrex::Real dfact;
   static amrex::Real sfact;
-  static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;      // Species charges
+  static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;      // Species charge per unit mass (C/g)
+  static amrex::GpuArray<int, NUM_SPECIES> zk_num;      // Species charge number 
 
   // Efield Poisson solve options
   static amrex::Real ef_PoissonTol;
   static int         ef_PoissonMaxOrder;
   static int         ef_PoissonVerbose;
   static int         ef_PoissonMaxIter;
+  static int         ef_noSpaceCharge;        // Solve the Poisson problem without accounting for space charge effects
+  static int         ef_constVoltage;         // Apply a constant voltage (no time variance)
 
   // Non-linear solve options
   static int         ef_use_PETSC_direct;      // Flag to trigger using PETSC direct solve

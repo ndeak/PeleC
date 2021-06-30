@@ -126,6 +126,8 @@ public:
                           int firstLevel,
                           int firstComp,
                           int nComp);
+  void writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::Real dt, amrex::Real time, int i);
+  void monitorFileSetup(int i);
   static void writeBuildInfo(std::ostream& os);
 
   // Define data descriptors.
@@ -635,6 +637,7 @@ protected:
 
   static bool signalStopJob;
   static bool dump_old;
+  static bool monitor_file;
   static int radius_grow;
   static int verbose;
   static amrex::BCRec phys_bc;

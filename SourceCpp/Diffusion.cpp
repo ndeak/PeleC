@@ -310,7 +310,12 @@ PeleC::getMOLSrcTerm(
             }
       */
       // Compute transport coefficients, coincident with Q
+#ifndef PELEC_USE_PLASMA
       auto const& coe_cc = coeff_cc.array();
+#else
+      auto const& coe_cc = coeffs_old.array(mfi);
+#endif
+#ifndef PELEC_USE_PLASMA
       {
         auto const& qar_yin = q.array(QFS);
         auto const& qar_Tin = q.array(QTEMP);
@@ -328,6 +333,7 @@ PeleC::getMOLSrcTerm(
             coe_lambda, ltransparm);
         });
       }
+#endif
 
       amrex::FArrayBox flux_ec[AMREX_SPACEDIM];
       amrex::Elixir flux_eli[AMREX_SPACEDIM];
@@ -481,6 +487,7 @@ PeleC::getMOLSrcTerm(
 
         { // Get face-centered hyperbolic fluxes and their divergences.
           // Get hyp flux at EB wall
+          auto const& vol = volume.array(mfi);
           BL_PROFILE("PeleC::pc_hyp_mol_flux()");
 #ifdef PELEC_USE_EB
           amrex::Real* d_eb_flux_thdlocal =
@@ -491,7 +498,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, a, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            s, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, PhiVbc, geom, do_harmonic, ion_bc_type, ef_use_NLsolve, secondary_em_coef
+            s, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, ef_use_NLsolve, secondary_em_coef, electron_emit_const
 #endif
 #ifdef PELEC_USE_EB
             ,
