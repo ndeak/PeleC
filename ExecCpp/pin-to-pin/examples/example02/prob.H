@@ -43,14 +43,19 @@ pc_initdata(
 
   mfs[1] = 0.233;
   mfs[2] = 0.767;
-  // mfs[0] = 1.902e-20;     // 1.902e-20 corresponds with 1e-15 mole frac of E in air
-  // mfs[6] = 2.218e-15;     // 2.219e-15 corresponds with 1e-15 mole frac of O4+ in air
-  // mfs[2] -= (mfs[0] + mfs[6]);
 
+  // Mass fractions corresponding to the A2-const ICs
+  mfs[0] = 1.402983e-28;    // E
+  mfs[1] = 2.329175e-01;    // O2
+  mfs[2] = 7.670825e-01;    // N2
+  mfs[3] = 0.0;             // O
+  mfs[4] = 0.0;             // O2+
+  mfs[5] = 0.0;             // N2+
+  mfs[6] = 1.597029e-18;    // O4+
+  mfs[7] = 0.0;             // N4+
+  mfs[8] = 0.0;             // O2+N2
+  mfs[9] = 7.450388e-19;    // O2-
 
-  // mfs[9] = 5.0e-3 * exp(-pow((x - 0.5) / 0.1, 2)) * exp(-pow((y - 0.5) / 0.1, 2));
-  // mfs[2]  = prob_parm.massfrac[2] - mfs[9];
-  // EOS::PYT2RE(prob_parm.p, mfs, prob_parm.T, tempR, tempE);
   EOS::RYP2E(prob_parm.rho, mfs, prob_parm.p, tempE);
   EOS::EY2T(tempE, mfs, tempT);
 

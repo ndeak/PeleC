@@ -1,19 +1,19 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
-max_step = 5000
+max_step = 10000
 stop_time = 100.0
 
 # PROBLEM SIZE & GEOMETRY
 #geometry.is_periodic =  0  0  0
-geometry.is_periodic =  1  0  1
+geometry.is_periodic =  0  0  0
 geometry.coord_sys   =  0       # 0 => cart
 geometry.prob_lo     =  0    0    0 
 #geometry.prob_hi     =  0.125  1.0  0.125
 #geometry.prob_hi     =  0.125  2.0  0.125    # EB test case 1
-geometry.prob_hi     =  4.0  4.0  4.0     # EB test case 2
+geometry.prob_hi     =  2.0  4.0  2.0     # EB test case 2
 #geometry.prob_hi     =  11.0  11.0  11.0
-#amr.n_cell           =  64 64 64
+amr.n_cell           =  32 64 32
 #amr.n_cell           =  256 256 256
-amr.n_cell           =  64 64 64
+#amr.n_cell           =  64 64 64
 #amr.n_cell           =  32   32   32
 #amr.n_cell           =  8   128   8
 
@@ -22,10 +22,10 @@ amr.n_cell           =  64 64 64
 # Interior, UserBC, Symmetry, SlipWall, NoSlipWall
 # >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
 
-pelec.lo_bc       =  "Interior" "SlipWall" "Interior"
-pelec.hi_bc       =  "Interior" "SlipWall" "Interior"
-#pelec.lo_bc       =  "UserBC" "SlipWall" "UserBC"
-#pelec.hi_bc       =  "UserBC" "SlipWall" "UserBC"
+#pelec.lo_bc       =  "Interior" "SlipWall" "Interior"
+#pelec.hi_bc       =  "Interior" "SlipWall" "Interior"
+pelec.lo_bc       =  "Symmetry" "SlipWall" "Symmetry"
+pelec.hi_bc       =  "Symmetry" "SlipWall" "Symmetry"
 
 # Problem setup
 pelec.eb_boundary_T = 300.
@@ -42,12 +42,13 @@ pelec.ion_bc_type = 1             # ion BC type (0 -> weak efield BCs, 1 -> stro
 pelec.secondary_em_coef = 0.05    # secondary electron emission coefficient
 pelec.pulse_freq = 1000.0e3            # pulse frequency (Hz)
 pelec.pulse_fwhm = 10.0e-9             # pulse FWHM (s)
-pelec.pulse_peak = 65000.0e7        # peak potential of the driven electrode (erg/C)
+pelec.pulse_peak = 30000.0e7        # peak potential of the driven electrode (erg/C)
 #pelec.pulse_peak = 0.0        # peak potential of the driven electrode (erg/C)
-pelec.pulse_timing = 25.0e-9          # timing of the first pulse peak (s)
+pelec.pulse_timing = 10.0e-9          # timing of the first pulse peak (s)
 pelec.pulse_num = 2              # number of pulses
 pelec.pulse_dt = 1.0e-12           # dt around each pulse (s)
 ef.use_nonLinearSolve = 0       
+ef.noSpaceCharge = 0             # Solve Poisson problem without space charge effects
 
 # WHICH PHYSICS
 pelec.do_hydro = 1
@@ -73,7 +74,7 @@ amr.v                = 1       # verbosity in Amr.cpp
 #amr.grid_log         = grdlog  # name of grid logging file
 
 # REFINEMENT / REGRIDDING
-amr.max_level       = 6       # maximum level number allowed
+amr.max_level       = 2       # maximum level number allowed
 amr.ref_ratio       = 2 2 2 2 # refinement ratio
 amr.regrid_int      = 2       # how often to regrid
 amr.blocking_factor = 8       # block factor in grid generation
@@ -81,24 +82,25 @@ amr.max_grid_size   = 64
 amr.subcycling_mode = None
 
 # TAGGING
-tagging.efielderr = 200
+tagging.efielderr = 500
 tagging.max_efield_lev = 10
-tagging.negraderr = 1.0e-30
+tagging.negraderr = 1.0e-15
 tagging.max_negrad_lev = 10
-tagging.max_vfracerr_lev = 4
-tagging.plasma_channel_lev = 2
+tagging.max_vfracerr_lev = 8
+tagging.plasma_channel_lev = 0
 
 # CHECKPOINT FILES
-amr.checkpoint_files_output = 0
-amr.check_file      = chk      # root name of checkpoint file
-amr.check_int       = -1       # number of timesteps between checkpoints
+amr.checkpoint_files_output = 1
+amr.check_file      = /scratch/04361/ndeak/pelec_check/chk      # root name of checkpoint file
+amr.check_int       = 100       # number of timesteps between checkpoints
 
 # PLOTFILES
 amr.plot_files_output = 1
-amr.plot_file       = plt
+amr.plot_file       = /scratch/04361/ndeak/pelec_data/plt
 amr.plot_int        = 100
-amr.derive_plot_vars=pressure x_velocity y_velocity z_velocity vfrac
-pelec.plot_massfrac = false
+amr.derive_plot_vars=ALL
+pelec.plot_massfrac = true
+pelec.monitor_file = true
 
 # Pin-to-pin geometry
 eb2.use_eb2 = 1

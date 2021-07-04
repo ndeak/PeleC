@@ -1212,7 +1212,7 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
 
     std::ofstream MonitorFile;
     MonitorFile.open(monitorFileName.c_str(), std::ios::out | std::ios::app);
-    MonitorFile << time << "\t" << min_nE  << "\t" << max_nE  << "\t" << min_nO4p  << "\t" << max_nO4p  << "\t" << min_nO2m  << "\t" << max_nO2m  << "\t" << min_phiV  << "\t" << max_phiV  << "\t" << min_EN  << "\t" << max_EN  << "\t" << max_De/min_rho  << "\t" << Ddtodx2  << "\t" << CFL << dt << std::endl;
+    MonitorFile << time << "\t" << min_nE  << "\t" << max_nE  << "\t" << min_nO4p  << "\t" << max_nO4p  << "\t" << min_nO2m  << "\t" << max_nO2m  << "\t" << min_phiV  << "\t" << max_phiV  << "\t" << min_EN  << "\t" << max_EN  << "\t" << max_De/min_rho  << "\t" << Ddtodx2  << "\t" << CFL << "\t" << dt << std::endl;
     MonitorFile.close();
   }
 }

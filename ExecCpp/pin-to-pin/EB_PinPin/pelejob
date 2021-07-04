@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH -N 32
+#SBATCH -n 1536
+#SBATCH -o myjob.%j.out
+#SBATCH -J PeleCPlasma
+#SBATCH -p skx-normal
+#SBATCH -A TG-CTS180002
+#SBATCH -t 02:00:00
+
+module load gcc
+
+module list
+pwd
+date
+
+# Launch MPI code... 
+
+#ibrun -n 32 ./PeleC3d.gnu.MPI.ex inputs.3d
+mpirun -n 1536 ./PeleC3d.gnu.MPI.PLASMA.ex inputs.3d amr.restart=/scratch/04361/ndeak/pelec_data/plt00900/

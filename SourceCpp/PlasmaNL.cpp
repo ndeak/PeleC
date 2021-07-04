@@ -819,6 +819,11 @@ void PeleC::ef_setUpPrecond (const Real &dt_lcl,
       if ( ef_PC_approx == 2 ) {
          Schur_nEKe.define(grids,dmap,1,1);
       }
+
+      // Get molecular weights needed to evaluate transport properties
+      amrex::Real mwt[NUM_SPECIES];
+      EOS::molecular_weight(mwt);   // CGS
+
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
 #endif
@@ -827,13 +832,15 @@ void PeleC::ef_setUpPrecond (const Real &dt_lcl,
          const Box& gbx = mfi.growntilebox();
          auto const& neke   = nEKe.array(mfi);
          auto const& ne_arr = nE_a.const_array(mfi);
+         auto const& rhoY = Sborder.array(mfi,UFS);
+         auto const& redEfab = redEfield.array(mfi);
          auto const& Schur  = ( ef_PC_approx == 2 ) ? Schur_nEKe.array(mfi) : nEKe.array(mfi);
          auto const& diag_a = ( ef_PC_approx == 2 ) ? diagDiff.array(mfi) : nEKe.array(mfi);
          int do_Schur = ( ef_PC_approx == 2 ) ? 1 : 0;
-         amrex::ParallelFor(gbx, [neke,Schur,diag_a,ne_arr,dt_lcl,do_Schur]
+         amrex::ParallelFor(gbx, [neke,Schur,diag_a,ne_arr,dt_lcl,do_Schur,rhoY,redEfab,mwt]
          AMREX_GPU_DEVICE (int i, int j, int k) noexcept
          {
-            getKappaE(i,j,k,0,neke);
+            getKappaE(i,j,k,0,neke,redEfab,rhoY,mwt);
             neke(i,j,k) *= ne_arr(i,j,k) * -1.0;  // invert sign since getKappaE return negative kappa_e
             if ( do_Schur ) {
                Schur(i,j,k) = - dt_lcl * 0.5 * neke(i,j,k) / diag_a(i,j,k);
