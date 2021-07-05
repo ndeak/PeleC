@@ -13,7 +13,7 @@ jobs:
     - uses: actions/checkout@v2
     - uses: DoozyX/clang-format-lint-action@v0.11
       with:
-        source: './SourceCpp ./ExecCpp'
+        source: './Source ./Exec'
         exclude: '.'
         extensions: 'H,h,cpp'
         clangFormatVersion: 11
@@ -30,7 +30,7 @@ jobs:
             procs: $(sysctl -n hw.ncpu)
             mpipreflags: -DMPIEXEC_PREFLAGS:STRING=--oversubscribe
           - os: ubuntu-latest
-            install_deps: sudo apt-get install mpich libmpich-dev ninja-build
+            install_deps: sudo apt-get update && sudo apt-get install mpich libmpich-dev ninja-build
             comp: gnu
             procs: $(nproc)
             mpipreflags:
@@ -77,7 +77,7 @@ jobs:
           pip install nose numpy pandas
       - name: Configure
         run: |
-          for DIM in 1 2 3; do \
+          (for DIM in 1 2 3; do \
             if [ "${DIM}" != '3' ]; then WARNINGS=OFF; else WARNINGS=ON; fi; \
             printf "\n-------- Configuring ${DIM}D --------\n"; \
             cmake -G Ninja \
@@ -93,26 +93,32 @@ jobs:
             -DMASA_DIR:STRING=${{runner.workspace}}/deps/install/MASA \
             -DPELEC_ENABLE_ALL_WARNINGS:BOOL=${WARNINGS} \
             ${{github.workspace}}; \
-          done
+            if [ $? -ne 0 ]; then exit 1; fi \
+          done)
       - name: Build
         run: |
-          for DIM in 1 2 3; do \
+          (for DIM in 1 2 3; do \
             printf "\n-------- Building ${DIM}D --------\n"; \
             cmake --build ${{runner.workspace}}/build-${DIM}d-${{matrix.os}} \
               --parallel ${{env.NPROCS}} 2>&1 | tee -a ${{runner.workspace}}/build-output.txt; \
-          done
+            if [ ${PIPESTATUS[0]} -ne 0 ]; then exit 1; fi \
+          done)
       - name: Report
         run: |
           echo "::add-matcher::.github/problem-matchers/gcc.json"
-          cat ${{runner.workspace}}/build-output.txt | egrep "warning:|error:" | sort | uniq | sort -nr | \
-            awk 'BEGIN{i=0}{print $0}{i++}END{print "Warnings: "i}'
+          egrep "warning:|error:" ${{runner.workspace}}/build-output.txt | egrep -v "Submodules" | sort | uniq | \
+            awk 'BEGIN{i=0}{print $0}{i++}END{print "Warnings: "i}' > ${{runner.workspace}}/build-output-warnings.txt
+          cat ${{runner.workspace}}/build-output-warnings.txt
+          export return=$(tail -n 1 ${{runner.workspace}}/build-output-warnings.txt | awk '{print $2}')
+          exit ${return}
       - name: Test
         run: |
-          for DIM in 1 2 3; do \
+          (for DIM in 1 2 3; do \
             printf "\n-------- Testing ${DIM}D --------\n"; \
             cd ${{runner.workspace}}/build-${DIM}d-${{matrix.os}}; \
             ctest -j ${{env.NPROCS}} -LE no-ci --output-on-failure; \
-          done
+            if [ $? -ne 0 ]; then exit 1; fi \
+          done)
   GNUmake:
     needs: Formatting
     runs-on: ubuntu-latest
@@ -127,18 +133,18 @@ jobs:
       - name: Setup
         run: |
           echo "NPROCS=$(nproc)" >> $GITHUB_ENV
-          printf "CC=gcc-8\nCXX=g++-8\nFC=gfortran-8\nF90=gfortran-8" >> ./Submodules/AMReX/Tools/GNUMake/Make.local
+          printf "CC=gcc-10\nCXX=g++-10\nFC=gfortran-10\nF90=gfortran-10" >> ./Submodules/AMReX/Tools/GNUMake/Make.local
       - name: PMF debug make
-        working-directory: ./ExecCpp/RegTests/PMF
+        working-directory: ./Exec/RegTests/PMF
         run: make -j ${{env.NPROCS}} COMP=gnu USE_MPI=FALSE DEBUG=TRUE
       - name: PMF debug test
-        working-directory: ./ExecCpp/RegTests/PMF
+        working-directory: ./Exec/RegTests/PMF
         run: ./PeleC3d.gnu.DEBUG.ex tests/pmf-1/pmf-1.i max_step=2 amr.plot_files_output=0 amr.checkpoint_files_output=0
       - name: EB debug build
-        working-directory: ./ExecCpp/RegTests/EB-C10
+        working-directory: ./Exec/RegTests/EB-C10
         run: make -j ${{env.NPROCS}} COMP=gnu USE_MPI=FALSE DEBUG=TRUE
       - name: EB debug test
-        working-directory: ./ExecCpp/RegTests/EB-C10
+        working-directory: ./Exec/RegTests/EB-C10
         run: ./PeleC3d.gnu.DEBUG.ex tests/eb-c10/eb-c10.i max_step=2 amr.plot_files_output=0 amr.checkpoint_files_output=0
   CUDA:
     needs: Formatting
@@ -146,15 +152,10 @@ jobs:
     name: CUDA v${{matrix.cuda_ver}}
     strategy:
       matrix:
-        #cuda_pkg: [11-1, 10-2]
-        cuda_pkg: [11-1]
+        cuda_pkg: [11-2]
         include:
-          - cuda_ver: "11.1"
-            cuda_pkg: 11-1
-            cuda_extra: libcurand-dev-11-1 cuda-cupti-dev-11-1
-          #- cuda_ver: "10.2"
-          #  cuda_pkg: 10-2
-          #  cuda_extra: cuda-curand-dev-10-2 cuda-cupti-dev-10-2
+          - cuda_ver: "11.2"
+            cuda_pkg: 11-2
     steps:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.6.0
@@ -168,12 +169,12 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           wget -q -O - https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub | sudo apt-key add -
           echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64 /" | sudo tee /etc/apt/sources.list.d/cuda.list
-          echo "deb https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/x86_64 /" | sudo tee /etc/apt/sources.list.d/nvidia-ml.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-              libopenmpi-dev cuda-command-line-tools-${{matrix.cuda_pkg}} \
+              cuda-command-line-tools-${{matrix.cuda_pkg}} \
               cuda-compiler-${{matrix.cuda_pkg}} cuda-minimal-build-${{matrix.cuda_pkg}} \
-              cuda-nvml-dev-${{matrix.cuda_pkg}} cuda-nvtx-${{matrix.cuda_pkg}} ${{matrix.cuda_extra}}
+              cuda-nvml-dev-${{matrix.cuda_pkg}} cuda-nvtx-${{matrix.cuda_pkg}} \
+              libcurand-dev-${{matrix.cuda_pkg}} cuda-cupti-dev-${{matrix.cuda_pkg}}
       - name: Configure
         run: |
           echo "NPROCS=$(nproc)" >> $GITHUB_ENV
@@ -189,7 +190,7 @@ jobs:
         run: cmake --build build-${{matrix.cuda_pkg}} --parallel ${{env.NPROCS}}
   cppcheck:
     needs: Formatting
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.6.0
@@ -199,7 +200,9 @@ jobs:
         with:
           submodules: true
       - name: Dependencies
-        run: sudo apt-get install -y cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
       - name: Configure
         run: |
           cmake -B${{runner.workspace}}/build-cppcheck \
@@ -220,9 +223,11 @@ jobs:
         run: |
           echo "::add-matcher::.github/problem-matchers/cppcheck.json"
           cat cppcheck-warnings.txt
+          export return=$(tail -n 1 cppcheck-warnings.txt | awk '{print $2}')
+          exit ${return}
   clang-tidy:
     needs: Formatting
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.6.0
@@ -233,6 +238,7 @@ jobs:
           submodules: true
       - name: Dependencies
         run: |
+          sudo apt-get update
           sudo apt-get install -y clang-tidy-10
           sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-10 100
       - name: Configure
@@ -251,7 +257,7 @@ jobs:
         working-directory: ${{runner.workspace}}/build-clang-tidy
         run: |
           cmake --build . --parallel ${{env.NPROCS}} 2> clang-tidy-full-report.txt
-          cat clang-tidy-full-report.txt | grep "warning:" | grep -v "Submodules" | sort | uniq | sort -nr | \
+          cat clang-tidy-full-report.txt | grep "warning:" | grep -v "Submodules" | sort | uniq | \
             awk 'BEGIN{i=0}{print $0}{i++}END{print "Warnings: "i}' > clang-tidy-warnings.txt
       - name: Full report
         working-directory: ${{runner.workspace}}/build-clang-tidy
@@ -261,3 +267,88 @@ jobs:
         run: |
           echo "::add-matcher::.github/problem-matchers/gcc.json"
           cat clang-tidy-warnings.txt
+          export return=$(tail -n 1 clang-tidy-warnings.txt | awk '{print $2}')
+          exit ${return}
+  HIP:
+    needs: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.6.0
+        with:
+          access_token: ${{github.token}}
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          wget -q -O - http://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add -
+          #Use HIP 4.1.1 until 4.2 is fixed
+          echo 'deb [arch=amd64] http://repo.radeon.com/rocm/apt/4.1.1/ xenial main' | sudo tee /etc/apt/sources.list.d/rocm.list
+          sudo apt-get update
+          sudo apt-get install -y rocm-dev rocm-libs
+      - name: Configure
+        run: |
+          echo "NPROCS=$(nproc)" >> $GITHUB_ENV
+          echo 'export PATH=$PATH:/opt/rocm/bin:/opt/rocm/profiler/bin:/opt/rocm/opencl/bin' | sudo tee -a /etc/profile.d/rocm.sh
+          source /etc/profile.d/rocm.sh
+          cmake -B${{runner.workspace}}/build-hip \
+          -DCMAKE_CXX_COMPILER:STRING=$(which hipcc) \
+          -DCMAKE_C_COMPILER:STRING=$(which clang) \
+          -DPELEC_ENABLE_MPI:BOOL=OFF \
+          -DPELEC_ENABLE_HIP:BOOL=ON \
+          -DPELEC_ENABLE_TESTS:BOOL=ON \
+          -DPELEC_ENABLE_FCOMPARE_FOR_TESTS:BOOL=OFF \
+          -DPELEC_ENABLE_MASA:BOOL=OFF \
+          -DAMReX_AMD_ARCH="gfx906,gfx908" \
+          ${{github.workspace}}
+      - name: Build
+        working-directory: ${{runner.workspace}}/build-hip
+        run: |
+          echo 'export PATH=$PATH:/opt/rocm/bin:/opt/rocm/profiler/bin:/opt/rocm/opencl/bin' | sudo tee -a /etc/profile.d/rocm.sh
+          source /etc/profile.d/rocm.sh
+          cmake --build . --parallel ${{env.NPROCS}}
+  DPCPP:
+    needs: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.6.0
+        with:
+          access_token: ${{github.token}}
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Dependencies
+        run: |
+          wget -q -O - https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB | sudo apt-key add -
+          echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential g++ gfortran intel-oneapi-dpcpp-cpp-compiler intel-oneapi-mkl-devel
+      - name: Configure
+        run: |
+          echo "NPROCS=$(nproc)" >> $GITHUB_ENV
+          set +e
+          source /opt/intel/oneapi/setvars.sh
+          set -e
+          cmake -B${{runner.workspace}}/build-dpcpp \
+            -DCMAKE_CXX_COMPILER_ID="Clang" \
+            -DCMAKE_CXX_COMPILER_VERSION=12.0 \
+            -DCMAKE_CXX_STANDARD_COMPUTED_DEFAULT=17 \
+            -DCMAKE_CXX_COMPILER=$(which dpcpp) \
+            -DCMAKE_C_COMPILER=$(which clang) \
+            -DPELEC_ENABLE_MPI:BOOL=OFF \
+            -DPELEC_ENABLE_MASA:BOOL=OFF \
+            -DPELEC_ENABLE_FCOMPARE_FOR_TESTS:BOOL=OFF \
+            -DPELEC_ENABLE_TESTS:BOOL=ON \
+            -DPELEC_ENABLE_DPCPP:BOOL=ON \
+            ${{github.workspace}}
+      - name: Build
+        working-directory: ${{runner.workspace}}/build-dpcpp
+        run: |
+          set +e
+          source /opt/intel/oneapi/setvars.sh
+          set -e
+          cmake --build . --parallel ${{env.NPROCS}}
+

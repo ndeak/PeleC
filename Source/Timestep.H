@@ -1,0 +1,260 @@
+#ifndef _TIMESTEP_H_
+#define _TIMESTEP_H_
+
+#include <AMReX_FArrayBox.H>
+#ifdef PELEC_USE_EB
+#include <AMReX_EBFArrayBox.H>
+#include <AMReX_EBCellFlag.H>
+#endif
+
+#include "PelePhysics.H"
+#include "IndexDefines.H"
+#include "Constants.H"
+
+// EstDt routines
+
+AMREX_GPU_HOST_DEVICE
+AMREX_FORCE_INLINE
+void
+pc_trans4dt(
+  const int which_trans,
+  amrex::Real T,
+  amrex::Real rho,
+  amrex::Real massfrac[],
+  amrex::Real& D,
+  pele::physics::transport::TransParm const* trans_parm)
+{
+  bool get_xi = false, get_mu = false, get_lam = false, get_Ddiag = false;
+  amrex::Real dum1 = 0., dum2 = 0.;
+
+  if (which_trans == 0) {
+    get_mu = true;
+    auto trans = pele::physics::PhysicsType::transport();
+    trans.transport(
+      get_xi, get_mu, get_lam, get_Ddiag, T, rho, massfrac, nullptr, D, dum1,
+      dum2, trans_parm);
+  } else if (which_trans == 1) {
+    get_lam = true;
+    auto trans = pele::physics::PhysicsType::transport();
+    trans.transport(
+      get_xi, get_mu, get_lam, get_Ddiag, T, rho, massfrac, nullptr, dum1, dum2,
+      D, trans_parm);
+  }
+}
+
+AMREX_GPU_HOST_DEVICE
+AMREX_FORCE_INLINE
+amrex::Real
+pc_estdt_hydro(
+  const amrex::Box& bx,
+  const amrex::Array4<const amrex::Real>& u,
+#ifdef PELEC_USE_EB
+  const amrex::Array4<const amrex::EBCellFlag>& flags,
+#endif
+#ifdef PELEC_USE_PLASMA
+  const amrex::Array4<const amrex::Real>& drift,
+  int useNL,
+#endif
+  AMREX_D_DECL(
+    const amrex::Real& dx,
+    const amrex::Real& dy,
+    const amrex::Real& dz)) noexcept
+{
+  amrex::Real dt = std::numeric_limits<amrex::Real>::max();
+
+  amrex::Loop(bx, [=, &dt](int i, int j, int k) {
+#ifdef PELEC_USE_EB
+    if (!flags(i, j, k).isCovered()) {
+#endif
+      const amrex::Real rho = u(i, j, k, URHO);
+      const amrex::Real rhoInv = 1.0 / rho;
+      amrex::Real T = u(i, j, k, UTEMP);
+      amrex::Real massfrac[NUM_SPECIES];
+      amrex::Real c;
+      for (int n = 0; n < NUM_SPECIES; ++n) {
+        massfrac[n] = u(i, j, k, UFS + n) * rhoInv;
+      }
+      auto eos = pele::physics::PhysicsType::eos();
+      eos.RTY2Cs(rho, T, massfrac, c);
+#ifdef PELEC_USE_PLASMA
+      amrex::Real ux1 = 0.0, uy1 = 0.0, uz1 = 0.0;
+      for(int n=0; n<NUM_SPECIES; n++){
+        if ( useNL && (n == E_ID) ) continue;
+        ux1 = amrex::max(ux1, amrex::Math::abs(u(i, j, k, UMX) * rhoInv + drift(i, j, k, NUM_E*n + 0)));
+        uy1 = amrex::max(uy1, amrex::Math::abs(u(i, j, k, UMY) * rhoInv + drift(i, j, k, NUM_E*n + 1)));
+        uz1 = amrex::max(uz1, amrex::Math::abs(u(i, j, k, UMZ) * rhoInv + drift(i, j, k, NUM_E*n + 2)));
+      }
+      AMREX_D_TERM(  const amrex::Real dt1 = dx / (c + amrex::Math::abs(ux1));
+                   dt = amrex::min(dt, dt1);
+                   , const amrex::Real dt2 = dy / (c + amrex::Math::abs(uy1));
+                   dt = amrex::min(dt, dt2);
+                   , const amrex::Real dt3 = dz / (c + amrex::Math::abs(uz1));
+                   dt = amrex::min(dt, dt3);
+                   );
+#else
+
+      AMREX_D_TERM(const amrex::Real ux = u(i, j, k, UMX) * rhoInv;
+                   const amrex::Real dt1 = dx / (c + amrex::Math::abs(ux));
+                   dt = amrex::min<amrex::Real>(dt, dt1);
+                   , const amrex::Real uy = u(i, j, k, UMY) * rhoInv;
+                   const amrex::Real dt2 = dy / (c + amrex::Math::abs(uy));
+                   dt = amrex::min<amrex::Real>(dt, dt2);
+                   , const amrex::Real uz = u(i, j, k, UMZ) * rhoInv;
+                   const amrex::Real dt3 = dz / (c + amrex::Math::abs(uz));
+                   dt = amrex::min<amrex::Real>(dt, dt3););
+#ifdef PELEC_USE_EB
+    }
+#endif
+  });
+  return dt;
+}
+
+// Diffusion Velocity
+AMREX_GPU_HOST_DEVICE
+AMREX_FORCE_INLINE
+amrex::Real
+pc_estdt_veldif(
+  const amrex::Box& bx,
+  const amrex::Array4<const amrex::Real>& u,
+#ifdef PELEC_USE_EB
+  const amrex::Array4<const amrex::EBCellFlag>& flags,
+#endif
+  AMREX_D_DECL(
+    const amrex::Real& dx, const amrex::Real& dy, const amrex::Real& dz),
+  pele::physics::transport::TransParm const* trans_parm) noexcept
+{
+  amrex::Real dt = std::numeric_limits<amrex::Real>::max();
+
+  amrex::Loop(bx, [=, &dt](int i, int j, int k) {
+#ifdef PELEC_USE_EB
+    if (!flags(i, j, k).isCovered()) {
+#endif
+      const amrex::Real rho = u(i, j, k, URHO);
+      const amrex::Real rhoInv = 1.0 / rho;
+      amrex::Real massfrac[NUM_SPECIES];
+      for (int n = 0; n < NUM_SPECIES; ++n) {
+        massfrac[n] = u(i, j, k, n + UFS) * rhoInv;
+      }
+      amrex::Real T = u(i, j, k, UTEMP);
+      amrex::Real D = 0.0;
+      const int which_trans = 0;
+      pc_trans4dt(which_trans, T, rho, massfrac, D, trans_parm);
+      D *= rhoInv;
+      if (D == 0.0) {
+        D = constants::small_num();
+      }
+      AMREX_D_TERM(
+        const amrex::Real dt1 = 0.5 * dx * dx / (AMREX_SPACEDIM * D);
+        dt = amrex::min<amrex::Real>(dt, dt1);
+        , const amrex::Real dt2 = 0.5 * dy * dy / (AMREX_SPACEDIM * D);
+        dt = amrex::min<amrex::Real>(dt, dt2);
+        , const amrex::Real dt3 = 0.5 * dz * dz / (AMREX_SPACEDIM * D);
+        dt = amrex::min<amrex::Real>(dt, dt3););
+#ifdef PELEC_USE_EB
+    }
+#endif
+  });
+  return dt;
+}
+
+// Diffusion Temperature
+AMREX_GPU_HOST_DEVICE
+AMREX_FORCE_INLINE
+amrex::Real
+pc_estdt_tempdif(
+  const amrex::Box& bx,
+  const amrex::Array4<const amrex::Real>& u,
+#ifdef PELEC_USE_EB
+  const amrex::Array4<const amrex::EBCellFlag>& flags,
+#endif
+  AMREX_D_DECL(
+    const amrex::Real& dx, const amrex::Real& dy, const amrex::Real& dz),
+  pele::physics::transport::TransParm const* trans_parm) noexcept
+{
+  amrex::Real dt = std::numeric_limits<amrex::Real>::max();
+
+  amrex::Loop(bx, [=, &dt](int i, int j, int k) {
+#ifdef PELEC_USE_EB
+    if (!flags(i, j, k).isCovered()) {
+#endif
+      const amrex::Real rho = u(i, j, k, URHO);
+      const amrex::Real rhoInv = 1.0 / rho;
+      amrex::Real massfrac[NUM_SPECIES];
+      for (int n = 0; n < NUM_SPECIES; ++n) {
+        massfrac[n] = u(i, j, k, n + UFS) * rhoInv;
+      }
+      amrex::Real T = u(i, j, k, UTEMP);
+      amrex::Real D = 0.0;
+      const int which_trans = 1;
+      pc_trans4dt(which_trans, T, rho, massfrac, D, trans_parm);
+      amrex::Real cv;
+      auto eos = pele::physics::PhysicsType::eos();
+      eos.RTY2Cv(rho, T, massfrac, cv);
+      D *= rhoInv / cv;
+      if (D == 0.0) {
+        D = constants::small_num();
+      }
+      AMREX_D_TERM(
+        const amrex::Real dt1 = 0.5 * dx * dx / (AMREX_SPACEDIM * D);
+        dt = amrex::min<amrex::Real>(dt, dt1);
+        , const amrex::Real dt2 = 0.5 * dy * dy / (AMREX_SPACEDIM * D);
+        dt = amrex::min<amrex::Real>(dt, dt2);
+        , const amrex::Real dt3 = 0.5 * dz * dz / (AMREX_SPACEDIM * D);
+        dt = amrex::min<amrex::Real>(dt, dt3););
+#ifdef PELEC_USE_EB
+    }
+#endif
+  });
+  return dt;
+}
+
+// Diffusion Enthalpy
+AMREX_GPU_HOST_DEVICE
+AMREX_FORCE_INLINE
+amrex::Real
+pc_estdt_enthdif(
+  const amrex::Box& bx,
+  const amrex::Array4<const amrex::Real>& u,
+#ifdef PELEC_USE_EB
+  const amrex::Array4<const amrex::EBCellFlag>& flags,
+#endif
+  AMREX_D_DECL(
+    const amrex::Real& dx, const amrex::Real& dy, const amrex::Real& dz),
+  pele::physics::transport::TransParm const* trans_parm) noexcept
+{
+  amrex::Real dt = std::numeric_limits<amrex::Real>::max();
+
+  amrex::Loop(bx, [=, &dt](int i, int j, int k) {
+#ifdef PELEC_USE_EB
+    if (!flags(i, j, k).isCovered()) {
+#endif
+      const amrex::Real rho = u(i, j, k, URHO);
+      const amrex::Real rhoInv = 1.0 / rho;
+      amrex::Real massfrac[NUM_SPECIES];
+      for (int n = 0; n < NUM_SPECIES; ++n) {
+        massfrac[n] = u(i, j, k, n + UFS) * rhoInv;
+      }
+      amrex::Real T = u(i, j, k, UTEMP);
+      amrex::Real cp;
+      auto eos = pele::physics::PhysicsType::eos();
+      eos.RTY2Cp(rho, T, massfrac, cp);
+      amrex::Real D;
+      const int which_trans = 1;
+      pc_trans4dt(which_trans, T, rho, massfrac, D, trans_parm);
+      D *= rhoInv / cp;
+      AMREX_D_TERM(
+        const amrex::Real dt1 = 0.5 * dx * dx / (AMREX_SPACEDIM * D);
+        dt = amrex::min<amrex::Real>(dt, dt1);
+        , const amrex::Real dt2 = 0.5 * dy * dy / (AMREX_SPACEDIM * D);
+        dt = amrex::min<amrex::Real>(dt, dt2);
+        , const amrex::Real dt3 = 0.5 * dz * dz / (AMREX_SPACEDIM * D);
+        dt = amrex::min<amrex::Real>(dt, dt3););
+
+#ifdef PELEC_USE_EB
+    }
+#endif
+  });
+  return dt;
+}
+
+#endif

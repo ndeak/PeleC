@@ -19,7 +19,7 @@ Also, any entry that can be specified in the inputs file can also be specified o
 The available options are divided into groups: those that control primarily AMReX are prefaced with `amr.` while those that are specific to Pele are prefaced with `pelec.`.
 
 A typical input file looks something like the example below; a full list of Pele-specific input parameters are in `PeleC/Source/_cpp_parameters`. 
-These parameters, once read, are available in the `PeleC` object for use from c++ and are also copied to the module `prob_params_module` for use in FORTRAN. 
+These parameters, once read, are available in the `PeleC` object for use from c++.
 
 ::
 
@@ -84,7 +84,7 @@ These parameters, once read, are available in the `PeleC` object for use from c+
     #------------------------
     
     pelec.do_hydro = 1               # enable hyperbolic term
-    pelec.do_mol_AD = 1              # use method of lines (MOL)
+    pelec.do_mol = 1                 # use method of lines (MOL)
     pelec.do_react = 0               # enable chemical reactions
     pelec.ppm_type = 2               # piecewise parabolic reconstruction type
     pelec.allow_negative_energy = 0  # flag to allow negative internal energy
@@ -123,7 +123,16 @@ These parameters, once read, are available in the `PeleC` object for use from c+
     #specify species name as flame tracer for 
     #refinement purposes
     pelec.flame_trac_name = HO2
-    
+
+
+    #------------------------
+    # TAGGING
+    #------------------------
+    tagging.denerr = 3             # density value
+    tagging.dengrad = 0.01         # gradient of density value
+    tagging.max_denerr_lev = 3     # maximum level at which to use density for tagging
+    tagging.max_dengrad_lev = 3    # maximum level at which to use density gradient for tagging
+
     #------------------------
     # CHECKPOINT FILES
     #------------------------
@@ -143,8 +152,6 @@ These parameters, once read, are available in the `PeleC` object for use from c+
     #pick which all derived variables to plot
     amr.derive_plot_vars  = pressure x_velocity y_velocity
     
-    # probin filename that has tagging and other namelists
-    amr.probin_file = probin 
     # ---------------------------------------------------------------
     
     # ---------------------------------------------------------------
@@ -166,3 +173,31 @@ These parameters, once read, are available in the `PeleC` object for use from c+
     eb2.sphere_has_fluid_inside = 0
     
     # ---------------------------------------------------------------
+
+Tagging criteria
+~~~~~~~~~~~~~~~~
+
+Tagging criteria are used to inform the refinement of flow features. They are added the input file using the `tagging` keyword (see the input file above). The following convention is used
+
+- `*err`: tag cell for refinement when the value of the field exceeds this threshold value, i.e. :math:`f_{i,j,k} \geq v`, where :math:`f_{i,j,k}` is the field in cell :math:`(i,j,k)` and :math:`v` is the threshold.
+- `*grad`: tag cell for refinement when the maximum difference of the field exceeds this threshold value, i.e.
+
+.. math::
+   \max(&|f_{i+1,j,k} - f_{i,j,k}|, |f_{i,j,k} - f_{i-1,j,k}|,\\
+   &|f_{i,j+1,k} - f_{i,j,k}|, |f_{i,j,k} - f_{i,j-1,k}|,\\
+   &|f_{i,j,k+1} - f_{i,j,k}|, |f_{i,j,k} - f_{i,j,k-1}|) \geq v
+
+- `max_*_level`: maximum level for use of this tag (beyond this level, this tag will not be used for refinement).
+
+The default values for tagging are defined in :code:`struct TaggingParm` in the `Tagging.H` file. Currently, the code supports tagging on density, pressure, velocity, vorticity, temperature, and volume fraction.
+
+Additionally, tagging is supported for a user-specified species which can function as a "flame tracer" using the keyword `ftrac` and selecting the species with `pelec.flame_trac_name`. For example, the following text in the input file would tag cells for refinement where the HO2 mass fraction exceeded :math:`150 \times 10^{-6}` up to a maximum of 4 levels of refinement:
+
+::
+
+   pelec.flame_trac_name= HO2
+   tagging.max_ftracerr_lev = 4
+   tagging.ftracerr = 150.e-6
+
+Users can specify their own tagging criteria in the `prob.H` of their case. An example of this is provided in the Taylor-Green regression test.
+   
