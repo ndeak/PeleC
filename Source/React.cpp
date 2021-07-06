@@ -1,4 +1,8 @@
+#include "PeleC.H"
 #include "React.H"
+// #ifdef USE_SUNDIALS_PP
+// #include "reactor.h"
+// #endif
 #ifdef PELEC_USE_PLASMA
 #include <Plasma.H>
 #endif
@@ -83,22 +87,21 @@ PeleC::react_state(
   amrex::MultiFab fctCount(grids, dmap, 1, 0);
   dummyMask.setVal(1);
 
-  if (!react_init) {
-    amrex::MultiFab& S_old = get_old_data(State_Type);
-    amrex::MultiFab::Copy(STemp, S_old, UFS, 0, NUM_SPECIES, STemp.nGrow());
-    amrex::MultiFab::Copy(STemp, S_old, UTEMP, NUM_SPECIES, 1, STemp.nGrow());
-    amrex::MultiFab::Copy(
-      STemp, S_old, UEINT, NUM_SPECIES + 1, 1, STemp.nGrow());
-  } else {
-    amrex::MultiFab::Copy(STemp, S_new, UFS, 0, NUM_SPECIES, STemp.nGrow());
-    amrex::MultiFab::Copy(STemp, S_new, UTEMP, NUM_SPECIES, 1, STemp.nGrow());
-    amrex::MultiFab::Copy(
-      STemp, S_new, UEINT, NUM_SPECIES + 1, 1, STemp.nGrow());
+  if (chem_integrator == 3) {
+    if (!react_init) {
+      amrex::MultiFab& S_old = get_old_data(State_Type);
+      STemp.copy(S_old, UFS, 0, NUM_SPECIES);
+      STemp.copy(S_old, UTEMP, NUM_SPECIES, 1);
+      STemp.copy(S_old, UEINT, NUM_SPECIES + 1, 1);
+    } else {
+      STemp.copy(S_new, UFS, 0, NUM_SPECIES);
+      STemp.copy(S_new, UTEMP, NUM_SPECIES, 1);
+      STemp.copy(S_new, UEINT, NUM_SPECIES + 1, 1);
+    }
+    extsrc_rY.copy(*non_react_src, UFS, 0, NUM_SPECIES);
   }
-  amrex::MultiFab::Copy(
-    extsrc_rY, *non_react_src, UFS, 0, NUM_SPECIES, STemp.nGrow());
 #endif
-
+   
 #ifdef PELEC_USE_EB
   auto const& fact =
     dynamic_cast<amrex::EBFArrayBoxFactory const&>(S_new.Factory());
@@ -146,6 +149,7 @@ PeleC::react_state(
       if (typ == amrex::FabType::singlevalued || typ == amrex::FabType::regular)
 #endif
       {
+
         if (chem_integrator == 1) {
           // for rk64 we set minimum, maximum and guess
           // number of sub-iterations
@@ -174,11 +178,18 @@ PeleC::react_state(
                 I_R, dt, nsubsteps_min,
                 nsubsteps_max, nsubsteps_guess, errtol, do_update, captured_clean_massfrac);
             });
-        } else if (chem_integrator == 2) {
+        }
+
+        else if (chem_integrator == 2 || chem_integrator == 3) {
 #ifdef USE_SUNDIALS_PP
           amrex::Real wt =
             amrex::ParallelDescriptor::second(); // timing for each fab
+          const int captured_chem_integrator = chem_integrator;
 
+          const auto len = amrex::length(bx);
+          const auto lo = amrex::lbound(bx);
+          const int ncells = len.x * len.y * len.z;
+          amrex::Real chemintg_cost;
           amrex::Real current_time = 0.0;
 #ifdef AMREX_USE_GPU
           int reactor_type = 1;
@@ -242,7 +253,6 @@ PeleC::react_state(
                  - rho_old * e_old) /
                 dt;
 
-<<<<<<< HEAD:SourceCpp/React.cpp
               if (captured_chem_integrator == 2) {
                 int offset =
                   (k - lo.z) * len.x * len.y + (j - lo.y) * len.x + (i - lo.x);
@@ -255,7 +265,7 @@ PeleC::react_state(
                 d_rY_in[offset * (NUM_SPECIES + 1) + NUM_SPECIES] =
                   sold_arr(i, j, k, UTEMP);
 
-                if (captured_clean_react_massfrac == 1) {
+                if (captured_clean_massfrac == 1) {
                   clip_normalize_rY(
                     sold_arr(i, j, k, URHO),
                     &d_rY_in[offset * (NUM_SPECIES + 1)]);
@@ -265,7 +275,8 @@ PeleC::react_state(
 #ifdef PELEC_USE_PLASMA
                 eon_in[offset] = eon(i, j, k, 0);
                 amrex::Real mwt[NUM_SPECIES] = {0.0};
-                EOS::molecular_weight(mwt);
+                auto eos = pele::physics::PhysicsType::eos();
+                eos.molecular_weight(mwt);
                 if (ef_use_NLsolve) {
                    // Pass electrons from nE AUX to rhoY_e
                    d_rY_in[offset * (NUM_SPECIES + 1) + E_ID] = sold_arr(i, j, k, UFX+1) / EFConst::Na
@@ -279,7 +290,7 @@ PeleC::react_state(
 
                 frcEExt(i, j, k) = rhoedot_ext;
 
-                if (captured_clean_react_massfrac == 1) {
+                if (captured_clean_massfrac == 1) {
                   clip_normalize_rYarr(i, j, k, sold_arr, rhoY);
                 }
               }
@@ -336,23 +347,9 @@ PeleC::react_state(
 #ifdef PELEC_USE_PLASMA
               , eon
 #endif
-// =======
-//               frcEExt(i, j, k) = rhoedot_ext;
-//               if (captured_clean_massfrac == 1) {
-//                 clip_normalize_rYarr(i, j, k, sold_arr, rhoY);
-//               }
-//             });
-// 
-//           const int reactor_type = 1;
-//           react(
-//             bx, rhoY, frcExt, T, rhoE, frcEExt, fc, mask, dt, current_time,
-//             reactor_type
-// #ifdef AMREX_USE_GPU
-//             ,
-//             amrex::Gpu::gpuStream()
-// >>>>>>> development:Source/React.cpp
+);
 #endif
-          );
+          }
 
           // unpack data
           amrex::ParallelFor(
@@ -390,10 +387,18 @@ PeleC::react_state(
                 sold_arr(i, j, k, UMZ) + dt * nonrs_arr(i, j, k, UMZ);
 
               // get new rho
-              amrex::Real rhonew = 0.0;
+              amrex::Real rhonew = 0.;
+              int offset =
+                (k - lo.z) * len.x * len.y + (j - lo.y) * len.x + (i - lo.x);
 
-              for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                rhonew += rhoY(i, j, k, nsp);
+              if (captured_chem_integrator == 2) {
+                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+                  rhonew += d_rY_in[offset * (NUM_SPECIES + 1) + nsp];
+                }
+              } else {
+                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+                  rhonew += rhoY(i, j, k, nsp);
+                }
               }
 
               if (do_update) {
@@ -402,13 +407,13 @@ PeleC::react_state(
                 snew_arr(i, j, k, UMY) = vmnew;
                 snew_arr(i, j, k, UMZ) = wmnew;
 
-<<<<<<< HEAD:SourceCpp/React.cpp
                 if (captured_chem_integrator == 2) {
 #ifdef PELEC_USE_PLASMA
                   // if non-linear solve : extract the new nE and set rhoY_e to zero
                   if (ef_use_NLsolve) {
                      amrex::Real mwt[NUM_SPECIES] = {0.0};
-                     EOS::molecular_weight(mwt);
+                     auto eos = pele::physics::PhysicsType::eos();
+                     eos.molecular_weight(mwt);
                      snew_arr(i, j, k, UFX+1) = d_rY_in[offset * (NUM_SPECIES + 1) + E_ID] * EFConst::Na
                                                 / mwt[E_ID];
                      d_rY_in[offset * (NUM_SPECIES + 1) + E_ID] = 0.0;
@@ -423,10 +428,12 @@ PeleC::react_state(
 
                 } else {
 #ifdef PELEC_USE_PLASMA
+                  exit(1);
                   // if non-linear solve : extract the new nE and set rhoY_e to zero
                   if (ef_use_NLsolve) {
                      amrex::Real mwt[NUM_SPECIES] = {0.0};
-                     EOS::molecular_weight(mwt);
+                     auto eos = pele::physics::PhysicsType::eos();
+                     eos.molecular_weight(mwt);
                      snew_arr(i, j, k, UFX+1) = rhoY(i, j, k, E_ID) * EFConst::Na
                                                 / mwt[E_ID];
                      rhoY(i, j, k, E_ID) = 0.0;
@@ -435,8 +442,8 @@ PeleC::react_state(
                   for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
                     snew_arr(i, j, k, UFS + nsp) = rhoY(i, j, k, nsp);
                   }
+                  snew_arr(i, j, k, UTEMP) = T(i, j, k);
                 }
-                snew_arr(i, j, k, UTEMP) = T(i, j, k);
 
                 snew_arr(i, j, k, UEINT) = rho_old * e_old + dt * rhoedot_ext;
                 snew_arr(i, j, k, UEDEN) =
@@ -445,11 +452,22 @@ PeleC::react_state(
                     rhonew;
               }
 
-              for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                I_R(i, j, k, nsp) = (rhoY(i, j, k, nsp)              // new rhoy
-                                     - sold_arr(i, j, k, UFS + nsp)) // old rhoy
-                                      / dt -
-                                    nonrs_arr(i, j, k, UFS + nsp);
+              if (captured_chem_integrator == 2) {
+                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+                  I_R(i, j, k, nsp) =
+                    (d_rY_in[offset * (NUM_SPECIES + 1) + nsp] // new rhoy
+                     - sold_arr(i, j, k, UFS + nsp))           // old rhoy
+                      / dt -
+                    nonrs_arr(i, j, k, UFS + nsp);
+                }
+              } else {
+                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+                  I_R(i, j, k, nsp) =
+                    (rhoY(i, j, k, nsp)              // new rhoy
+                     - sold_arr(i, j, k, UFS + nsp)) // old rhoy
+                      / dt -
+                    nonrs_arr(i, j, k, UFS + nsp);
+                }
               }
 
 #ifdef PELEC_USE_PLASMA
@@ -477,35 +495,11 @@ PeleC::react_state(
           }
 #else
           amrex::Abort(
-            "chem_integrator=2 which requires Sundials to be enabled");
+            "chem_integrator=2,3 which requires Sundials to be enabled");
 #endif
         } else {
-          amrex::Abort("chem_integrator must be equal to 1 or 2");
+          amrex::Abort("chem_integrator must be equal to 1,2 or 3");
         }
-
-        // update heat release
-        amrex::ParallelFor(
-          bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            I_R(i, j, k, NUM_SPECIES + 1) = 0.0;
-            auto eos = pele::physics::PhysicsType::eos();
-
-            amrex::Real hi[NUM_SPECIES] = {0.0};
-
-#ifndef PELEC_USE_SRK
-            eos.T2Hi(snew_arr(i, j, k, UTEMP), hi);
-#else
-            amrex::Real Yspec[NUM_SPECIES] = {0.0};
-            for(int nsp=0;nsp<NUM_SPECIES;nsp++)
-            {
-                Yspec[nsp]=snew_arr(i, j, k, UFS+nsp)/snew_arr(i, j, k, URHO);
-            }
-            eos.RTY2Hi(snew_arr(i,j,k,URHO), snew_arr(i,j,k,UTEMP), Yspec, hi);
-#endif
-
-            for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-              I_R(i, j, k, NUM_SPECIES + 1) -= hi[nsp] * I_R(i, j, k, nsp);
-            }
-          });
       }
     }
   }

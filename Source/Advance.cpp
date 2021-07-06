@@ -1,5 +1,3 @@
-#include "mechanism.H"
-
 #include "PeleC.H"
 #include "IndexDefines.H"
 #include "Derive.H"
@@ -104,7 +102,7 @@ PeleC::do_mol_advance(
   getCurrVoltage(time);
 
   // Compute PhiV
-  ProbParmDevice const* lprobparm = prob_parm_device.get();
+  const ProbParmDevice* lprobparm = d_prob_parm_device;
   solveEF( time, dt, *lprobparm );
 
   // Print the potential to verify BCs
@@ -122,7 +120,8 @@ PeleC::do_mol_advance(
   // }
 
   amrex::Real mwt[NUM_SPECIES];
-  EOS::molecular_weight(mwt);   // CGS
+  auto eos = pele::physics::PhysicsType::eos();
+  eos.molecular_weight(mwt);   // CGS
   int ng = Sborder.nGrow();
 
   // Calculate the reduced electric field strength

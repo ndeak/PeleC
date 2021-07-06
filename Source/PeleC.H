@@ -17,6 +17,13 @@
 #include <AMReX_YAFluxRegister.H>
 #endif
 
+#ifdef PELEC_USE_PLASMA
+#include <AMReX_MLMG.H>
+#include <AMReX_MLABecLaplacian.H>
+#include <AMReX_MLABecCecLaplacian.H>
+#include <FluxBoxes.H>
+#endif
+
 #ifdef AMREX_LAZY
 #include <AMReX_Lazy.H>
 #endif
@@ -30,6 +37,10 @@
 #include "Tagging.H"
 #include "IndexDefines.H"
 #include "prob_parm.H"
+
+#if defined(PELEC_USE_REACTIONS) && defined(USE_SUNDIALS_PP)
+#include "reactor.h"
+#endif
 
 #define UserBC 6
 
@@ -116,6 +127,9 @@ public:
     const std::string& dir, std::ostream& os, amrex::VisMF::How how) override;
   void writeJobInfo(const std::string& dir);
   static void writeBuildInfo(std::ostream& os);
+  void writeDebugPlotFile(const amrex::Vector<const amrex::MultiFab*> &a_MF, const std::string &pltname, int firstLevel, int firstComp, int nComp);
+  void writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::Real dt, amrex::Real time, int i);
+  void monitorFileSetup(int i);
 
   // Define data descriptors.
   static void variableSetUp();
@@ -635,6 +649,7 @@ protected:
 
   static bool signalStopJob;
   static bool dump_old;
+  static bool monitor_file;
   static int radius_grow;
   static int verbose;
   static amrex::BCRec phys_bc;
@@ -719,6 +734,10 @@ protected:
 #endif
   static bool do_react_load_balance;
   static bool do_mol_load_balance;
+
+#ifdef PELEC_USE_PLASMA
+#include <PeleC_Plasma.H>
+#endif
 };
 
 void pc_bcfill_hyp(

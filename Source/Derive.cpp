@@ -1,5 +1,4 @@
-#include "mechanism.H"
-
+#include "PeleC.H"
 #include "PelePhysics.H"
 #include "Derive.H"
 #include "IndexDefines.H"
@@ -1001,8 +1000,9 @@ pc_derredEfield(
     amrex::Real pres, ndens;
     amrex::Real kB = 1.380649e-16; // erg/K
     for(int n=0; n<NUM_SPECIES; n++) Y[n] = dat(i, j, k, UFS + n) / dat(i, j, k, URHO);
-    EOS::Y2X(Y, X);  
-    EOS::RTY2P(dat(i, j, k, URHO), dat(i, j, k, UTEMP), Y, pres);
+    auto eos = pele::physics::PhysicsType::eos();
+    eos.Y2X(Y, X);  
+    eos.RTY2P(dat(i, j, k, URHO), dat(i, j, k, UTEMP), Y, pres);
     for(int n=0; n<NUM_SPECIES; n++) {
       if (n != E_ID) ndens += pres * X[n] / (kB * dat(i, j, k, UTEMP));
     }
@@ -1030,7 +1030,8 @@ pc_derspecn(
     bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       amrex::Real Na = 6.022e23;
       amrex::Real mwt[NUM_SPECIES] = {0.0};
-      EOS::molecular_weight(mwt);
+      auto eos = pele::physics::PhysicsType::eos();
+      eos.molecular_weight(mwt);
       for (int n = 0; n < NUM_SPECIES; n++) {
          specn(i, j, k, n) = dat(i, j, k, UFS + n) / mwt[n] * Na;
       }

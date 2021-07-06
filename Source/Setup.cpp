@@ -13,7 +13,6 @@ using namespace MASA;
 #endif
 
 #include "Transport.H"
-#include "mechanism.H"
 #include "PeleC.H"
 #include "Derive.H"
 #include "IndexDefines.H"
@@ -357,15 +356,21 @@ PeleC::variableSetUp()
     Reactions_Type, amrex::IndexType::TheCellType(),
     amrex::StateDescriptor::Point, 0, NUM_SPECIES + 2, interp,
     state_data_extrap, store_in_checkpoint);
-
-  amrex::Vector<amrex::BCRec> react_bcs(nrhoydot);
-  amrex::Vector<std::string> react_name(nrhoydot);
 #endif
 
   amrex::Vector<amrex::BCRec> bcs(NVAR);
   amrex::Vector<std::string> name(NVAR);
-  amrex::Vector<amrex::BCRec> react_bcs(NUM_SPECIES + 3);
-  amrex::Vector<std::string> react_name(NUM_SPECIES + 3);
+#ifdef PELEC_USE_PLASMA
+  int react_num = NUM_SPECIES+2;
+  if(ef_use_NLsolve){
+    react_num += 1;
+  }
+  amrex::Vector<amrex::BCRec> react_bcs(react_num);
+  amrex::Vector<std::string> react_name(react_num);
+#else
+  amrex::Vector<amrex::BCRec> react_bcs(NUM_SPECIES + 1);
+  amrex::Vector<std::string> react_name(NUM_SPECIES + 1);
+#endif
 
   amrex::BCRec bc;
   cnt = 0;

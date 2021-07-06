@@ -33,7 +33,7 @@ PeleC::solveEF ( Real time,
    const BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
    const Vector<BCRec>& bc = {bcphiV};
    if (not geom.isAllPeriodic()) {
-      ProbParmDevice const* lprobparm = PeleC::prob_parm_device.get();
+      const ProbParmDevice* lprobparm = d_prob_parm_device;
       amrex::GpuBndryFuncFab<PhiVFill>  bf(PhiVFill{lprobparm});
       PhysBCFunct<GpuBndryFuncFab<PhiVFill> > phiVf(geom, bc, bf);
       phiVf(Sborder, 0, 1, Sborder.nGrowVect(), time, 0);
@@ -50,7 +50,8 @@ PeleC::solveEF ( Real time,
 #pragma omp parallel
 #endif
     amrex::Real mwt[NUM_SPECIES];
-    EOS::molecular_weight(mwt);   // CGS
+    auto eos = pele::physics::PhysicsType::eos();
+    eos.molecular_weight(mwt);   // CGS
 
    // TODO set charge to be equal to sum of ion/electron num densities
    for (MFIter mfi(chargeDistib,true); mfi.isValid(); ++mfi)

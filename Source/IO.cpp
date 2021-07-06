@@ -17,8 +17,6 @@
 #include <AMReX_EBMultiFabUtil.H>
 #endif
 
-#include "mechanism.H"
-
 #include "PeleC.H"
 #include "IO.H"
 #include "IndexDefines.H"

@@ -125,17 +125,18 @@ PeleC::getMOLSrcTerm(
     auto const& q = Q_ext.array(mfi);
     auto const& qaux = Qaux_ext.array(mfi);
     {
-        PassMap const* lpmap = pass_map.get();
+        PassMap const* lpmap = d_pass_map;
+        const int captured_clean_massfrac = clean_massfrac;
         BL_PROFILE("PeleC::ctoprim()");
         amrex::ParallelFor(
           gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            pc_ctoprim(i, j, k, s, q, qaux, *lpmap);
+            pc_ctoprim(i, j, k, s, q, qaux, *lpmap, captured_clean_massfrac);
         });
     }
     
     {
       // Calculate species diffusivities
-      TransParm const* ltransparm = trans_parm_g;
+      pele::physics::transport::TransParm const* ltransparm = pele::physics::transport::trans_parm_g;
       auto const& qar_yin = Q_ext.array(mfi,QFS);
       auto const& qar_Tin = Q_ext.array(mfi,QTEMP);
       auto const& qar_rhoin = Q_ext.array(mfi,QRHO);
@@ -147,7 +148,8 @@ PeleC::getMOLSrcTerm(
       // Get Transport coefs on GPU.
       amrex::launch(tbox, [=] AMREX_GPU_DEVICE(amrex::Box const& tbx) 
       {
-        get_transport_coeffs(tbox, qar_yin, qar_Tin, qar_rhoin, coe_rhoD, coe_mu, coe_xi,coe_lambda, ltransparm);
+        auto trans = pele::physics::PhysicsType::transport();
+        trans.get_transport_coeffs(tbox, qar_yin, qar_Tin, qar_rhoin, coe_rhoD, coe_mu, coe_xi,coe_lambda, ltransparm);
       });
     }
   }
@@ -507,7 +509,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, area_arr, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            s, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, ef_use_NLsolve, secondary_em_coef, electron_emit_const
+            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, ef_use_NLsolve, secondary_em_coef, electron_emit_const
 #endif
 #ifdef PELEC_USE_EB
             ,

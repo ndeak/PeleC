@@ -58,12 +58,15 @@
 
 #ifndef PELEC_USE_AUX
 #define NUM_ADV 0
+#ifdef PELEC_USE_PLASMA
+#define NUM_AUX 5
+#else
 #define NUM_AUX 0
+#endif
 #endif
 
 #ifdef PELEC_USE_PLASMA
 #define NUM_ADV 0
-#define NUM_AUX 5
 #define NUM_E 3
 #define E_X 0
 #define E_Y 1
@@ -83,6 +86,8 @@
 #define NGDNV 6
 
 #define NPASSIVE NUM_SPECIES + NUM_ADV + NUM_AUX + 3 - AMREX_SPACEDIM
+
+#define NUM_GROW 4
 
 struct PassMap
 {

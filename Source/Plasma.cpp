@@ -74,7 +74,8 @@ PeleC::plasma_init()
     // get charge per unit mass (C/g) CGS
     Real zk_temp[NUM_SPECIES] = {0.0};
     int zk_num_temp[NUM_SPECIES] = {0};
-    EOS::charge_mass(zk_temp);
+    auto eos = pele::physics::PhysicsType::eos();
+    eos.charge_mass(zk_temp);
     CKCHRG(zk_num_temp);
     for (int k = 0; k < NUM_SPECIES; k++) {
        zk[k] = zk_temp[k];
@@ -204,7 +205,8 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   // ndeak add - get BCs for species (used in center->edge extrap)
   const amrex::BCRec& bcspec = get_desc_lst()[State_Type].getBC(UFS);
   amrex::Real mwt[NUM_SPECIES];
-  EOS::molecular_weight(mwt);   // CGS
+  auto eos = pele::physics::PhysicsType::eos();
+  eos.molecular_weight(mwt);   // CGS
 
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -233,7 +235,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
         }
      });
      Real mwt[NUM_SPECIES];
-     EOS::molecular_weight(mwt);  // Return mwt in CGS
+     eos.molecular_weight(mwt);  // Return mwt in CGS
      amrex::ParallelFor(gbox, [rhoY, rhoD, T, Ks, mwt]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
@@ -461,7 +463,7 @@ void PeleC::getCurrVoltage(Real time) {
 
   if(ef_constVoltage == 1) curr_voltage = pulse_peak;
 
-  ProbParmDevice * lprobparm = prob_parm_device.get();
+  ProbParmDevice* lprobparm = d_prob_parm_device;
   lprobparm->PhiV_top = 0.0;
   lprobparm->PhiV_bottom = curr_voltage;
 }

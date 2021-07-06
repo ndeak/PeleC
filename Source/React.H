@@ -7,9 +7,9 @@
 #include "PelePhysics.H"
 #include "PeleC.H"
 
-#ifdef USE_SUNDIALS_PP
-#include "reactor.H"
-#endif
+// #ifdef USE_SUNDIALS_PP
+// #include "reactor.h"
+// #endif
 
 // Timestep adapter
 AMREX_GPU_DEVICE
@@ -163,7 +163,7 @@ pc_expl_reactions(
 #endif
 
       amrex::Real Temp_rk;
-      EOS::EY2T(rhoe_rk / urk[URHO], massfrac, Temp_rk);
+      eos.EY2T(rhoe_rk / urk[URHO], massfrac, Temp_rk);
 
       for (int n = 0; n < NUM_SPECIES; ++n)
         wdot[n] += rhoydot_ext[n];

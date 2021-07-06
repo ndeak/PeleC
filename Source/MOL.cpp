@@ -1,6 +1,6 @@
 #include "MOL.H"
 #ifdef PELEC_USE_PLASMA
-#include "mechanism.h"
+#include "PeleC.H"
 #include <Plasma.H>
 #endif
 
@@ -240,7 +240,8 @@ pc_compute_hyp_mol_flux(
         amrex::Real Ttemp = 300.0;    // TODO remove hard code
         double EoN, Te;
         amrex::Real mwt[NUM_SPECIES];
-        EOS::molecular_weight(mwt);
+        auto eos = pele::physics::PhysicsType::eos();
+        eos.molecular_weight(mwt);
         amrex::Real mfgd[NUM_SPECIES];
         amrex::Real uflux_tmp = 0.0;
         flux_tmp[f_idx[0]] = 0.0;
@@ -320,15 +321,15 @@ pc_compute_hyp_mol_flux(
             for(int n=0; n<NUM_SPECIES; n++){
                 flx[dir](i, j, k, UFS + n) = 0.0;
                 if(n == E_ID && !use_NL){
-                  flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5) * a[dir](i, j, k);
+                  flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5) * area[dir](i, j, k);
                 }
                 if(n != E_ID && K_cc(i,j,k,n) != 0){
                   if(ion_bc_type == 0){
-                    flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5) * a[dir](i, j, k);
+                    flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5) * area[dir](i, j, k);
                   }
                   else if(ion_bc_type == 1){
                     if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) > 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) < 0)){
-                      flx[dir](i, j, k, UFS + n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](i,j,k) * a[dir](i, j, k);
+                      flx[dir](i, j, k, UFS + n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
                     }
                     else{
                       flx[dir](i, j, k, UFS + n) = 0.0;
@@ -358,15 +359,15 @@ pc_compute_hyp_mol_flux(
             for(int n=0; n<NUM_SPECIES; n++){
                 flx[dir](i, j, k, UFS + n) = 0.0;
                 if(n == E_ID && !use_NL){
-                  flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5) * a[dir](i, j, k);
+                  flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5) * area[dir](i, j, k);
                 }
                 if(n != E_ID && K_cc(i,j,k,n) != 0){
                   if(ion_bc_type == 0){
-                    flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5) * a[dir](i, j, k);
+                    flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5) * area[dir](i, j, k);
                   }
                   else if(ion_bc_type == 1){
                     if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) < 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) > 0)){
-                      flx[dir](i, j, k, UFS + n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](i,j,k) * a[dir](i, j, k);
+                      flx[dir](i, j, k, UFS + n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
                     }
                     else{
                       flx[dir](i, j, k, UFS + n) = 0.0;
@@ -394,7 +395,7 @@ pc_compute_hyp_mol_flux(
             // Imposed cathode flux (used to test space charge-induced electric field calculations) 
             // Subtracted from flux to ensure electrons move into the domain
             // electron_emit_const provided in [1/cm3]
-            if (!use_NL) flx[dir](i, j, k, UFS + E_ID) -= electron_emit_const * 0.5 * (pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5)) * EFConst::me_cgs * a[dir](i,j,k);
+            if (!use_NL) flx[dir](i, j, k, UFS + E_ID) -= electron_emit_const * 0.5 * (pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5)) * EFConst::me_cgs * area[dir](i,j,k);
           }
         }
 #endif

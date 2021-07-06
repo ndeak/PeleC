@@ -33,6 +33,10 @@ ifeq ($(USE_EB), TRUE)
   endif
 endif
 
+ifeq ($(USE_PLASMA), TRUE)
+  DEFINES += -DPELEC_USE_PLASMA
+endif
+
 all: $(executable) 
 	$(SILENT) $(RM) AMReX_buildInfo.cpp
 	@echo SUCCESS
@@ -102,7 +106,7 @@ Blocs             += $(TRANSPORT_HOME)
 
 Bdirs := $(PELEC_HOME)/Source $(PELEC_HOME)/Source/Params/param_includes
 
-Pdirs := Base Amr Boundary AmrCore
+Pdirs := Base Amr Boundary AmrCore LinearSolvers/MLMG
 ifeq ($(USE_EB), TRUE)
   Pdirs += EB
   Bpack += $(AMREX_HYDRO_HOME)/Redistribution/Make.package

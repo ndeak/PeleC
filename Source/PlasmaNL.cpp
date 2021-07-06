@@ -662,7 +662,8 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                   ExtrapTe(EoNx(idx[0], idx[1], idx[2], 0), &Te);
                   
                   amrex::Real mwt[NUM_SPECIES] = {0.0};
-                  EOS::molecular_weight(mwt);
+                  auto eos = pele::physics::PhysicsType::eos();
+                  eos.molecular_weight(mwt);
  
                   if ( on_lo ) {
                      xflux(i,j,k) = - 0.5 * xstate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * constants::PI()), 0.5 );// * a[0](i, j, k);
@@ -693,7 +694,8 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                   ExtrapTe(EoNy(idx[0], idx[1], idx[2], 0), &Te);
                   
                   amrex::Real mwt[NUM_SPECIES] = {0.0};
-                  EOS::molecular_weight(mwt);
+                  auto eos = pele::physics::PhysicsType::eos();
+                  eos.molecular_weight(mwt);
  
                   if ( on_lo ) {
                      yflux(i,j,k) = -0.5 * ystate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * constants::PI()), 0.5 );// * a[0](i, j, k);
@@ -725,7 +727,8 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                   ExtrapTe(EoNz(idx[0], idx[1], idx[2], 0), &Te);
                   
                   amrex::Real mwt[NUM_SPECIES] = {0.0};
-                  EOS::molecular_weight(mwt);
+                  auto eos = pele::physics::PhysicsType::eos();
+                  eos.molecular_weight(mwt);
  
                   if ( on_lo ) {
                      zflux(i,j,k) = - 0.5 * zstate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * constants::PI()), 0.5 );// * a[0](i, j, k);
@@ -822,7 +825,8 @@ void PeleC::ef_setUpPrecond (const Real &dt_lcl,
 
       // Get molecular weights needed to evaluate transport properties
       amrex::Real mwt[NUM_SPECIES];
-      EOS::molecular_weight(mwt);   // CGS
+      auto eos = pele::physics::PhysicsType::eos();
+      eos.molecular_weight(mwt);   // CGS
 
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -1131,7 +1135,8 @@ void PeleC::compute_gasN(const Real &dt_lcl,
       {
          gasN(i,j,k) = 0.0;
          Real mwt[NUM_SPECIES] = {0.0};
-         EOS::molecular_weight(mwt);
+         auto eos = pele::physics::PhysicsType::eos();
+         eos.molecular_weight(mwt);
          for (int n = 0; n < NUM_SPECIES; n++) {
             Real rhoYpred = rhoYold(i,j,k,n) + dt_lcl * srcRhoY(i,j,k,n);
             if (do_react) rhoYpred += dt_lcl * reacRhoY(i,j,k,n);

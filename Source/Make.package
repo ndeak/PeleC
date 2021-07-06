@@ -59,6 +59,16 @@ ifeq ($(USE_EB), TRUE)
   CEXE_headers += EBStencilTypes.H
 endif
 
+ifeq ($(USE_PLASMA), TRUE)
+  CEXE_headers += GMRES.H FluxBoxes.H
+  CEXE_sources += GMRES.cpp
+  CEXE_sources += FluxBoxes.cpp
+  CEXE_headers += PeleC_Plasma.H Plasma_K.H PlasmaBCFill.H
+  CEXE_sources += Plasma.cpp
+  CEXE_sources += PlasmaSolveEF.cpp
+  CEXE_sources += PlasmaNL.cpp
+endif
+
 ifeq ($(USE_PARTICLES), TRUE)
   CEXE_sources += Particle.cpp
 endif

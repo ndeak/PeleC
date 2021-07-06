@@ -102,6 +102,7 @@ pc_estdt_hydro(
                    , const amrex::Real uz = u(i, j, k, UMZ) * rhoInv;
                    const amrex::Real dt3 = dz / (c + amrex::Math::abs(uz));
                    dt = amrex::min<amrex::Real>(dt, dt3););
+#endif
 #ifdef PELEC_USE_EB
     }
 #endif

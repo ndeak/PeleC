@@ -28,9 +28,9 @@ using namespace MASA;
 #include "Utilities.H"
 #include "Tagging.H"
 #include "IndexDefines.H"
-#if defined(PELEC_USE_REACTIONS) && defined(USE_SUNDIALS_PP)
-#include "reactor.H"
-#endif
+// #if defined(PELEC_USE_REACTIONS) && defined(USE_SUNDIALS_PP)
+// #include "reactor.h"
+// #endif
 
 #ifdef PELEC_ENABLE_FPE_TRAP
 #if defined(__linux__)
@@ -42,6 +42,7 @@ using namespace MASA;
 
 bool PeleC::signalStopJob = false;
 bool PeleC::dump_old = false;
+bool PeleC::monitor_file = false;
 int PeleC::verbose = 0;
 int PeleC::radius_grow = 1;
 amrex::BCRec PeleC::phys_bc;
@@ -63,6 +64,53 @@ int PeleC::pstateDia = -1;
 int PeleC::pstateRho = -1;
 int PeleC::pstateY = -1;
 int PeleC::pstateNum = 0;
+
+#ifdef PELEC_USE_PLASMA
+int PeleC::PhiV = -1;
+int PeleC::nE = -1;
+int PeleC::Efieldx = -1;
+int PeleC::Efieldy = -1;
+int PeleC::Efieldz = -1;
+int PeleC::ef_verbose = 0;
+int PeleC::ef_debug = 0;
+int PeleC::ef_use_NLsolve = 0;
+int PeleC::ef_use_PETSC_direct = 0;
+int PeleC::ef_diffT_jfnk = 1;
+int PeleC::ef_maxNewtonIter = 10;
+int PeleC::ef_GMRES_size = 10;
+int PeleC::ef_GMRES_maxRst = 2;
+int PeleC::ef_GMRES_verbose = 0;
+int PeleC::ef_PoissonVerbose = 0;
+int PeleC::ef_PoissonMaxOrder = 2;
+int PeleC::ef_PoissonMaxIter = 100;
+int PeleC::ef_noSpaceCharge = 0;
+int PeleC::ef_constVoltage = 0;
+int PeleC::ion_bc_type = 0;
+int PeleC::zero_bc_flux = 0;
+int PeleC::ef_PC_fixedIter = -1;
+int PeleC::ef_PC_approx = 1;
+bool PeleC::def_harm_avg_cen2edge  = false;
+amrex::Real PeleC::ef_PoissonTol = 1.0e-8;
+amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
+amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
+amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
+amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
+amrex::Real PeleC::secondary_em_coef = 0.0;
+amrex::Real PeleC::electron_emit_const = 0.0;
+amrex::Real PeleC::pulse_freq = 0.0;
+amrex::Real PeleC::pulse_fwhm = 0.0;
+amrex::Real PeleC::pulse_peak = 0.0;
+amrex::Real PeleC::pulse_timing = 0.0;
+amrex::Real PeleC::pulse_dt = 0.0;
+amrex::Real PeleC::pulse_sigma = 0.0;
+amrex::Real PeleC::curr_voltage = 0.0;
+amrex::Real PeleC::dfact = 0.0;
+amrex::Real PeleC::sfact = 0.0;
+int PeleC::pulse_num = 0;
+
+amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
+amrex::GpuArray<int,NUM_SPECIES> PeleC::zk_num;
+#endif
 
 #include "pelec_defaults.H"
 
@@ -140,6 +188,7 @@ PeleC::read_params()
   pp.query("v", verbose);
   pp.query("sum_interval", sum_interval);
   pp.query("dump_old", dump_old);
+  pp.query("monitor_file", monitor_file);
 
   // Get boundary conditions
   amrex::Vector<std::string> lo_bc_char(AMREX_SPACEDIM);
@@ -325,6 +374,19 @@ PeleC::read_params()
   }
 #endif
 
+#ifdef PELEC_USE_PLASMA
+  pp.query("ion_bc_type", ion_bc_type);
+  pp.query("zero_bc_flux", zero_bc_flux);
+  pp.query("secondary_em_coef", secondary_em_coef);
+  pp.query("electron_emit_const", electron_emit_const);
+  pp.query("pulse_freq", pulse_freq);
+  pp.query("pulse_fwhm", pulse_fwhm);
+  pp.query("pulse_peak", pulse_peak);
+  pp.query("pulse_timing", pulse_timing);
+  pp.query("pulse_num", pulse_num);
+  pp.query("pulse_dt", pulse_dt);
+#endif
+
   // Read tagging parameters
   read_tagging_params();
 
@@ -463,6 +525,11 @@ PeleC::PeleC(
   if (use_explicit_filter) {
     init_filters();
   }
+
+#ifdef PELEC_USE_PLASMA
+  // Define data specific to Plasma
+  plasma_define_data();
+#endif
 }
 
 PeleC::~PeleC() = default;
@@ -661,16 +728,32 @@ PeleC::initData()
     auto sfab = S_new.array(mfi);
     const auto geomdata = geom.data();
 
+#ifdef PELEC_USE_PLASMA    
+    int useNL = ef_use_NLsolve;
+#endif
+
     const ProbParmDevice* lprobparm = d_prob_parm_device;
 
     amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      pc_initdata(i, j, k, sfab, geomdata, *lprobparm);
+      pc_initdata(i, j, k, useNL, sfab, geomdata, *lprobparm);
       // Verify that the sum of (rho Y)_i = rho at every cell
       pc_check_initial_species(i, j, k, sfab);
     });
   }
 
   enforce_consistent_e(S_new);
+
+#ifdef PELEC_USE_PLASMA
+  // Compute initial PhiV
+  amrex::Real cur_time = state[State_Type].curTime();
+  const ProbParmDevice* lprobparm = d_prob_parm_device;
+  getCurrVoltage(0.0);
+  solveEF( cur_time, 0.0, *lprobparm );
+  if ( ef_debug) {
+     amrex::MultiFab phiV_a(S_new,amrex::make_alias,PhiV,1);
+     amrex::VisMF::Write(phiV_a,"InitialPhiV");
+  }
+#endif
 
   // computeTemp(S_new,0);
 
@@ -819,6 +902,9 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #ifdef PELEC_USE_EB
         flags,
 #endif
+#ifdef PELEC_USE_PLASMA
+        spec_drift,
+#endif
         0,
         [=] AMREX_GPU_HOST_DEVICE(
           amrex::Box const& bx, const amrex::Array4<const amrex::Real>& fab_arr
@@ -826,11 +912,19 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
           ,
           const amrex::Array4<const amrex::EBCellFlag>& flag_arr
 #endif
+#ifdef PELEC_USE_PLASMA
+          ,
+          const amrex::Array4<const amrex::Real>& drift_arr
+#endif
           ) noexcept -> amrex::Real {
           return pc_estdt_hydro(
             bx, fab_arr,
 #ifdef PELEC_USE_EB
             flag_arr,
+#endif
+#ifdef PELEC_USE_PLASMA
+            drift_arr,
+            ef_use_NLsolve,
 #endif
             AMREX_D_DECL(dx1, dx2, dx3));
         });
@@ -944,6 +1038,23 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
       estdt = estdt_particle;
     }
   }
+#endif
+
+#ifdef PELEC_USE_PLASMA
+  // Smoothly transition to smaller time step around plasma pulses
+  amrex::Real cur_time = state[State_Type].curTime();
+  pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0))); 
+  dfact = 5.0;
+  sfact = 1.0;
+  amrex::Real pulse_dist=1.0e10;
+  amrex::Real pulse_timing_tmp = 0.0;
+  amrex::Real fact = 0.0;
+  for(int i=0; i<pulse_num; i++){
+    pulse_timing_tmp = pulse_timing + fact*(1.0/pulse_freq);
+    pulse_dist = amrex::min<amrex::Real>(amrex::Math::abs(cur_time - pulse_timing_tmp), pulse_dist);
+    fact += 1.0;
+  }
+  estdt = pulse_dt + (estdt - pulse_dt) * 0.5 * (1.0 + tanh((pulse_dist - dfact*pulse_sigma) / (sfact*pulse_sigma)));
 #endif
 
   if (verbose) {
@@ -1185,6 +1296,11 @@ PeleC::post_restart()
     init_filters();
   }
 
+#ifdef PELEC_USE_PLASMA
+  // Define data specific to Plasma
+  plasma_define_data();
+#endif
+
   problem_post_restart();
 }
 
@@ -1275,6 +1391,12 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
 
   if (sum_int_test || sum_per_test) {
     sum_integrated_quantities();
+  }
+
+  // Set up Monitor file Headers
+  if(monitor_file){
+    int nlevs = parent->maxLevel() + 1;
+    for(int i=0; i<nlevs; i++) monitorFileSetup(i);
   }
 }
 
@@ -1571,6 +1693,10 @@ PeleC::errorEst(
 #ifdef PELEC_USE_EB
       const auto vfrac_arr = vfrac.array(mfi);
 #endif
+#ifdef PELEC_USE_PLASMA
+      const auto redEfield_arr = redEfield.array(mfi);
+      const auto ne_arr = S_data.array(mfi, UFS + E_ID);
+#endif
 
       amrex::FArrayBox S_derData(datbox, 1);
       amrex::Elixir S_derData_eli = S_derData.elixir();
@@ -1759,6 +1885,42 @@ PeleC::errorEst(
             tag_error_bounds(i, j, k, tag_arr, vfrac_arr, 0.0, 1.0, tagval);
           });
       }
+#endif
+
+#ifdef PELEC_USE_PLASMA
+      // Tagging reduced efield strength
+      if (level < tagging_parm->max_efield_lev) {
+        const amrex::Real captured_efielderr = tagging_parm->efielderr;
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_abserror(i, j, k, tag_arr, redEfield_arr, captured_efielderr, tagval);
+          });
+      }
+  
+      // Tagging electron number density gradient
+      if (level < tagging_parm->max_negrad_lev) {
+        const amrex::Real captured_negraderr = tagging_parm->negraderr;
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_graderror(
+              i, j, k, tag_arr, ne_arr, captured_negraderr, tagval);
+          });
+      }
+
+      // Tagging central plasma channel
+      if (level < tagging_parm->plasma_channel_lev) {
+        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> problo = geom.ProbLoArray();
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            amrex::Real x = problo[0] + (i + 0.5)*dx[0];
+            amrex::Real y = problo[1] + (j + 0.5)*dx[1];
+            amrex::Real z = problo[2] + (k + 0.5)*dx[2];
+            tag_plasma_channel(
+              i, j, k, x, y, z, tag_arr, tagval);
+          });
+      }
+
 #endif
 
       // Problem specific tagging
