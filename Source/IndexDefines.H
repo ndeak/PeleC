@@ -87,8 +87,6 @@
 
 #define NPASSIVE NUM_SPECIES + NUM_ADV + NUM_AUX + 3 - AMREX_SPACEDIM
 
-#define NUM_GROW 4
-
 struct PassMap
 {
   amrex::GpuArray<int, NPASSIVE> upassMap = {{0}};

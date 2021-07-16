@@ -550,7 +550,8 @@ pc_compute_hyp_mol_flux(
       amrex::Real Ttemp = 300.0;      // TODO remove hard code
       double EoN, Te;
       amrex::Real mwt[NUM_SPECIES];
-      EOS::molecular_weight(mwt);
+      auto eos = pele::physics::PhysicsType::eos();
+      eos.molecular_weight(mwt);
       int iv[3] = {i,j,k};
       amrex::Real ionFlux = 0.0;
 

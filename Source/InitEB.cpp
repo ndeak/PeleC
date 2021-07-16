@@ -1059,7 +1059,6 @@ initialize_EB2(
 
       auto gshop = amrex::EB2::makeShop(allsphere_IF);
       amrex::EB2::Build(gshop, geom, max_level, max_level);
-    }
   } else if (geom_type == "quarter-circle") {
 
     amrex::Real r_inner = 1.0;

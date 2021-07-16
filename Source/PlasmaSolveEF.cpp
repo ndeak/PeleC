@@ -225,7 +225,7 @@ PeleC::solveEF ( Real time,
 
    // Calculate efield components
    gphi.clear();
-   gphi.define(this,1,NUM_GROW);
+   gphi.define(this,1,numGrow());
    gradPhiV = gphi.get();
 
    gradPhiV[0]->setVal(0.0);

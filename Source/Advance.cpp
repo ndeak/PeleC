@@ -205,6 +205,16 @@ PeleC::do_mol_advance(
 
   computeTemp(S_new, 0);
 
+  // // floor negative electron number density values
+  // for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+  //    const amrex::Box& tbox = mfi.tilebox();
+  //    const auto Sfab = S_new.array(mfi);
+  //    amrex::ParallelFor(
+  //      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //        if(Sfab(i,j,k,UFS+E_ID) < 0.0) Sfab(i,j,k,UFS+E_ID) = 1.0e-35;
+  //      });
+  // }
+
   // Compute S^{n+1} = MOLRhs(U^{n+1,*})
   if (verbose) {
     amrex::Print() << "... Computing MOL source term at t^{n+1} " << std::endl;
@@ -256,6 +266,16 @@ PeleC::do_mol_advance(
     if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0);
 #endif
 
+    // // floor negative electron number density values after 2nd MOL update
+    // for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+    //    const amrex::Box& tbox = mfi.tilebox();
+    //    const auto Sfab = S_new.array(mfi);
+    //    amrex::ParallelFor(
+    //      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    //        if(Sfab(i,j,k,UFS+E_ID) < 0.0) Sfab(i,j,k,UFS+E_ID) = 1.0e-35;
+    //      });
+    // }
+
     // F_{AD} = (1/dt)(U^{n+1,**} - U^n) - I_R = 0.5*(S^{n}+S^{n+1}(which is a
     // guess!))
     amrex::MultiFab::LinComb(
@@ -271,6 +291,16 @@ PeleC::do_mol_advance(
   }
 #endif
   computeTemp(S_new, 0);
+
+  // // floor negative electron number density values after reactive update
+  // for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+  //    const amrex::Box& tbox = mfi.tilebox();
+  //    const auto Sfab = S_new.array(mfi);
+  //    amrex::ParallelFor(
+  //      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //        if(Sfab(i,j,k,UFS+E_ID) < 0.0) Sfab(i,j,k,UFS+E_ID) = 1.0e-35;
+  //      });
+  // }
 
 #ifdef PELEC_USE_REACTIONS
   if (do_react == 1) {
