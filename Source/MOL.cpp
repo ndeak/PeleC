@@ -222,6 +222,11 @@ pc_compute_hyp_mol_flux(
         for (int n = UFX; n < UFX + NUM_AUX; n++) {
           flux_tmp[n] = (NUM_AUX > 0) ? 0.0 : flux_tmp[n];
         }
+#ifdef PELEC_USE_PLASMA
+        for (int n = UFX; n < UFX + NUM_AUX; n++) {
+          flux_tmp[n] = 0.0;
+        }
+#endif
         for (int n = UFA; n < UFA + NUM_ADV; n++) {
           flux_tmp[n] = (NUM_ADV > 0) ? 0.0 : flux_tmp[n];
         }
