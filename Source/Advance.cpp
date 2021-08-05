@@ -215,6 +215,22 @@ PeleC::do_mol_advance(
   //      });
   // }
 
+  // Find minimum nonzero volume fraction, and provide location
+  // double min_vf = 1.0;
+  // int min_i, min_j, min_k;
+  // for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+  //    const amrex::Box& tbox = mfi.tilebox();
+  //    const auto vf = vfrac.array(mfi);
+  //    amrex::ParallelFor(
+  //      tbox, [vf, &min_vf, &min_i, &min_j, &min_k] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //        if(vf(i,j,k) < min_vf && vf(i,j,k) > 0.0) {
+  //          min_vf = vf(i,j,k);
+  //          min_i = i; min_j = j; min_k = k;
+  //        }
+  //      });
+  // }
+  // printf("For level %i, minimum volume fraction = %.6e, located at (%i, %i, %i)\n", level, min_vf, min_i, min_j, min_k);  
+
   // Compute S^{n+1} = MOLRhs(U^{n+1,*})
   if (verbose) {
     amrex::Print() << "... Computing MOL source term at t^{n+1} " << std::endl;

@@ -509,7 +509,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, area_arr, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, ef_use_NLsolve, secondary_em_coef, electron_emit_const
+            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, ef_use_NLsolve, secondary_em_coef, electron_emit_const, ef_do_drift
 #endif
 #ifdef PELEC_USE_EB
             ,
@@ -763,6 +763,9 @@ PeleC::getMOLSrcTerm(
         auto ccc = fact.getCentroid().const_array(mfi);
 
         amrex::FArrayBox tmpfab(Dfab.box(), S.nComp());
+        if (redistribution_type == "FluxRedist") {
+          tmpfab.setVal<amrex::RunOn::Device>(1.0);
+        }
         amrex::Elixir tmpeli = tmpfab.elixir();
         amrex::Array4<amrex::Real> scratch = tmpfab.array();
 
@@ -780,6 +783,7 @@ PeleC::getMOLSrcTerm(
             AMREX_D_DECL(fcx, fcy, fcz), ccc, d_bcs.dataPtr(), geom, dt,
             redistribution_type, UFS, NUM_SPECIES, UFX+2, NUM_E);
         }
+
         // Make sure div is zero in covered cells
         amrex::ParallelFor(
           vbox, S.nComp(),

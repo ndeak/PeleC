@@ -35,6 +35,7 @@
   static int         ef_PoissonMaxIter;
   static int         ef_noSpaceCharge;        // Solve the Poisson problem without accounting for space charge effects
   static int         ef_constVoltage;         // Apply a constant voltage (no time variance)
+  static int         ef_do_drift;             // Include drift processes for charged species
 
   // Non-linear solve options
   static int         ef_use_PETSC_direct;      // Flag to trigger using PETSC direct solve

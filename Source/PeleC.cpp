@@ -85,6 +85,7 @@ int PeleC::ef_PoissonMaxOrder = 2;
 int PeleC::ef_PoissonMaxIter = 100;
 int PeleC::ef_noSpaceCharge = 0;
 int PeleC::ef_constVoltage = 0;
+int PeleC::ef_do_drift = 1;
 int PeleC::ion_bc_type = 0;
 int PeleC::zero_bc_flux = 0;
 int PeleC::ef_PC_fixedIter = -1;
@@ -375,6 +376,7 @@ PeleC::read_params()
 #endif
 
 #ifdef PELEC_USE_PLASMA
+  // TODO PUT IN plasma.cpp
   pp.query("ion_bc_type", ion_bc_type);
   pp.query("zero_bc_flux", zero_bc_flux);
   pp.query("secondary_em_coef", secondary_em_coef);
@@ -749,10 +751,10 @@ PeleC::initData()
   const ProbParmDevice* lprobparm = d_prob_parm_device;
   getCurrVoltage(0.0);
   solveEF( cur_time, 0.0, *lprobparm );
-  if ( ef_debug) {
-     amrex::MultiFab phiV_a(S_new,amrex::make_alias,PhiV,1);
-     amrex::VisMF::Write(phiV_a,"InitialPhiV");
-  }
+  // if ( ef_debug) {
+  //    amrex::MultiFab phiV_a(S_new,amrex::make_alias,PhiV,1);
+  //    amrex::VisMF::Write(phiV_a,"InitialPhiV");
+  // }
 #endif
 
   // computeTemp(S_new,0);
@@ -896,6 +898,30 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     prefetchToDevice(stateMF); // This should accelerate the below operations.
     amrex::Real AMREX_D_DECL(dx1 = dx[0], dx2 = dx[1], dx3 = dx[2]);
 
+#ifdef PELEC_USE_PLASMA
+  // Smoothly transition to smaller time step around plasma pulses
+  amrex::Real cur_time = state[State_Type].curTime();
+  pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0))); 
+  dfact = 5.0;
+  sfact = 1.0;
+  amrex::Real pulse_dist=1.0e10;
+  amrex::Real pulse_timing_tmp = 0.0;
+  amrex::Real pfact = 0.0;
+  for(int i=0; i<pulse_num; i++){
+    pulse_timing_tmp = pulse_timing + pfact*(1.0/pulse_freq);
+    pulse_dist = amrex::min<amrex::Real>(amrex::Math::abs(cur_time - pulse_timing_tmp), pulse_dist);
+    pfact += 1.0;
+  }
+  estdt = pulse_dt + (estdt - pulse_dt) * 0.5 * (1.0 + tanh((pulse_dist - dfact*pulse_sigma) / (sfact*pulse_sigma)));
+
+  if (verbose) {
+    amrex::Print() << "PeleC::estTimeStep (" << limiter << "-limited) at level "
+                   << level << ":  estdt = " << estdt << '\n';
+  }
+
+  return estdt;
+#endif
+
     if (do_hydro) {
       amrex::Real dt = amrex::ReduceMin(
         stateMF,
@@ -924,7 +950,6 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 #ifdef PELEC_USE_PLASMA
             drift_arr,
-            ef_use_NLsolve,
 #endif
             AMREX_D_DECL(dx1, dx2, dx3));
         });
@@ -1040,22 +1065,6 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
   }
 #endif
 
-#ifdef PELEC_USE_PLASMA
-  // Smoothly transition to smaller time step around plasma pulses
-  amrex::Real cur_time = state[State_Type].curTime();
-  pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0))); 
-  dfact = 5.0;
-  sfact = 1.0;
-  amrex::Real pulse_dist=1.0e10;
-  amrex::Real pulse_timing_tmp = 0.0;
-  amrex::Real fact = 0.0;
-  for(int i=0; i<pulse_num; i++){
-    pulse_timing_tmp = pulse_timing + fact*(1.0/pulse_freq);
-    pulse_dist = amrex::min<amrex::Real>(amrex::Math::abs(cur_time - pulse_timing_tmp), pulse_dist);
-    fact += 1.0;
-  }
-  estdt = pulse_dt + (estdt - pulse_dt) * 0.5 * (1.0 + tanh((pulse_dist - dfact*pulse_sigma) / (sfact*pulse_sigma)));
-#endif
 
   if (verbose) {
     amrex::Print() << "PeleC::estTimeStep (" << limiter << "-limited) at level "

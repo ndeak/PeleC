@@ -53,7 +53,6 @@ pc_estdt_hydro(
 #endif
 #ifdef PELEC_USE_PLASMA
   const amrex::Array4<const amrex::Real>& drift,
-  int useNL,
 #endif
   AMREX_D_DECL(
     const amrex::Real& dx,
@@ -79,7 +78,6 @@ pc_estdt_hydro(
 #ifdef PELEC_USE_PLASMA
       amrex::Real ux1 = 0.0, uy1 = 0.0, uz1 = 0.0;
       for(int n=0; n<NUM_SPECIES; n++){
-        if ( useNL && (n == E_ID) ) continue;
         ux1 = amrex::max(ux1, amrex::Math::abs(u(i, j, k, UMX) * rhoInv + drift(i, j, k, NUM_E*n + 0)));
         uy1 = amrex::max(uy1, amrex::Math::abs(u(i, j, k, UMY) * rhoInv + drift(i, j, k, NUM_E*n + 1)));
         uz1 = amrex::max(uz1, amrex::Math::abs(u(i, j, k, UMZ) * rhoInv + drift(i, j, k, NUM_E*n + 2)));

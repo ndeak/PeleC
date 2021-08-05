@@ -45,6 +45,7 @@ PeleC::plasma_init()
     pp.query("Poisson_verbose",ef_PoissonVerbose);
     pp.query("noSpaceCharge",ef_noSpaceCharge);
     pp.query("constVoltage",ef_constVoltage);
+    pp.query("do_drift",ef_do_drift);
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);

@@ -34,7 +34,8 @@ pc_compute_hyp_mol_flux(
   const int zero_bc_flux,
   const int use_NL,
   const amrex::Real secondary_em_coef,
-  const amrex::Real electron_emit_const
+  const amrex::Real electron_emit_const,
+  const int ef_do_drift
 #endif
 #ifdef PELEC_USE_EB
   ,
@@ -226,14 +227,6 @@ pc_compute_hyp_mol_flux(
         }
 
 #ifdef PELEC_USE_PLASMA
-        // Recalculate fluxes taking into account drift velocity
-        // Riemann solver temporary values: tmp0 = idir velocity
-        //                                  tmp1 = other velocity comp 1
-        //                                  tmp2 = other velocity comp 2
-        //                                  tmp3 = godunov state pressure
-        //                                  tmp4 = 
-
-        // Calculate new species and u momentum fluxes
         amrex::Real ndens = 0.0;
         amrex::Real kB = 1.380649e-16; // cm^2.g.s^-2/K
         amrex::Real NA = 6.0221409e23; // 1/mol
@@ -242,56 +235,66 @@ pc_compute_hyp_mol_flux(
         amrex::Real mwt[NUM_SPECIES];
         auto eos = pele::physics::PhysicsType::eos();
         eos.molecular_weight(mwt);
-        amrex::Real mfgd[NUM_SPECIES];
-        amrex::Real uflux_tmp = 0.0;
-        flux_tmp[f_idx[0]] = 0.0;
-        for(int n = 0; n < NUM_SPECIES; n++){
-          // Calculate species density flux using left or right state (based on effective velocity)
-          flux_tmp[UFS + n] = (ustar + drift_tmp[n] > 0.0) ? tmp5 * (tmp0 + drift_tmp[n]) * qtempl[R_Y + n]
-                                                           : tmp5 * (tmp0 + drift_tmp[n]) * qtempr[R_Y + n];
+        if(ef_do_drift == 1){
+          // Recalculate fluxes taking into account drift velocity
+          // Riemann solver temporary values: tmp0 = idir velocity
+          //                                  tmp1 = other velocity comp 1
+          //                                  tmp2 = other velocity comp 2
+          //                                  tmp3 = godunov state pressure
+          //                                  tmp4 = 
 
-          // Calculate u momentum density flux using left or right state (based on effective velocity)
-          uflux_tmp = (ustar + drift_tmp[n] > 0.0) ? tmp5 * pow((tmp0 + drift_tmp[n]), 2) * qtempl[R_Y + n]
-                                                   : tmp5 * pow((tmp0 + drift_tmp[n]), 2) * qtempr[R_Y + n];
+          // Calculate new species and u momentum fluxes
+          amrex::Real mfgd[NUM_SPECIES];
+          amrex::Real uflux_tmp = 0.0;
+          flux_tmp[f_idx[0]] = 0.0;
+          for(int n = 0; n < NUM_SPECIES; n++){
+            // Calculate species density flux using left or right state (based on effective velocity)
+            flux_tmp[UFS + n] = (ustar + drift_tmp[n] > 0.0) ? tmp5 * (tmp0 + drift_tmp[n]) * qtempl[R_Y + n]
+                                                             : tmp5 * (tmp0 + drift_tmp[n]) * qtempr[R_Y + n];
 
-          // Correct flux value to account for a zero effective velocity
-          flux_tmp[UFS + n] =
-            (ustar + drift_tmp[n] == 0.0)
-              ? tmp5 * (tmp0 + drift_tmp[n]) * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
-              : flux_tmp[UFS + n];
+            // Calculate u momentum density flux using left or right state (based on effective velocity)
+            uflux_tmp = (ustar + drift_tmp[n] > 0.0) ? tmp5 * pow((tmp0 + drift_tmp[n]), 2) * qtempl[R_Y + n]
+                                                     : tmp5 * pow((tmp0 + drift_tmp[n]), 2) * qtempr[R_Y + n];
 
-          flux_tmp[f_idx[0]] +=
-            (ustar + drift_tmp[n] == 0.0)
-              ? tmp5 * pow((tmp0 + drift_tmp[n]), 2) * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
-              : uflux_tmp;
+            // Correct flux value to account for a zero effective velocity
+            flux_tmp[UFS + n] =
+              (ustar + drift_tmp[n] == 0.0)
+                ? tmp5 * (tmp0 + drift_tmp[n]) * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
+                : flux_tmp[UFS + n];
+
+            flux_tmp[f_idx[0]] +=
+              (ustar + drift_tmp[n] == 0.0)
+                ? tmp5 * pow((tmp0 + drift_tmp[n]), 2) * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
+                : uflux_tmp;
 
 
-          // Re-evaluate species mass fractions based on corrections          
-          // mfgd[n] = flux_tmp[UFS + n] / (tmp5 * (tmp0 + drift_tmp[n]));
-        }
+            // Re-evaluate species mass fractions based on corrections          
+            // mfgd[n] = flux_tmp[UFS + n] / (tmp5 * (tmp0 + drift_tmp[n]));
+          }
       
-        // TODO: should the Godunov states (density pressure velocity) be re-evaluated as well? 
+          // TODO: should the Godunov states (density pressure velocity) be re-evaluated as well? 
 
-        // Use species fluxes to correct density flux and density values
-        flux_tmp[URHO] = 0.0;  
-        for(int n = 0; n < NUM_SPECIES; n++) flux_tmp[URHO] += flux_tmp[UFS + n];
-        // rgd = flux_tmp[URHO] / tmp0;
+          // Use species fluxes to correct density flux and density values
+          flux_tmp[URHO] = 0.0;  
+          for(int n = 0; n < NUM_SPECIES; n++) flux_tmp[URHO] += flux_tmp[UFS + n];
+          // rgd = flux_tmp[URHO] / tmp0;
 
-        // Use updated density flux to calculate new momentum fluxes
-        // TODO: do the velocity components that are not orthogonal to the cell 
-        // face also need to be updated with appropriate drift components?
-        // flux_tmp[f_idx[0]] +=  flux_tmp[URHO] * tmp0 + tmp3;
-        flux_tmp[f_idx[0]] +=  tmp3;
-        flux_tmp[f_idx[1]] = flux_tmp[URHO] * tmp1;
-        flux_tmp[f_idx[2]] = flux_tmp[URHO] * tmp2;
+          // Use updated density flux to calculate new momentum fluxes
+          // TODO: do the velocity components that are not orthogonal to the cell 
+          // face also need to be updated with appropriate drift components?
+          // flux_tmp[f_idx[0]] +=  flux_tmp[URHO] * tmp0 + tmp3;
+          flux_tmp[f_idx[0]] +=  tmp3;
+          flux_tmp[f_idx[1]] = flux_tmp[URHO] * tmp1;
+          flux_tmp[f_idx[2]] = flux_tmp[URHO] * tmp2;
 
-        // Re-evaluate other quantities to obtain new energy fluxes
-        // amrex::Real egd;
-        // EOS::RYP2E(tmp5, mfgd, tmp3, egd);      
-        // amrex::Real regd = tmp5 * egd;
-        // amrex::Real rhoetot = regd + 0.5 * tmp5 * (tmp0 * tmp0 + tmp1 * tmp1 + tmp2 * tmp2);
-        // flux_tmp[UEDEN] = tmp0 * (rhoetot + tmp3); 
-        // flux_tmp[UEINT] = tmp0 * regd;
+          // Re-evaluate other quantities to obtain new energy fluxes
+          // amrex::Real egd;
+          // EOS::RYP2E(tmp5, mfgd, tmp3, egd);      
+          // amrex::Real regd = tmp5 * egd;
+          // amrex::Real rhoetot = regd + 0.5 * tmp5 * (tmp0 * tmp0 + tmp1 * tmp1 + tmp2 * tmp2);
+          // flux_tmp[UEDEN] = tmp0 * (rhoetot + tmp3); 
+          // flux_tmp[UEINT] = tmp0 * regd;
+        }
 #endif
         for (int ivar = 0; ivar < NVAR; ivar++) {
           flx[dir](i, j, k, ivar) += flux_tmp[ivar] * area[dir](i, j, k);
