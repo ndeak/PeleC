@@ -102,7 +102,8 @@ void PeleC::plasma_define_data() {
       bg_charge.define(grids,dmap,1,1);
       ef_state_old.define(grids,dmap,2,2);
 
-      if (elec_Ueff != 0) delete [] elec_Ueff;
+      // Valgrind complained about unitialized values here
+      // if (elec_Ueff != 0) delete [] elec_Ueff;
 
       elec_Ueff = new MultiFab[AMREX_SPACEDIM];
       for (int d = 0; d < AMREX_SPACEDIM; ++d) {
@@ -251,6 +252,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   if ( ef_use_NLsolve ) {
      // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
      // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
+     // TODO: does cen2edg_cpp need to be modified to take into account EBs?
      const Box& domain = geom.Domain();
      bool use_harmonic_avg = def_harm_avg_cen2edge ? true : false;
      const BCRec& bcrec = get_desc_lst()[State_Type].getBC(nE);

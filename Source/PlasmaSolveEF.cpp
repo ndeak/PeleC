@@ -28,7 +28,7 @@ PeleC::solveEF ( Real time,
 
 // Build a PhiV with 1 GC properly filled. FillPatch not working in this case.
    MultiFab Sborder(grids, dmap, 1, 1, amrex::MFInfo(), Factory());
-   amrex::MultiFab::Copy(Sborder   ,Ucurr  ,PhiV,0,1,1);
+   amrex::MultiFab::Copy(Sborder   ,Ucurr  ,PhiV,0,1,0);
    Sborder.FillBoundary(geom.periodicity());
    const BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
    const Vector<BCRec>& bc = {bcphiV};

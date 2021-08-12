@@ -346,20 +346,10 @@ PeleC::variableSetUp()
 
   // Components 0:Numspec-1 are rho.omega_i
   // Component NUM_SPECIES is rho.edot = (rho.eout-rho.ein)
-#ifdef PELEC_USE_REACTIONS
-  int nrhoydot = NUM_SPECIES+1;
-  store_in_checkpoint = true;
-#ifdef PELEC_USE_PLASMA
-  if (ef_use_NLsolve) nrhoydot += 1;
-#endif
-  desc_lst.addDescriptor(
-    Reactions_Type, amrex::IndexType::TheCellType(),
-    amrex::StateDescriptor::Point, 0, NUM_SPECIES + 2, interp,
-    state_data_extrap, store_in_checkpoint);
-#endif
-
   amrex::Vector<amrex::BCRec> bcs(NVAR);
   amrex::Vector<std::string> name(NVAR);
+
+  store_in_checkpoint = true;
 #ifdef PELEC_USE_PLASMA
   int react_num = NUM_SPECIES+2;
   if(ef_use_NLsolve){
@@ -368,9 +358,14 @@ PeleC::variableSetUp()
   amrex::Vector<amrex::BCRec> react_bcs(react_num);
   amrex::Vector<std::string> react_name(react_num);
 #else
+  int react_num = NUM_SPECIES+1;
   amrex::Vector<amrex::BCRec> react_bcs(NUM_SPECIES + 1);
   amrex::Vector<std::string> react_name(NUM_SPECIES + 1);
 #endif
+  desc_lst.addDescriptor(
+    Reactions_Type, amrex::IndexType::TheCellType(),
+    amrex::StateDescriptor::Point, 0, react_num, interp,
+    state_data_extrap, store_in_checkpoint);
 
   amrex::BCRec bc;
   cnt = 0;
