@@ -27,6 +27,7 @@ pc_compute_hyp_mol_flux(
   const amrex::Array4<amrex::Real>& eon,
   std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge,
   std::array<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> ionFlux_arr,
+  const amrex::Array4<amrex::Real>& ionFlux_eb_arr,
   const int* bcr,
   const amrex::Geometry& geom,
   const int do_harmonic,
@@ -387,7 +388,7 @@ pc_compute_hyp_mol_flux(
                   }
                   // Save ion flux for secondary electron emissions and convert to number density
                   if ( use_NL ) {
-                     ionFlux_arr[dir](i,j,k) -= flx[dir](i, j, k, UFS + n) / mwt[n] * NA; 
+                     ionFlux_arr[dir](i,j,k) += flx[dir](i, j, k, UFS + n) / mwt[n] * NA; 
                   } else {
                      ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
                   }
@@ -552,6 +553,10 @@ pc_compute_hyp_mol_flux(
       // TODO figure out efield logic for strong ion BCs
       // TODO check signage for boundary fluxes
 
+      if (use_NL) {
+         ionFlux_eb_arr(i,j,k) = 0.0;
+      }
+
       amrex::Real ndens = 0.0;
       amrex::Real kB = 1.380649e-16; // erg/K
       amrex::Real NA = 6.0221409e23; // 1/mol
@@ -593,7 +598,11 @@ pc_compute_hyp_mol_flux(
                 exit(1);
               }
               // Save ion flux for secondary electron emissions and convert to number density
-              ionFlux += flux_tmp[UFS + n] / mwt[n] * NA;
+              if ( use_NL ) {
+                ionFlux_eb_arr(i,j,k) += flux_tmp[UFS + n] / mwt[n] * NA;
+              } else{
+                ionFlux += flux_tmp[UFS + n] / mwt[n] * NA;
+              }
             }
             flux_tmp[URHO] += flux_tmp[UFS + n];
         }
@@ -609,6 +618,17 @@ pc_compute_hyp_mol_flux(
       for (int n = 0; n < NVAR; n++) {
         ebflux[n * nebflux + L] += flux_tmp[n] * ebg[L].eb_area * full_area;
       }
+      
+      // FLUX FIX TESTING
+      // amrex::Real vol = 1;
+      // for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      //   vol *= geom.CellSize()[dir];
+      // }
+      // amrex::Real volinv = 1.0 / (amrex::max<amrex::Real>(vfrac(i,j,k), 1.0e-12) * vol);
+      // if( amrex::Math::abs(ebflux[(UFS+E_ID) * nebflux + L] * volinv * dt) > q(i,j,k,QRHO)*q(i,j,k,QFS+E_ID) ){
+      //   ebflux[(UFS+E_ID) * nebflux + L] = 0.5 * q(i,j,k,QRHO)*q(i,j,k,QFS+E_ID) / (volinv * dt) ;
+      // }
+
     }
   });
 #endif

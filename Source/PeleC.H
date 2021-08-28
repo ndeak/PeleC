@@ -13,6 +13,7 @@
 #include <AMReX_EBFluxRegister.H>
 #include <AMReX_EBCellFlag.H>
 #include <AMReX_MultiCutFab.H>
+#include <AMReX_MLEBABecLap.H>
 #else
 #include <AMReX_YAFluxRegister.H>
 #endif
@@ -21,6 +22,9 @@
 #include <AMReX_MLMG.H>
 #include <AMReX_MLABecLaplacian.H>
 #include <AMReX_MLABecCecLaplacian.H>
+#ifdef PELEC_USE_EB
+#include <AMReX_MLEBABecCecLap.H>
+#endif
 #include <FluxBoxes.H>
 #endif
 
@@ -782,7 +786,8 @@ PeleC::numGrow()
   int ng = 4;
   if (
     (eb_in_domain) && ((redistribution_type == "StateRedist") ||
-                       (redistribution_type == "MergeRedist"))) {
+                       (redistribution_type == "MergeRedist") || 
+                       (redistribution_type == "NewStateRedist"))) {
     ng += 1;
   }
   return ng;

@@ -2,6 +2,7 @@
 #ifndef _PELEC_PLASMA_H_
 #define _PELEC_PLASMA_H_
 
+
   //-------------------------------------
   // Data
 
@@ -94,11 +95,19 @@
   amrex::MultiFab            nl_state;
   amrex::MultiFab            nl_resid;
   amrex::MultiFab*           elec_Ueff;
+  amrex::MultiFab            gasN_cc;
+  amrex::MultiFab            ionFlx_eb;
 
   // Preconditioner data
+#ifdef PELEC_USE_EB
+  amrex::MLEBABecCecLap   *pnp_pc_diff = nullptr;
+  amrex::MLEBABecLap      *pnp_pc_drift = nullptr;
+  amrex::MLEBABecLap      *pnp_pc_Stilda = nullptr;
+#else
   amrex::MLABecCecLaplacian   *pnp_pc_diff = nullptr;
   amrex::MLABecLaplacian      *pnp_pc_drift = nullptr;
   amrex::MLABecLaplacian      *pnp_pc_Stilda = nullptr;
+#endif
   amrex::MLMG                 *mg_diff = nullptr;
   amrex::MLMG                 *mg_drift = nullptr;
   amrex::MLMG                 *mg_Stilda = nullptr;
@@ -171,7 +180,8 @@
 // Laplacian of phiV
   void compPhiVLap(amrex::MultiFab    &a_phi,
                    amrex::MultiFab    &phiLap,
-                   amrex::MultiFab**  a_gphiV);
+                   amrex::MultiFab**  a_gphiV,
+                   ProbParmDevice const& prob_parm);
 
 // Electron diffusion term
   void compElecDiffusion(const amrex::MultiFab    &a_nE,

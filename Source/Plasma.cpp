@@ -95,12 +95,14 @@ void PeleC::plasma_define_data() {
    coeffs_old.define(grids,dmap,NUM_SPECIES+3, numGrow()); coeffs_old.setVal(0.0);
    Q_ext.define(grids,dmap,NQ,numGrow()); Q_ext.setVal(0.0);
    Qaux_ext.define(grids,dmap,NQAUX,numGrow()); Qaux_ext.setVal(0.0);
+   ionFlx_eb.define(grids,dmap,1,numGrow()); ionFlx_eb.setVal(0.0);      // EB ion fluxes - a bit inefficient to store as full MF
 
    if (ef_use_NLsolve) {
       nl_state.define(grids,dmap,2,2);
       nl_resid.define(grids,dmap,2,2);
       bg_charge.define(grids,dmap,1,1);
       ef_state_old.define(grids,dmap,2,2);
+      gasN_cc.define(grids,dmap,1,1);
 
       // Valgrind complained about unitialized values here
       // if (elec_Ueff != 0) delete [] elec_Ueff;
@@ -118,7 +120,8 @@ void PeleC::plasma_define_data() {
       Ke_ec = mob_e.get();
       gasN_fb.define(this);
       gasN_ec = gasN_fb.get();
-      ionFlx_fb.define(this,1,3);
+      // ionFlx_fb.define(this,1,3);
+      ionFlx_fb.define(this,1,4);
       ionFlx = ionFlx_fb.get();
       for (int d = 0; d < AMREX_SPACEDIM; ++d) {
          ionFlx[d]->setVal(0.0);

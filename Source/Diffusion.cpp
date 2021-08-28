@@ -157,45 +157,6 @@ PeleC::getMOLSrcTerm(
   // Get the cc species transport properties
   ef_calc_transport(S, time); 
 
-  // check values
-  // for (amrex::MFIter mfi(S, amrex::TilingIfNotGPU()); mfi.isValid();
-  //        ++mfi) {
-  //   const amrex::Box& tbox = mfi.tilebox();
-  //   auto const& qar_yin = Q_ext.array(mfi,QFS);
-  //   auto const& qar_Tin = Q_ext.array(mfi,QTEMP);
-  //   auto const& qar_rhoin = Q_ext.array(mfi,QRHO);
-  //   auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
-  //   auto const& coe_mu = coeffs_old.array(mfi,dComp_mu);
-  //   auto const& coe_xi = coeffs_old.array(mfi,dComp_xi);
-  //   auto const& coe_lambda = coeffs_old.array(mfi,dComp_lambda);
-  //   auto const& Ks   = KSpec_old.array(mfi);
-
-  //   amrex::ParallelFor(tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //     printf("D(%i,%i,%i,E) = %.6e\n", i,j,k, coe_rhoD(i,j,k,0) / qar_rhoin(i,j,k));
-  //     printf("D(%i,%i,%i,O2) = %.6e\n", i,j,k, coe_rhoD(i,j,k,1) / qar_rhoin(i,j,k));
-  //     printf("D(%i,%i,%i,N2) = %.6e\n", i,j,k, coe_rhoD(i,j,k,2) / qar_rhoin(i,j,k));
-  //     printf("D(%i,%i,%i,O) = %.6e\n", i,j,k, coe_rhoD(i,j,k,3) / qar_rhoin(i,j,k));
-  //     printf("D(%i,%i,%i,O2+) = %.6e\n", i,j,k, coe_rhoD(i,j,k,4) / qar_rhoin(i,j,k));
-  //     printf("D(%i,%i,%i,N2+) = %.6e\n", i,j,k, coe_rhoD(i,j,k,5) / qar_rhoin(i,j,k));
-  //     printf("D(%i,%i,%i,O4+) = %.6e\n", i,j,k, coe_rhoD(i,j,k,6) / qar_rhoin(i,j,k));
-  //     printf("D(%i,%i,%i,N4+) = %.6e\n", i,j,k, coe_rhoD(i,j,k,7) / qar_rhoin(i,j,k));
-  //     printf("D(%i,%i,%i,O2+N2) = %.6e\n", i,j,k, coe_rhoD(i,j,k,8) / qar_rhoin(i,j,k));
-  //     printf("D(%i,%i,%i,O2-) = %.6e\n", i,j,k, coe_rhoD(i,j,k,9) / qar_rhoin(i,j,k));
-  //   });
-  //   amrex::ParallelFor(tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //     printf("Ks(%i,%i,%i,E) = %.6e\n", i,j,k, Ks(i,j,k,0));
-  //     printf("Ks(%i,%i,%i,O2) = %.6e\n", i,j,k, Ks(i,j,k,1));
-  //     printf("Ks(%i,%i,%i,N2) = %.6e\n", i,j,k, Ks(i,j,k,2));
-  //     printf("Ks(%i,%i,%i,O) = %.6e\n", i,j,k, Ks(i,j,k,3));
-  //     printf("Ks(%i,%i,%i,O2+) = %.6e\n", i,j,k, Ks(i,j,k,4));
-  //     printf("Ks(%i,%i,%i,N2+) = %.6e\n", i,j,k, Ks(i,j,k,5));
-  //     printf("Ks(%i,%i,%i,O4+) = %.6e\n", i,j,k, Ks(i,j,k,6));
-  //     printf("Ks(%i,%i,%i,N4+) = %.6e\n", i,j,k, Ks(i,j,k,7));
-  //     printf("Ks(%i,%i,%i,O2+N2) = %.6e\n", i,j,k, Ks(i,j,k,8));
-  //     printf("Ks(%i,%i,%i,O2-) = %.6e\n", i,j,k, Ks(i,j,k,9));
-  //   });
-  // }
-  
   // Obtain potential BCRec to use later
   const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
   const int* PhiVbc = bcphiV.data();
@@ -357,6 +318,7 @@ PeleC::getMOLSrcTerm(
       auto const& E_cc = Efield.array(mfi);
       auto const& drift_cc = spec_drift.array(mfi);
       auto const& eon = redEfield.array(mfi);
+      auto const& ionFlux_eb_arr = ionFlx_eb.array(mfi);
       std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge_arr = {AMREX_D_DECL(Efield_edge[0]->array(mfi), Efield_edge[1]->array(mfi), Efield_edge[2]->array(mfi))} ;
       std::array<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> ionFlux_arr;
       if (ef_use_NLsolve) {
@@ -509,7 +471,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, area_arr, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, ef_use_NLsolve, secondary_em_coef, electron_emit_const, ef_do_drift
+            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, ionFlux_eb_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, ef_use_NLsolve, secondary_em_coef, electron_emit_const, ef_do_drift
 #endif
 #ifdef PELEC_USE_EB
             ,
@@ -773,6 +735,7 @@ PeleC::getMOLSrcTerm(
         amrex::Elixir Dterm_tmpeli = Dterm_tmpfab.elixir();
         amrex::Array4<amrex::Real> Dterm_tmp = Dterm_tmpfab.array();
         copy_array4(Dfab.box(), NVAR, Dterm, Dterm_tmp);
+        amrex::Real voltar = 0.5;
 
         auto flag_arr = flags.const_array(mfi);
         {
@@ -781,7 +744,7 @@ PeleC::getMOLSrcTerm(
             vbox, S.nComp(), Dterm, Dterm_tmp, S.const_array(mfi), scratch,
             flag_arr, AMREX_D_DECL(apx, apy, apz), vfrac.const_array(mfi),
             AMREX_D_DECL(fcx, fcy, fcz), ccc, d_bcs.dataPtr(), geom, dt,
-            redistribution_type, UFS, NUM_SPECIES, UFX+2, NUM_E);
+            redistribution_type, UFS, NUM_SPECIES, UFX+2, NUM_E, voltar);
         }
 
         // Make sure div is zero in covered cells
