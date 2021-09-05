@@ -23,7 +23,6 @@ using namespace MASA;
 #include "PeleC.H"
 #include "Derive.H"
 #include "prob.H"
-#include "PelePhysics.H"
 #include "Timestep.H"
 #include "Utilities.H"
 #include "Tagging.H"
@@ -93,9 +92,10 @@ int PeleC::ef_PC_approx = 1;
 bool PeleC::def_harm_avg_cen2edge  = false;
 amrex::Real PeleC::ef_PoissonTol = 1.0e-8;
 amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
-amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
-amrex::Real PeleC::ef_GMRES_reltol = 1.0e-8;
-amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-5;
+// amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
+amrex::Real PeleC::ef_newtonTol = 1.0e-11;
+amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
+amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
 amrex::Real PeleC::secondary_em_coef = 0.0;
 amrex::Real PeleC::electron_emit_const = 0.0;
 amrex::Real PeleC::pulse_freq = 0.0;
@@ -147,6 +147,10 @@ bool PeleC::do_react_load_balance = false;
 bool PeleC::do_mol_load_balance = false;
 
 amrex::Vector<std::string> PeleC::spec_names;
+
+pele::physics::transport::TransportParams<
+  pele::physics::PhysicsType::transport_type>
+  PeleC::trans_parms;
 
 amrex::Vector<int> PeleC::src_list;
 
@@ -957,8 +961,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     }
 
     if (diffuse_vel) {
-      pele::physics::transport::TransParm const* ltransparm =
-        pele::physics::transport::trans_parm_g;
+      auto const* ltransparm = trans_parms.device_trans_parm();
       amrex::Real dt = amrex::ReduceMin(
         stateMF,
 #ifdef PELEC_USE_EB
@@ -983,8 +986,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     }
 
     if (diffuse_temp) {
-      pele::physics::transport::TransParm const* ltransparm =
-        pele::physics::transport::trans_parm_g;
+      auto const* ltransparm = trans_parms.device_trans_parm();
       amrex::Real dt = amrex::ReduceMin(
         stateMF,
 #ifdef PELEC_USE_EB
@@ -1009,8 +1011,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     }
 
     if (diffuse_enth) {
-      pele::physics::transport::TransParm const* ltransparm =
-        pele::physics::transport::trans_parm_g;
+      auto const* ltransparm = trans_parms.device_trans_parm();
       amrex::Real dt = amrex::ReduceMin(
         stateMF,
 #ifdef PELEC_USE_EB
@@ -1933,6 +1934,7 @@ PeleC::errorEst(
 #endif
 
       // Problem specific tagging
+      const ProbParmDevice* lprobparm = d_prob_parm_device;
       const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx =
         geom.CellSizeArray();
       const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
@@ -1941,7 +1943,8 @@ PeleC::errorEst(
       amrex::ParallelFor(
         tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
           set_problem_tags<ProblemTags>(
-            i, j, k, tag_arr, Sfab, tagval, dx, prob_lo, time, captured_level);
+            i, j, k, tag_arr, Sfab, tagval, dx, prob_lo, time, captured_level,
+            *lprobparm);
         });
 
       // Now update the tags in the TagBox.
@@ -2064,9 +2067,10 @@ PeleC::init_les()
       << "WARNING: LES is not supported for multi-component systems"
       << std::endl;
   }
-#ifdef PELEC_USE_SRK
-  amrex::Abort("LES is not supported for non-ideal equations of state");
-#endif
+  if (std::is_same<
+        pele::physics::PhysicsType::eos_type, pele::physics::eos::SRK>::value) {
+    amrex::Abort("LES is not supported for non-ideal equations of state");
+  }
 }
 
 void
@@ -2163,21 +2167,26 @@ PeleC::reset_internal_energy(amrex::MultiFab& S_new, int ng)
 #ifdef _OPENMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
-  const auto captured_allow_small_energy = allow_small_energy;
-  const auto captured_allow_negative_energy = allow_negative_energy;
-  const auto captured_dual_energy_update_E_from_e = dual_energy_update_E_from_e;
-  const auto captured_verbose = verbose;
-  const auto captured_dual_energy_eta2 = dual_energy_eta2;
-  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid();
-       ++mfi) {
-    const amrex::Box& bx = mfi.growntilebox(ng);
-    const auto& sarr = S_new.array(mfi);
-    amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      pc_rst_int_e(
-        i, j, k, sarr, captured_allow_small_energy,
-        captured_allow_negative_energy, captured_dual_energy_update_E_from_e,
-        captured_dual_energy_eta2, captured_verbose);
-    });
+  {
+    const auto captured_allow_small_energy = allow_small_energy;
+    const auto captured_allow_negative_energy = allow_negative_energy;
+    const auto captured_dual_energy_update_E_from_e =
+      dual_energy_update_E_from_e;
+    const auto captured_verbose = verbose;
+    const auto captured_dual_energy_eta2 = dual_energy_eta2;
+    for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid();
+         ++mfi) {
+      const amrex::Box& bx = mfi.growntilebox(ng);
+      const auto& sarr = S_new.array(mfi);
+      amrex::ParallelFor(
+        bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          pc_rst_int_e(
+            i, j, k, sarr, captured_allow_small_energy,
+            captured_allow_negative_energy,
+            captured_dual_energy_update_E_from_e, captured_dual_energy_eta2,
+            captured_verbose);
+        });
+    }
   }
 
 #ifndef AMREX_USE_GPU
@@ -2356,17 +2365,11 @@ PeleC::InitialRedistribution()
   BL_PROFILE("PeleC::InitialRedistribution()");
 
   // Next we must redistribute the initial solution if we are going to use
-  // MergeRedist or StateRedist redistribution schemes
+  // StateRedist redistribution schemes
   if (
     (eb_in_domain) && ((redistribution_type != "StateRedist") &&
-                       (redistribution_type != "MergeRedist") &&
                        (redistribution_type != "NewStateRedist"))) {
     return;
-  }
-
-  if (redistribution_type == "MergeRedist") {
-    amrex::Abort("MergeRedist is unsupported. Check with AMReX-Hydro if that "
-                 "has been fixed");
   }
 
   if (verbose) {

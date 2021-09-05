@@ -456,6 +456,53 @@ void PeleC::setBCPhiV(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
    }
 }
 
+// Setup BC conditions for linear Poisson solve on PhiV. Directly copied from the diffusion one ...
+void PeleC::setBCPI(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
+                      std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_hi) {
+
+   const BCRec& bc = get_desc_lst()[State_Type].getBC(PhiV);
+
+   for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
+   {
+      if (Geom().isPeriodic(idim))
+      {    
+         linOp_bc_lo[idim] = linOp_bc_hi[idim] = LinOpBCType::Periodic;
+      }    
+      else 
+      {
+         int pbc = bc.lo(idim);  
+         if (pbc == EXT_DIR)
+         {    
+            linOp_bc_lo[idim] = LinOpBCType::Dirichlet;
+         } 
+         else if (pbc == FOEXTRAP    ||
+                  pbc == REFLECT_EVEN )
+         {   
+            linOp_bc_lo[idim] = LinOpBCType::Neumann;
+         }   
+         else
+         {   
+            linOp_bc_lo[idim] = LinOpBCType::bogus;
+         }   
+         
+         pbc = bc.hi(idim);  
+         if (pbc == EXT_DIR)
+         {    
+            linOp_bc_hi[idim] = LinOpBCType::Dirichlet;
+         } 
+         else if (pbc == FOEXTRAP    ||
+                  pbc == REFLECT_EVEN )
+         {   
+            linOp_bc_hi[idim] = LinOpBCType::Neumann;
+         }   
+         else
+         {   
+            linOp_bc_hi[idim] = LinOpBCType::bogus;
+         }   
+      }
+   }
+}
+
 // Get the voltage at a given time
 void PeleC::getCurrVoltage(Real time) {
   amrex::Real pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0)));     // Pulse sigma

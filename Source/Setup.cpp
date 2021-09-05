@@ -185,13 +185,11 @@ PeleC::variableSetUp()
     amrex::The_Arena()->alloc(sizeof(ProbParmDevice)));
   d_pass_map =
     static_cast<PassMap*>(amrex::The_Arena()->alloc(sizeof(PassMap)));
+  trans_parms.allocate();
 
   // Get options, set phys_bc
   eb_in_domain = ebInDomain();
   read_params();
-
-  pele::physics::transport::InitTransport<
-    pele::physics::PhysicsType::eos_type>()();
 
 #ifdef PELEC_USE_REACTIONS
 #if defined(AMREX_USE_GPU) && defined(USE_SUNDIALS_PP)
@@ -199,17 +197,14 @@ PeleC::variableSetUp()
 #endif
 
   if (chem_integrator == 1) {
-    amrex::Print() << "Using built-in RK64 chemistry integrator\n";
-  }
+    amrex::Print() << "Using built-in RK64 chemistry integrator from pelec\n";
+  } else if (chem_integrator == 2) {
 #ifdef USE_SUNDIALS_PP
-  else if (chem_integrator == 2) {
-    amrex::Print()
-      << "Using sundials chemistry integrator with flattened arrays\n";
-  } else if (chem_integrator == 3) {
-    amrex::Print() << "Using sundials chemistry integrator with boxes\n";
-  }
+    amrex::Print() << "Using sundials chemistry integrator from pelephysics\n";
+#else
+    amrex::Print() << "Using rk64 chemistry integrator from pelephysics\n";
 #endif
-  else {
+  } else {
     amrex::Abort("Invalid chem_integrator choice.");
   }
 
@@ -286,10 +281,12 @@ PeleC::variableSetUp()
   // ParallelDescriptor::ReduceRealMax(run_stop,ParallelDescriptor::IOProcessorNumber());
 
   // if (ParallelDescriptor::IOProcessor())
-  //    amrex::Print() << "\nTime in set_method_params: " << run_stop << '\n' ;
+  //    amrex::Print() << "\nTime in set_method_params: " << run_stop << '\n'
+  //    ;
 
   // if (nscbc_adv == 1 && amrex::ParallelDescriptor::IOProcessor()) {
-  //  amrex::Print() << "Using Ghost-Cells Navier-Stokes Characteristic BCs for
+  //  amrex::Print() << "Using Ghost-Cells Navier-Stokes Characteristic BCs
+  //  for
   //  "
   //                    "advection: nscbc_adv = "
   //                 << nscbc_adv << '\n'
@@ -297,7 +294,8 @@ PeleC::variableSetUp()
   //}
 
   // if (nscbc_diff == 1 && amrex::ParallelDescriptor::IOProcessor()) {
-  //  amrex::Print() << "Using Ghost-Cells Navier-Stokes Characteristic BCs for
+  //  amrex::Print() << "Using Ghost-Cells Navier-Stokes Characteristic BCs
+  //  for
   //  "
   //                    "diffusion: nscbc_diff = "
   //                 << nscbc_diff << '\n'
@@ -467,9 +465,9 @@ PeleC::variableSetUp()
     int len = 20;
     amrex::Vector<int> int_aux_names(len);
 
-    // Disabling for the GPU at the moment. Look at the species names to see how
-    // to do this in C++. AUX stuff is usually 0 anyway. This call returns the
-    // actual length of each string in "len"
+    // Disabling for the GPU at the moment. Look at the species names to see
+    // how to do this in C++. AUX stuff is usually 0 anyway. This call returns
+    // the actual length of each string in "len"
     // get_aux_names(int_aux_names.dataPtr(),&i,&len);
 
     char* char_aux_names = new char[len + 1];
@@ -774,9 +772,6 @@ PeleC::variableCleanUp()
 
   desc_lst.clear();
 
-  pele::physics::transport::CloseTransport<
-    pele::physics::PhysicsType::eos_type>()();
-
 #ifdef PELEC_USE_REACTIONS
   if (do_react == 1) {
     close_reactor();
@@ -795,6 +790,7 @@ PeleC::variableCleanUp()
   delete h_pass_map;
   amrex::The_Arena()->free(d_prob_parm_device);
   amrex::The_Arena()->free(d_pass_map);
+  trans_parms.deallocate();
 }
 
 void

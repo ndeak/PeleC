@@ -91,8 +91,6 @@ struct SpeciesEnergyFlux
   }
 };
 
-// FIXME remove once we compile in all the eos
-#ifdef PELEC_USE_SRK
 template <>
 struct SpeciesEnergyFlux<pele::physics::eos::SRK>
 {
@@ -176,7 +174,6 @@ struct SpeciesEnergyFlux<pele::physics::eos::SRK>
     }
   }
 };
-#endif
 
 struct FluxTypes
 {

@@ -351,6 +351,8 @@ PeleC::react_state(
 #endif
           }
 
+          amrex::Gpu::Device::streamSynchronize();
+
           // unpack data
           amrex::ParallelFor(
             bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -428,7 +430,6 @@ PeleC::react_state(
 
                 } else {
 #ifdef PELEC_USE_PLASMA
-                  exit(1);
                   // if non-linear solve : extract the new nE and set rhoY_e to zero
                   if (ef_use_NLsolve) {
                      amrex::Real mwt[NUM_SPECIES] = {0.0};

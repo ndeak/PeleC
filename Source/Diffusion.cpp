@@ -136,7 +136,7 @@ PeleC::getMOLSrcTerm(
     
     {
       // Calculate species diffusivities
-      pele::physics::transport::TransParm const* ltransparm = pele::physics::transport::trans_parm_g;
+      auto const* ltransparm = trans_parms.device_trans_parm();
       auto const& qar_yin = Q_ext.array(mfi,QFS);
       auto const& qar_Tin = Q_ext.array(mfi,QTEMP);
       auto const& qar_rhoin = Q_ext.array(mfi,QRHO);
@@ -296,8 +296,7 @@ PeleC::getMOLSrcTerm(
         auto const& coe_lambda = coeff_cc.array(dComp_lambda);
         BL_PROFILE("PeleC::get_transport_coeffs()");
         // Get Transport coefs on GPU.
-        pele::physics::transport::TransParm const* ltransparm =
-          pele::physics::transport::trans_parm_g;
+        auto const* ltransparm = trans_parms.device_trans_parm();
         amrex::launch(gbox, [=] AMREX_GPU_DEVICE(amrex::Box const& tbx) {
           auto trans = pele::physics::PhysicsType::transport();
           trans.get_transport_coeffs(
@@ -475,8 +474,8 @@ PeleC::getMOLSrcTerm(
 #endif
 #ifdef PELEC_USE_EB
             ,
-            eb_small_vfrac, vfrac.array(mfi), flags.array(mfi),
-            d_sv_eb_bndry_geom, Ncut, d_eb_flux_thdlocal, nFlux
+            flags.array(mfi), d_sv_eb_bndry_geom, Ncut, d_eb_flux_thdlocal,
+            nFlux
 #endif
           );
         }

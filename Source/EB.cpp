@@ -45,8 +45,25 @@ pc_fill_sv_ebg(
   });
 }
 
+// see Johansen and Collela paper
+// Johansen, H., & Colella, P. (1998). A Cartesian grid embedded boundary method
+// for Poisson's equation on irregular domains.
+// Journal of Computational Physics, 147(1), 60-85
+//
+// Johansen and Collela also say
+//"By constructing the gradients in this fashion, we impose one more constraint
+// on the discretization of the domain: the interpolation stencil must not reach
+// into cells with zero volume. For the quadratic gradient stencil, this may
+// imply certain constraints on the discretization of the domain. However, the
+// fact that a zero-volume cell is within two rows of another partial cell would
+// indicate that the local boundary is substantially under-resolved. Such
+// domains are more appropriately treated with adaptive mesh refinement"
+//
+//"which means that there is a chance that this stencil may
+// dip into covered cells":Hari S
+
 void
-pc_fill_bndry_grad_stencil(
+pc_fill_bndry_grad_stencil_quadratic(
   const amrex::Box& bx,
   const amrex::Real dx,
   const int /*Nebg*/,
@@ -184,12 +201,13 @@ pc_fill_bndry_grad_stencil(
         // Shift base down, if required;
         grad_stencil[L].iv_base[dir] = baseiv[dir] + sh[dir];
       }
+
       for (int ii = 0; ii < 3; ii++) {
         for (int jj = 0; jj < 3; jj++) {
 #if AMREX_SPACEDIM > 2
           for (int kk = 0; kk < 3; kk++) {
 #endif
-            grad_stencil[L].val PELEC_D_TERM_REVERSE([kk], [jj], [ii]) =
+            grad_stencil[L].val AMREX_D_TERM([ii], [jj], [kk]) =
               fac * ebg[L].eb_area * tsten AMREX_D_TERM([ii], [jj], [kk]);
 #if AMREX_SPACEDIM > 2
           }
@@ -197,6 +215,183 @@ pc_fill_bndry_grad_stencil(
         }
       }
       grad_stencil[L].bcval_sten = fac * ebg[L].eb_area * bcs;
+    }
+  });
+}
+
+// This least-squares procedure is adapted from what is
+// done in unstructured grid codes
+// see pages 162-164 in chapter
+//"Spatial discretization: unstructured finite volume schemes"
+// Blazek's text book
+//(Computational Fluid Dynamics: Principles and Applications)
+// The QR decomposition procedure is also described in
+// Anderson, W. K., & Bonhaus, D. L. (1994). An implicit upwind algorithm for
+// computing turbulent flows on unstructured grids.
+// Computers & Fluids, 23(1), 1-21.
+//
+
+// Anderson and Bonhaus also go on to say in their paper that
+
+//"Numerical experiments have been conducted which indicate that for
+// reconstructing nonlinear data on highly stretched meshes using equation 18,
+// the unweighted formulation is far superior to either inverse distance
+// weighting or the use of gradients calculated with Green’s theorem. It was
+// found, however, that for computing the actual values of gradients, inverse
+// distance weighting and Greens theorem give very similar results, both of
+// which are more accurate than unweighted least squares. Their failure to
+// accurately reproduce surrounding data via equation 18 is attributable to the
+// flawed assumption of linearly varying data. Therefore, for reconstructing
+// data on boundaries of control volumes, the unweighted least squares procedure
+// is used. When actual gradients are required, as in the production terms for
+// the turbulence models, Green’s theorem"
+
+//"I guess the upshot from Anderson and Bonhaus's statement is that
+// least-squares is robust and more accurate on stretched weird grids but may
+// not be necassarily more accurate than Green-Gauss or even quadratic Johansen
+// on nicer grids": Hari S
+
+void
+pc_fill_bndry_grad_stencil_ls(
+  const amrex::Box& bx,
+  const amrex::Real dx,
+  const int /*Nebg*/,
+  const EBBndryGeom* ebg,
+  const int Nsten,
+  const amrex::Array4<amrex::EBCellFlag const>& flags,
+  EBBndrySten* grad_stencil)
+{
+
+  AMREX_ASSERT(AMREX_SPACEDIM > 1);
+
+  const auto lo = amrex::lbound(bx);
+  const auto hi = amrex::ubound(bx);
+  const amrex::Real area = std::pow(dx, AMREX_SPACEDIM - 1);
+  const amrex::Real fac = area / dx;
+
+  amrex::ParallelFor(Nsten, [=] AMREX_GPU_DEVICE(int L) {
+    if (is_inside(ebg[L].iv, lo, hi)) {
+      const amrex::Real n[AMREX_SPACEDIM] = {AMREX_D_DECL(
+        ebg[L].eb_normal[0], ebg[L].eb_normal[1], ebg[L].eb_normal[2])};
+
+      amrex::Real centcoord[AMREX_SPACEDIM] = {AMREX_D_DECL(
+        ebg[L].eb_centroid[0], ebg[L].eb_centroid[1], ebg[L].eb_centroid[2])};
+
+      const int ivs[AMREX_SPACEDIM] = {
+        AMREX_D_DECL(ebg[L].iv[0], ebg[L].iv[1], ebg[L].iv[2])};
+
+      // From ivs, move to center of stencil, then move to lower-left of that
+      const int baseiv[AMREX_SPACEDIM] = {AMREX_D_DECL(
+        ivs[0] + (int)amrex::Math::copysign(1.0, n[0]) - 1,
+        ivs[1] + (int)amrex::Math::copysign(1.0, n[1]) - 1,
+        ivs[2] + (int)amrex::Math::copysign(1.0, n[2]) - 1)};
+
+      // set iv and iv_base
+      for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
+        grad_stencil[L].iv[dir] = ebg[L].iv[dir];
+        grad_stencil[L].iv_base[dir] = baseiv[dir];
+      }
+
+      // do not include self cell
+      amrex::Real AMREX_D_DECL(
+        delta_x_i[NLSPTS], delta_y_i[NLSPTS], delta_z_i[NLSPTS]);
+      amrex::Real qmat[NEL_TRIMAT], wvec[NLSPTS][AMREX_SPACEDIM];
+      amrex::Real xi[AMREX_SPACEDIM];
+
+      int iter = 0;
+      amrex::IntVect sten_iv;
+
+      for (int ii = 0; ii < 3; ii++) {
+        for (int jj = 0; jj < 3; jj++) {
+#if AMREX_SPACEDIM > 2
+          for (int kk = 0; kk < 3; kk++) {
+#endif
+            AMREX_D_TERM(sten_iv[0] = baseiv[0] + ii;
+                         , sten_iv[1] = baseiv[1] + jj;
+                         , sten_iv[2] = baseiv[2] + kk;)
+
+            if (is_inside(sten_iv, lo, hi)) {
+              if (
+                !(AMREX_D_TERM(
+                  sten_iv[0] == ivs[0], &&sten_iv[1] == ivs[1],
+                  &&sten_iv[2] == ivs[2])) &&
+                !flags(sten_iv).isCovered()) {
+                AMREX_D_TERM(xi[0] = sten_iv[0] - ivs[0];
+                             , xi[1] = sten_iv[1] - ivs[1];
+                             , xi[2] = sten_iv[2] - ivs[2];)
+
+                AMREX_D_TERM(delta_x_i[iter] = (xi[0] - centcoord[0]);
+                             , delta_y_i[iter] = (xi[1] - centcoord[1]);
+                             , delta_z_i[iter] = (xi[2] - centcoord[2]);)
+
+                iter++;
+              }
+            }
+
+#if AMREX_SPACEDIM > 2
+          }
+#endif
+        }
+      }
+
+      if (iter > AMREX_SPACEDIM) {
+
+        get_qmat(AMREX_D_DECL(delta_x_i, delta_y_i, delta_z_i), iter, qmat);
+        get_weightvec(
+          AMREX_D_DECL(delta_x_i, delta_y_i, delta_z_i), iter, qmat, wvec);
+
+        iter = 0;
+        amrex::Real selfweight = 0.0;
+        for (int ii = 0; ii < 3; ii++) {
+          for (int jj = 0; jj < 3; jj++) {
+#if AMREX_SPACEDIM > 2
+            for (int kk = 0; kk < 3; kk++) {
+#endif
+              AMREX_D_TERM(sten_iv[0] = baseiv[0] + ii;
+                           , sten_iv[1] = baseiv[1] + jj;
+                           , sten_iv[2] = baseiv[2] + kk;)
+
+              if (is_inside(sten_iv, lo, hi)) {
+                if (
+                  !(AMREX_D_TERM(
+                    sten_iv[0] == ivs[0], &&sten_iv[1] == ivs[1],
+                    &&sten_iv[2] == ivs[2])) &&
+                  !flags(sten_iv).isCovered()) {
+                  grad_stencil[L].val AMREX_D_TERM([ii], [jj], [kk]) =
+                    fac * ebg[L].eb_area *
+                    (AMREX_D_TERM(
+                      wvec[iter][0] * n[0], +wvec[iter][1] * n[1],
+                      +wvec[iter][2] * n[2]));
+                  selfweight +=
+                    grad_stencil[L].val AMREX_D_TERM([ii], [jj], [kk]);
+                  iter++;
+                } else {
+                  grad_stencil[L].val AMREX_D_TERM([ii], [jj], [kk]) = 0.0;
+                }
+              } else {
+                grad_stencil[L].val AMREX_D_TERM([ii], [jj], [kk]) = 0.0;
+              }
+#if AMREX_SPACEDIM > 2
+            }
+#endif
+          }
+        }
+        grad_stencil[L].bcval_sten = -selfweight;
+      } else {
+        grad_stencil[L].bcval_sten = 0.0;
+        for (int ii = 0; ii < 3; ii++) { // NOLINT
+          for (int jj = 0; jj < 3; jj++) {
+#if AMREX_SPACEDIM > 2
+            for (int kk = 0; kk < 3; kk++) { // NOLINT
+#endif
+              grad_stencil[L].val AMREX_D_TERM([ii], [jj], [kk]) = 0.0;
+
+#if AMREX_SPACEDIM > 2
+            }
+#endif
+          }
+        }
+      }
     }
   });
 }
@@ -237,9 +432,9 @@ pc_fill_flux_interp_stencil(
       const amrex::Real act0 = amrex::Math::abs(ct0);
       const amrex::Real act1 = amrex::Math::abs(ct1);
       sten[L].val[1][1] = fa(iv) * (1.0 - act0) * (1.0 - act1);
-      sten[L].val[1][t0n + 1] = fa(iv) * act0 * (1.0 - act1);
-      sten[L].val[t1n + 1][1] = fa(iv) * (1.0 - act0) * act1;
-      sten[L].val[t1n + 1][t0n + 1] = fa(iv) * act0 * act1;
+      sten[L].val[t0n + 1][1] = fa(iv) * act0 * (1.0 - act1);
+      sten[L].val[1][t1n + 1] = fa(iv) * (1.0 - act0) * act1;
+      sten[L].val[t0n + 1][t1n+1] = fa(iv) * act0 * act1;
 #endif
     }
   });
@@ -274,7 +469,7 @@ pc_apply_face_stencil(
               const amrex::IntVect ivd = amrex::IntVect{
                 AMREX_D_DECL(iv[0], iv[1] - 1 + t0, iv[2] - 1 + t1)};
               d_newval[L] +=
-                sten[L].val PELEC_D_TERM_REVERSE([t1], [t0], ) * vout(ivd, n);
+                sten[L].val AMREX_D_TERM(, [t0], [t1]) * vout(ivd, n);
 #if AMREX_SPACEDIM > 2
             }
 #endif
@@ -287,7 +482,7 @@ pc_apply_face_stencil(
               const amrex::IntVect ivd = amrex::IntVect{
                 AMREX_D_DECL(iv[0] - 1 + t0, iv[1], iv[2] - 1 + t1)};
               d_newval[L] +=
-                sten[L].val PELEC_D_TERM_REVERSE([t1], [t0], ) * vout(ivd, n);
+                sten[L].val AMREX_D_TERM(, [t0], [t1]) * vout(ivd, n);
 #if AMREX_SPACEDIM > 2
             }
 #endif
@@ -299,7 +494,7 @@ pc_apply_face_stencil(
               const amrex::IntVect ivd = amrex::IntVect{
                 AMREX_D_DECL(iv[0] - 1 + t0, iv[1] - 1 + t1, iv[2])};
               d_newval[L] +=
-                sten[L].val PELEC_D_TERM_REVERSE([t1], [t0], ) * vout(ivd, n);
+                sten[L].val AMREX_D_TERM(, [t0], [t1]) * vout(ivd, n);
             }
           }
 #endif
@@ -474,7 +669,7 @@ pc_apply_eb_boundry_visc_flux_stencil(
           for (int kk = 0; kk < 3; kk++) {
 #endif
             for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
-              sum[idir] += sten[L].val PELEC_D_TERM_REVERSE([kk], [jj], [ii]) *
+              sum[idir] += sten[L].val AMREX_D_TERM([ii], [jj], [kk]) *
                            Ut AMREX_D_TERM([ii], [jj], [kk])[idir];
             }
 #if AMREX_SPACEDIM > 2
@@ -531,8 +726,8 @@ pc_apply_eb_boundry_flux_stencil(
               const amrex::IntVect ivp = amrex::IntVect(AMREX_D_DECL(
                 sten[L].iv_base[0] + ii, sten[L].iv_base[1] + jj,
                 sten[L].iv_base[2] + kk));
-              sum += sten[L].val PELEC_D_TERM_REVERSE([kk], [jj], [ii]) *
-                     s(ivp, scomp + n);
+              sum +=
+                sten[L].val AMREX_D_TERM([ii], [jj], [kk]) * s(ivp, scomp + n);
 #if AMREX_SPACEDIM > 2
             }
 #endif

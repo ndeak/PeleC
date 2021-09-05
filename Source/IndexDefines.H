@@ -87,6 +87,23 @@
 
 #define NPASSIVE NUM_SPECIES + NUM_ADV + NUM_AUX + 3 - AMREX_SPACEDIM
 
+#if AMREX_SPACEDIM == 1
+// hopefully we wont do EB in 1D
+#define NLSPTS 1
+#define NEL_TRIMAT 1
+
+#elif AMREX_SPACEDIM == 2
+
+#define NLSPTS 8
+#define NEL_TRIMAT 3
+
+#elif AMREX_SPACEDIM == 3
+
+#define NLSPTS 26
+#define NEL_TRIMAT 6
+
+#endif
+
 struct PassMap
 {
   amrex::GpuArray<int, NPASSIVE> upassMap = {{0}};
@@ -94,13 +111,5 @@ struct PassMap
 };
 
 void init_pass_map(PassMap* pmap);
-
-#if AMREX_SPACEDIM == 1
-#define PELEC_D_TERM_REVERSE(a, b, c) c
-#elif AMREX_SPACEDIM == 2
-#define PELEC_D_TERM_REVERSE(a, b, c) b c
-#elif AMREX_SPACEDIM == 3
-#define PELEC_D_TERM_REVERSE(a, b, c) a b c
-#endif
 
 #endif

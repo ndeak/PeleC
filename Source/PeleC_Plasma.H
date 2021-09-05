@@ -135,6 +135,8 @@
   // Boundary conditions
   void setBCPhiV ( std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_lobc,
                    std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_hibc);
+  void setBCPI ( std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_lobc,
+                   std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_hibc);
 
 // Setup PhiV BC for linear Poisson solve  
   void ef_set_PoissonBC(std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &mlmg_lobc,

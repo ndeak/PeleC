@@ -41,6 +41,7 @@
 #include "Tagging.H"
 #include "IndexDefines.H"
 #include "prob_parm.H"
+#include "PelePhysics.H"
 
 #if defined(PELEC_USE_REACTIONS) && defined(USE_SUNDIALS_PP)
 #include "reactor.h"
@@ -569,6 +570,9 @@ public:
   static TaggingParm* tagging_parm;
   static PassMap* h_pass_map;
   static PassMap* d_pass_map;
+  static pele::physics::transport::TransportParams<
+    pele::physics::PhysicsType::transport_type>
+    trans_parms;
 
 protected:
   amrex::iMultiFab level_mask;
@@ -786,7 +790,6 @@ PeleC::numGrow()
   int ng = 4;
   if (
     (eb_in_domain) && ((redistribution_type == "StateRedist") ||
-                       (redistribution_type == "MergeRedist") || 
                        (redistribution_type == "NewStateRedist"))) {
     ng += 1;
   }
