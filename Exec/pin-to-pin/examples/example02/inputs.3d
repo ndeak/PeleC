@@ -1,5 +1,5 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
-max_step = 1000
+max_step = 20000
 stop_time = 100.0
 
 # PROBLEM SIZE & GEOMETRY
@@ -13,7 +13,8 @@ geometry.prob_lo     =  0    0    0
 #amr.n_cell           =  8 256 8
 geometry.prob_hi     =  0.03125  2.0  0.03125    # EB test case 1
 amr.n_cell           =  8 512 8
-
+#geometry.prob_hi     =  0.0078125  1.0  0.0078125    # EB test case 1
+#amr.n_cell           =  8 1024 8
 
 # >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
 # Interior, UserBC, Symmetry, SlipWall, NoSlipWall
@@ -30,6 +31,9 @@ ode.implicit_solve = 1
 #ode.iverbose = 4
 ode.analytical_jacobian = 0
 cvode.solve_type = "dense"
+pelec.redistribution_type = "StateRedist"
+#pelec.redistribution_type = "FluxRedist"
+#pelec.redistribution_type = "NoRedist"
 #cvode.solve_type = "GMRES"
 
 # Plasma variables
@@ -60,7 +64,7 @@ pelec.dt_cutoff      = 5.e-20  # level 0 timestep below which we halt
 pelec.cfl            = 0.3     # cfl number for hyperbolic system
 pelec.init_shrink    = 1.0    # scale back initial timestep
 pelec.change_max     = 1.05     # maximum increase in dt over successive steps
-pelec.fixed_dt = 1.0e-8
+pelec.fixed_dt = 2.0e-10
 
 # DIAGNOSTICS & VERBOSITY
 pelec.sum_interval   = 1       # timesteps between computing mass
@@ -70,7 +74,7 @@ ef.Poisson_verbose      = 0
 #amr.grid_log         = grdlog  # name of grid logging file
 
 # REFINEMENT / REGRIDDING
-amr.max_level       = 3       # maximum level number allowed
+amr.max_level       = 0       # maximum level number allowed
 amr.ref_ratio       = 2 2 2 2 # refinement ratio
 amr.regrid_int      = 2       # how often to regrid
 amr.blocking_factor = 8       # block factor in grid generation
@@ -83,14 +87,16 @@ tagging.max_vfracerr_lev = 10
 # CHECKPOINT FILES
 amr.checkpoint_files_output = 0
 amr.check_file      = chk      # root name of checkpoint file
-amr.check_int       = 100       # number of timesteps between checkpoints
+amr.check_int       = 1000       # number of timesteps between checkpoints
 
 # PLOTFILES
-amr.plot_files_output = 10
+amr.plot_files_output = 1
 amr.plot_file       = plt
-amr.plot_int        = 1
-amr.derive_plot_vars=pressure x_velocity y_velocity z_velocity vfrac
+amr.plot_int        = 500
+#amr.derive_plot_vars=pressure x_velocity y_velocity z_velocity vfrac
+amr.derive_plot_vars=ALL
 pelec.plot_massfrac = true
+pelec.monitor_file = true
 
 
 # EB TEST CASE 1 (PLATE TO PLATE, ALIGNED W X-Z PLANE)

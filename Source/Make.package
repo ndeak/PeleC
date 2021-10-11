@@ -66,6 +66,7 @@ ifeq ($(USE_PLASMA), TRUE)
   CEXE_headers += PeleC_Plasma.H Plasma_K.H PlasmaBCFill.H
   CEXE_sources += Plasma.cpp
   CEXE_sources += PlasmaSolveEF.cpp
+  CEXE_sources += PlasmaSolvePI.cpp
   CEXE_sources += PlasmaNL.cpp
 endif
 

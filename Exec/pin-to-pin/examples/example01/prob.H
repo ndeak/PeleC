@@ -102,7 +102,10 @@ pc_initdata(
 
 #ifdef PELEC_USE_PLASMA  
   state(i, j, k, UFX) = 1.0;     // UFX : first AUX -> PhiV
-  state(i, j, k, UFX+1) = 0.0;   // nE
+  state(i, j, k, UFX+1) = 1.0;   // nE
+  state(i, j, k, UFX+2) = 1.0;   // nE
+  state(i, j, k, UFX+3) = 1.0;   // nE
+  state(i, j, k, UFX+4) = 1.0;   // nE
 #endif
 }
 
@@ -144,6 +147,9 @@ bcnormal(
   // Zero dirichlet on nE if needed
   s_ext[UFX+1] = 0.0;
 
+  s_ext[UFX+2] = s_int[UFX+2];
+  s_ext[UFX+3] = s_int[UFX+3];
+  s_ext[UFX+4] = s_int[UFX+4];
   // Set PhiV on spherical electrodes (SPHERICAL DISCHARGE CASE)
   // const amrex::Real* prob_lo = geomdata.ProbLo();
   // const amrex::Real* prob_hi = geomdata.ProbHi();

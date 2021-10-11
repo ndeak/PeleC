@@ -1,8 +1,4 @@
-#include "PeleC.H"
 #include "React.H"
-// #ifdef USE_SUNDIALS_PP
-// #include "reactor.h"
-// #endif
 #ifdef PELEC_USE_PLASMA
 #include <Plasma.H>
 #endif
@@ -78,7 +74,6 @@ PeleC::react_state(
   react_src.setVal(0.0);
   prefetchToDevice(react_src);
 
-#ifdef USE_SUNDIALS_PP
   // for sundials box integration
   amrex::MultiFab STemp(grids, dmap, NUM_SPECIES + 2, 0);
   amrex::MultiFab extsrc_rY(grids, dmap, NUM_SPECIES, 0);
@@ -87,25 +82,31 @@ PeleC::react_state(
   amrex::MultiFab fctCount(grids, dmap, 1, 0);
   dummyMask.setVal(1);
 
-  if (chem_integrator == 3) {
-    if (!react_init) {
-      amrex::MultiFab& S_old = get_old_data(State_Type);
-      STemp.copy(S_old, UFS, 0, NUM_SPECIES);
-      STemp.copy(S_old, UTEMP, NUM_SPECIES, 1);
-      STemp.copy(S_old, UEINT, NUM_SPECIES + 1, 1);
-    } else {
-      STemp.copy(S_new, UFS, 0, NUM_SPECIES);
-      STemp.copy(S_new, UTEMP, NUM_SPECIES, 1);
-      STemp.copy(S_new, UEINT, NUM_SPECIES + 1, 1);
-    }
-    extsrc_rY.copy(*non_react_src, UFS, 0, NUM_SPECIES);
+  if (!react_init) {
+    amrex::MultiFab& S_old = get_old_data(State_Type);
+    amrex::MultiFab::Copy(STemp, S_old, UFS, 0, NUM_SPECIES, STemp.nGrow());
+    amrex::MultiFab::Copy(STemp, S_old, UTEMP, NUM_SPECIES, 1, STemp.nGrow());
+    amrex::MultiFab::Copy(
+      STemp, S_old, UEINT, NUM_SPECIES + 1, 1, STemp.nGrow());
+  } else {
+    amrex::MultiFab::Copy(STemp, S_new, UFS, 0, NUM_SPECIES, STemp.nGrow());
+    amrex::MultiFab::Copy(STemp, S_new, UTEMP, NUM_SPECIES, 1, STemp.nGrow());
+    amrex::MultiFab::Copy(
+      STemp, S_new, UEINT, NUM_SPECIES + 1, 1, STemp.nGrow());
   }
-#endif
-   
+  amrex::MultiFab::Copy(
+    extsrc_rY, *non_react_src, UFS, 0, NUM_SPECIES, STemp.nGrow());
+
 #ifdef PELEC_USE_EB
   auto const& fact =
     dynamic_cast<amrex::EBFArrayBoxFactory const&>(S_new.Factory());
   auto const& flags = fact.getMultiEBCellFlagFab();
+#endif
+
+#ifdef PELEC_USE_PLASMA
+          amrex::Real mwt[NUM_SPECIES] = {0.0};
+          auto eos = pele::physics::PhysicsType::eos();
+          eos.molecular_weight(mwt);
 #endif
 
 #ifdef _OPENMP
@@ -125,6 +126,7 @@ PeleC::react_state(
       auto const& snew_arr = S_new.array(mfi);
 #ifdef PELEC_USE_PLASMA
       auto const& eon = redEfield.array(mfi);
+      auto const& pi_source = PI_source.array(mfi);
 #endif
       auto const& nonrs_arr = non_react_src->array(mfi);
       auto const& I_R = react_src.array(mfi);
@@ -149,74 +151,38 @@ PeleC::react_state(
       if (typ == amrex::FabType::singlevalued || typ == amrex::FabType::regular)
 #endif
       {
-
         if (chem_integrator == 1) {
           // for rk64 we set minimum, maximum and guess
           // number of sub-iterations
+#ifdef PELEC_USE_PLASMA
+          if (ef_use_NLsolve) {
+             amrex::Abort("Explicit chemistry not implemented with non-linear solve");
+          }
+#endif
           const int nsubsteps_min = adaptrk_nsubsteps_min;
           const int nsubsteps_max = adaptrk_nsubsteps_max;
           const int nsubsteps_guess = adaptrk_nsubsteps_guess;
 
           // for rk64 we set the error tolerance
           const amrex::Real errtol = adaptrk_errtol;
-#ifdef PELEC_USE_PLASMA
-          if (ef_use_NLsolve) {
-             amrex::Abort("Explicit chemistry not implemented with non-linear solve");
-          }
-#endif
 
           amrex::ParallelFor(
             bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
               pc_expl_reactions(
-                i, j, k, 
-                sold_arr, 
-                snew_arr, 
-                nonrs_arr, 
+                i, j, k, sold_arr, snew_arr, nonrs_arr, I_R
 #ifdef PELEC_USE_PLASMA
-                eon,
+                , eon, pi_source
 #endif
-                I_R, dt, nsubsteps_min,
-                nsubsteps_max, nsubsteps_guess, errtol, do_update, captured_clean_massfrac);
+                , dt, nsubsteps_min,
+                nsubsteps_max, nsubsteps_guess, errtol, do_update,
+                captured_clean_massfrac);
             });
-        }
-
-        else if (chem_integrator == 2 || chem_integrator == 3) {
-#ifdef USE_SUNDIALS_PP
+        } else if (chem_integrator == 2) {
           amrex::Real wt =
             amrex::ParallelDescriptor::second(); // timing for each fab
-          const int captured_chem_integrator = chem_integrator;
 
-          const auto len = amrex::length(bx);
-          const auto lo = amrex::lbound(bx);
-          const int ncells = len.x * len.y * len.z;
-          amrex::Real chemintg_cost;
           amrex::Real current_time = 0.0;
-#ifdef AMREX_USE_GPU
-          int reactor_type = 1;
-          int ode_ncells = ncells;
-#else
-          int ode_ncells = 1;
-#endif
 
-#ifdef PELEC_USE_PLASMA
-          amrex::Real* eon_in = new amrex::Real[ncells];
-#endif
-          // for flattened array integration
-          amrex::Vector<amrex::Real> h_rY_in(ncells * (NUM_SPECIES + 1));
-          amrex::Gpu::DeviceVector<amrex::Real> rY_in(
-            ncells * (NUM_SPECIES + 1));
-          amrex::Real* d_rY_in = rY_in.data();
-          amrex::Vector<amrex::Real> h_rY_src_in(ncells * NUM_SPECIES);
-          amrex::Gpu::DeviceVector<amrex::Real> rY_src_in(ncells * NUM_SPECIES);
-          amrex::Real* d_rY_src_in = rY_src_in.data();
-          amrex::Vector<amrex::Real> h_re_in(ncells);
-          amrex::Gpu::DeviceVector<amrex::Real> re_in(ncells);
-          amrex::Real* d_re_in = re_in.data();
-          amrex::Vector<amrex::Real> h_re_src_in(ncells);
-          amrex::Gpu::DeviceVector<amrex::Real> re_src_in(ncells);
-          amrex::Real* d_re_src_in = re_src_in.data();
-
-          // for box integration
           auto const& rhoY = STemp.array(mfi);
           auto const& T = STemp.array(mfi, NUM_SPECIES);
           auto const& rhoE = STemp.array(mfi, NUM_SPECIES + 1);
@@ -253,103 +219,32 @@ PeleC::react_state(
                  - rho_old * e_old) /
                 dt;
 
-              if (captured_chem_integrator == 2) {
-                int offset =
-                  (k - lo.z) * len.x * len.y + (j - lo.y) * len.x + (i - lo.x);
-                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                  d_rY_in[offset * (NUM_SPECIES + 1) + nsp] =
-                    sold_arr(i, j, k, UFS + nsp);
-                  d_rY_src_in[offset * NUM_SPECIES + nsp] =
-                    nonrs_arr(i, j, k, UFS + nsp);
-                }
-                d_rY_in[offset * (NUM_SPECIES + 1) + NUM_SPECIES] =
-                  sold_arr(i, j, k, UTEMP);
-
-                if (captured_clean_massfrac == 1) {
-                  clip_normalize_rY(
-                    sold_arr(i, j, k, URHO),
-                    &d_rY_in[offset * (NUM_SPECIES + 1)]);
-                }
-                d_re_in[offset] = rho_old * e_old;
-                d_re_src_in[offset] = rhoedot_ext;
 #ifdef PELEC_USE_PLASMA
-                eon_in[offset] = eon(i, j, k, 0);
-                amrex::Real mwt[NUM_SPECIES] = {0.0};
-                auto eos = pele::physics::PhysicsType::eos();
-                eos.molecular_weight(mwt);
-                if (ef_use_NLsolve) {
-                   // Pass electrons from nE AUX to rhoY_e
-                   d_rY_in[offset * (NUM_SPECIES + 1) + E_ID] = sold_arr(i, j, k, UFX+1) / EFConst::Na
-                                                              * mwt[E_ID];
-                   // Convert forcing on nE into forcing on rhoY_e
-                   d_rY_src_in[offset * NUM_SPECIES + E_ID] = nonrs_arr(i, j, k, UFX + 1) / EFConst::Na
-                                                              * mwt[E_ID];
-                }
+              // If using the NL solver, copy nE to rhoE, and copy/convert forcing term (1/cm3 -> g/cm3)
+              if(ef_use_NLsolve){
+                rhoY(i,j,k,E_ID) = sold_arr(i, j, k, UFX+1) / EFConst::Na * mwt[E_ID];
+                frcExt(i,j,k,E_ID) = nonrs_arr(i, j, k, UFX + 1) / EFConst::Na * mwt[E_ID];
+              } 
 #endif
-              } else {
 
-                frcEExt(i, j, k) = rhoedot_ext;
-
-                if (captured_clean_massfrac == 1) {
-                  clip_normalize_rYarr(i, j, k, sold_arr, rhoY);
-                }
+              frcEExt(i, j, k) = rhoedot_ext;
+              if (captured_clean_massfrac == 1) {
+                clip_normalize_rYarr(i, j, k, sold_arr, rhoY);
               }
             });
 
-          if (chem_integrator == 2) {
-
-            amrex::Gpu::streamSynchronize();
-            amrex::Gpu::copy(
-              amrex::Gpu::deviceToHost, rY_in.begin(), rY_in.end(),
-              h_rY_in.begin());
-            amrex::Gpu::copy(
-              amrex::Gpu::deviceToHost, rY_src_in.begin(), rY_src_in.end(),
-              h_rY_src_in.begin());
-            amrex::Gpu::copy(
-              amrex::Gpu::deviceToHost, re_in.begin(), re_in.end(),
-              h_re_in.begin());
-            amrex::Gpu::copy(
-              amrex::Gpu::deviceToHost, re_src_in.begin(), re_src_in.end(),
-              h_re_src_in.begin());
-
-            chemintg_cost = 0.0;
-            for (int i = 0; i < ncells; i += ode_ncells) {
-
-#ifdef AMREX_USE_GPU
-              chemintg_cost += react(
-                &h_rY_in[i * (NUM_SPECIES + 1)], &h_rY_src_in[i * NUM_SPECIES],
-                &h_re_in[i], &h_re_src_in[i], dt, current_time, 1, ode_ncells,
-                amrex::Gpu::gpuStream());
-#else
-              chemintg_cost += react(
-                &h_rY_in[i * (NUM_SPECIES + 1)], &h_rY_src_in[i * NUM_SPECIES],
-                &h_re_in[i], &h_re_src_in[i], dt, current_time
+          const int reactor_type = 1;
+          react(
+            bx, rhoY, frcExt, T, rhoE, frcEExt, fc, mask, dt, current_time,
+            reactor_type
 #ifdef PELEC_USE_PLASMA
-                , eon_in[i]
+            , eon, pi_source
 #endif
-);
-#endif
-            }
-            chemintg_cost = chemintg_cost / ncells;
-
-            amrex::Gpu::copy(
-              amrex::Gpu::hostToDevice, h_rY_in.begin(), h_rY_in.end(),
-              rY_in.begin());
-          } else {
-            // TODO add plasma stuff to this version of cvode react call
 #ifdef AMREX_USE_GPU
-            react(
-              bx, rhoY, frcExt, T, rhoE, frcEExt, fc, mask, dt, current_time,
-              reactor_type, amrex::Gpu::gpuStream());
-#else
-            react(
-              bx, rhoY, frcExt, T, rhoE, frcEExt, fc, mask, dt, current_time
-#ifdef PELEC_USE_PLASMA
-              , eon
+            ,
+            amrex::Gpu::gpuStream()
 #endif
-);
-#endif
-          }
+          );
 
           amrex::Gpu::Device::streamSynchronize();
 
@@ -389,18 +284,10 @@ PeleC::react_state(
                 sold_arr(i, j, k, UMZ) + dt * nonrs_arr(i, j, k, UMZ);
 
               // get new rho
-              amrex::Real rhonew = 0.;
-              int offset =
-                (k - lo.z) * len.x * len.y + (j - lo.y) * len.x + (i - lo.x);
+              amrex::Real rhonew = 0.0;
 
-              if (captured_chem_integrator == 2) {
-                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                  rhonew += d_rY_in[offset * (NUM_SPECIES + 1) + nsp];
-                }
-              } else {
-                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                  rhonew += rhoY(i, j, k, nsp);
-                }
+              for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+                rhonew += rhoY(i, j, k, nsp);
               }
 
               if (do_update) {
@@ -409,42 +296,10 @@ PeleC::react_state(
                 snew_arr(i, j, k, UMY) = vmnew;
                 snew_arr(i, j, k, UMZ) = wmnew;
 
-                if (captured_chem_integrator == 2) {
-#ifdef PELEC_USE_PLASMA
-                  // if non-linear solve : extract the new nE and set rhoY_e to zero
-                  if (ef_use_NLsolve) {
-                     amrex::Real mwt[NUM_SPECIES] = {0.0};
-                     auto eos = pele::physics::PhysicsType::eos();
-                     eos.molecular_weight(mwt);
-                     snew_arr(i, j, k, UFX+1) = d_rY_in[offset * (NUM_SPECIES + 1) + E_ID] * EFConst::Na
-                                                / mwt[E_ID];
-                     d_rY_in[offset * (NUM_SPECIES + 1) + E_ID] = 0.0;
-                  }
-#endif
-                  for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                    snew_arr(i, j, k, UFS + nsp) =
-                      d_rY_in[offset * (NUM_SPECIES + 1) + nsp];
-                  }
-                  snew_arr(i, j, k, UTEMP) =
-                    d_rY_in[offset * (NUM_SPECIES + 1) + NUM_SPECIES];
-
-                } else {
-#ifdef PELEC_USE_PLASMA
-                  // if non-linear solve : extract the new nE and set rhoY_e to zero
-                  if (ef_use_NLsolve) {
-                     amrex::Real mwt[NUM_SPECIES] = {0.0};
-                     auto eos = pele::physics::PhysicsType::eos();
-                     eos.molecular_weight(mwt);
-                     snew_arr(i, j, k, UFX+1) = rhoY(i, j, k, E_ID) * EFConst::Na
-                                                / mwt[E_ID];
-                     rhoY(i, j, k, E_ID) = 0.0;
-                  }
-#endif
-                  for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                    snew_arr(i, j, k, UFS + nsp) = rhoY(i, j, k, nsp);
-                  }
-                  snew_arr(i, j, k, UTEMP) = T(i, j, k);
+                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+                  snew_arr(i, j, k, UFS + nsp) = rhoY(i, j, k, nsp);
                 }
+                snew_arr(i, j, k, UTEMP) = T(i, j, k);
 
                 snew_arr(i, j, k, UEINT) = rho_old * e_old + dt * rhoedot_ext;
                 snew_arr(i, j, k, UEDEN) =
@@ -453,31 +308,13 @@ PeleC::react_state(
                     rhonew;
               }
 
-              if (captured_chem_integrator == 2) {
-                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                  I_R(i, j, k, nsp) =
-                    (d_rY_in[offset * (NUM_SPECIES + 1) + nsp] // new rhoy
-                     - sold_arr(i, j, k, UFS + nsp))           // old rhoy
-                      / dt -
-                    nonrs_arr(i, j, k, UFS + nsp);
-                }
-              } else {
-                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                  I_R(i, j, k, nsp) =
-                    (rhoY(i, j, k, nsp)              // new rhoy
-                     - sold_arr(i, j, k, UFS + nsp)) // old rhoy
-                      / dt -
-                    nonrs_arr(i, j, k, UFS + nsp);
-                }
+              for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+                I_R(i, j, k, nsp) = (rhoY(i, j, k, nsp)              // new rhoy
+                                     - sold_arr(i, j, k, UFS + nsp)) // old rhoy
+                                      / dt -
+                                    nonrs_arr(i, j, k, UFS + nsp);
               }
 
-#ifdef PELEC_USE_PLASMA
-              if (ef_use_NLsolve) {
-                 // Set reaction term for nE in place of the one of rhoY_e
-                 I_R(i, j, k, NUM_SPECIES+1) = ( snew_arr(i, j, k, UFX+1) - sold_arr(i, j, k, UFX+1) ) / dt -
-                                                 nonrs_arr(i, j, k, UFX+1);
-              }
-#endif
               I_R(i, j, k, NUM_SPECIES) =
                 (rho_old * e_old + dt * rhoedot_ext // new internal energy
                  + 0.5 * (umnew * umnew + vmnew * vmnew + wmnew * wmnew) /
@@ -494,13 +331,41 @@ PeleC::react_state(
             get_new_data(Work_Estimate_Type)[mfi].plus<amrex::RunOn::Device>(
               wt, vbox);
           }
-#else
-          amrex::Abort(
-            "chem_integrator=2,3 which requires Sundials to be enabled");
-#endif
         } else {
-          amrex::Abort("chem_integrator must be equal to 1,2 or 3");
+          amrex::Abort("chem_integrator must be equal to 1 or 2");
         }
+
+        // update heat release
+        amrex::ParallelFor(
+          bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            I_R(i, j, k, NUM_SPECIES + 1) = 0.0;
+            auto eos = pele::physics::PhysicsType::eos();
+
+            amrex::Real hi[NUM_SPECIES] = {0.0};
+
+            amrex::Real Yspec[NUM_SPECIES] = {0.0};
+            for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+              Yspec[nsp] =
+                snew_arr(i, j, k, UFS + nsp) / snew_arr(i, j, k, URHO);
+            }
+            eos.RTY2Hi(
+              snew_arr(i, j, k, URHO), snew_arr(i, j, k, UTEMP), Yspec, hi);
+
+            for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+              I_R(i, j, k, NUM_SPECIES + 1) -= hi[nsp] * I_R(i, j, k, nsp);
+            }
+
+#ifdef PELEC_USE_PLASMA
+            if(ef_use_NLsolve){
+              // Copy and convert rhoE -> nE, zero out rhoE
+              snew_arr(i,j,k,UFX+1) = snew_arr(i,j,k,UFS+E_ID) * EFConst::Na / mwt[E_ID];
+              snew_arr(i,j,k,UFS+E_ID) = 0.0;
+
+              // Calculate new nE I_R term
+              I_R(i,j,k,NUM_SPECIES + 2) = ( snew_arr(i, j, k, UFX+1) - sold_arr(i, j, k, UFX+1) ) / dt - nonrs_arr(i, j, k, UFX+1);
+            }
+#endif
+          });
       }
     }
   }

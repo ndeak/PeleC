@@ -4,7 +4,7 @@
 #include <AMReX_REAL.H>
 #include <AMReX_GpuQualifiers.H>
 
-struct ProbParmDevice : amrex::Gpu::Managed
+struct ProbParmDevice
 {
   amrex::Real p = 1013250.0;
   amrex::Real T = 300.0;

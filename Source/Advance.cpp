@@ -139,6 +139,42 @@ PeleC::do_mol_advance(
          redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
        });
   }
+
+  // Compute PI sources
+  if(ef_do_photoionization){
+    solvePI( time, dt, *lprobparm );
+
+    // 2 level
+    // if (level == parent->finestLevel()) {
+    //   auto &SoldLevelfinest = getLevel(parent->finestLevel()).get_PI_data();   
+    //   auto &SoldLevelnexttofinest = getLevel(parent->finestLevel()-1).get_PI_data();  
+    //   auto &SoldLevelnextnexttofinest = getLevel(parent->finestLevel()-2).get_PI_data();  
+    //   writeDebugPlotFile({&SoldLevelnextnexttofinest,&SoldLevelnexttofinest,&SoldLevelfinest}, "TestPltThreeLevel",parent->finestLevel()-2,0,4);
+    // }
+
+    // 4 level
+    // if (level == parent->finestLevel()) {
+    //   auto &SoldLevelfinest = getLevel(parent->finestLevel()).get_PI_data();   
+    //   auto &SoldLevelnexttofinest = getLevel(parent->finestLevel()-1).get_PI_data();  
+    //   auto &SoldLevelnextnexttofinest = getLevel(parent->finestLevel()-2).get_PI_data();  
+    //   auto &SoldLevelnextnexttofinest2 = getLevel(parent->finestLevel()-3).get_PI_data();  
+    //   auto &SoldLevelnextnexttofinest3 = getLevel(parent->finestLevel()-4).get_PI_data();  
+    //   writeDebugPlotFile({&SoldLevelnextnexttofinest3, &SoldLevelnextnexttofinest2, &SoldLevelnextnexttofinest,&SoldLevelnexttofinest,&SoldLevelfinest}, "TestPltFiveLevel",parent->finestLevel()-4,0,4);
+    // }
+
+    // 6 level
+    // if (level == parent->finestLevel()) {
+    //   auto &SoldLevelfinest = getLevel(parent->finestLevel()).get_PI_data();   
+    //   auto &SoldLevelnexttofinest = getLevel(parent->finestLevel()-1).get_PI_data();  
+    //   auto &SoldLevelnextnexttofinest = getLevel(parent->finestLevel()-2).get_PI_data();  
+    //   auto &SoldLevelnextnexttofinest2 = getLevel(parent->finestLevel()-3).get_PI_data();  
+    //   auto &SoldLevelnextnexttofinest3 = getLevel(parent->finestLevel()-4).get_PI_data();  
+    //   auto &SoldLevelnextnexttofinest4 = getLevel(parent->finestLevel()-5).get_PI_data();  
+    //   auto &SoldLevelnextnexttofinest5 = getLevel(parent->finestLevel()-6).get_PI_data();  
+    //   writeDebugPlotFile({&SoldLevelnextnexttofinest5, &SoldLevelnextnexttofinest4, &SoldLevelnextnexttofinest3, &SoldLevelnextnexttofinest2, &SoldLevelnextnexttofinest,&SoldLevelnexttofinest,&SoldLevelfinest}, "TestPltSevenLevel",parent->finestLevel()-6,0,4);
+    // }
+  }
+
 #endif
   if (level == parent->finestLevel()) {
      // ------------- Using writeDebugPlotFile examples
@@ -198,7 +234,7 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Saxpy(S_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
-    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0);
+    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
 #endif
   }
 #endif
@@ -279,7 +315,7 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
-    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0);
+    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
 #endif
 
     // // floor negative electron number density values after 2nd MOL update
@@ -299,7 +335,7 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Subtract(molSrc, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
-    if (ef_use_NLsolve) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0);
+    if (ef_use_NLsolve) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
 #endif
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
@@ -736,7 +772,7 @@ PeleC::construct_Snew(
     amrex::MultiFab::Saxpy(S_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
-    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+1, FirstAux+1, 1, 0); 
+    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0); 
 #endif
   }
 #endif

@@ -1179,9 +1179,17 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
   amrex::Real NA = 6.0221409e23; // 1/mol
   const amrex::Real* dx = geom.CellSize();
 
+  amrex::Real min_nE;
+  amrex::Real max_nE;
 
-  amrex::Real min_nE = S.min(UFS + E_ID, 0, false) * (1.0/mwt[E_ID]) * NA;
-  amrex::Real max_nE = S.max(UFS + E_ID, 0, false) * (1.0/mwt[E_ID]) * NA;
+  if(ef_use_NLsolve){
+    min_nE = S.min(UFX + 1, 0, false);
+    max_nE = S.max(UFX + 1, 0, false);
+  }
+  else{
+    min_nE = S.min(UFS + E_ID, 0, false) * (1.0/mwt[E_ID]) * NA;
+    max_nE = S.max(UFS + E_ID, 0, false) * (1.0/mwt[E_ID]) * NA;
+  }
   amrex::Real min_nO4p = S.min(UFS + 6, 0, false) * (1.0/mwt[6]) * NA;
   amrex::Real max_nO4p = S.max(UFS + 6, 0, false) * (1.0/mwt[6]) * NA;
   amrex::Real min_nO2m = S.min(UFS + 9, 0, false) * (1.0/mwt[9]) * NA;

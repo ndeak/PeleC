@@ -22,6 +22,7 @@
   static amrex::Real pulse_timing;                          // Timing of first pulse peak (s)
   static int         pulse_num;                             // Number of pulses
   static amrex::Real pulse_dt;                              // Constant time step size taken around each plasma pulse (s)
+  static int         ef_triangle_pulse;                     // Use a triangular pulse with pulse_fwhm rise time?
   static amrex::Real pulse_sigma;     
   static amrex::Real curr_voltage;                          // Voltage at time t=n (erg/C)
   static amrex::Real dfact;
@@ -37,6 +38,7 @@
   static int         ef_noSpaceCharge;        // Solve the Poisson problem without accounting for space charge effects
   static int         ef_constVoltage;         // Apply a constant voltage (no time variance)
   static int         ef_do_drift;             // Include drift processes for charged species
+  static int         ef_do_photoionization;   // Include photoionization
 
   // Non-linear solve options
   static int         ef_use_PETSC_direct;      // Flag to trigger using PETSC direct solve
@@ -66,6 +68,7 @@
   std::array<const amrex::MultiFab* ,AMREX_SPACEDIM> Efield_edge;
   FluxBoxes gphi;
   amrex::MultiFab** gradPhiV;
+  amrex::MultiFab     PI_source;  
 
   // Non-linear solve MFs/data
   // Transport
@@ -129,12 +132,18 @@
                 amrex::Real dt, 
                 ProbParmDevice const& prob_parm);
 
+  // Photoionization helmholtz solve
+  void solvePI (amrex::Real time,
+                amrex::Real dt, 
+                ProbParmDevice const& prob_parm);
+
   // Transport coefficients
   void ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time);
   
   // Boundary conditions
   void setBCPhiV ( std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_lobc,
                    std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_hibc);
+
   void setBCPI ( std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_lobc,
                    std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_hibc);
 
@@ -209,5 +218,7 @@
 
   void ef_applyPrecond(const amrex::MultiFab  &v,
                              amrex::MultiFab  &Pv);
+
+  amrex::MultiFab& get_PI_data () noexcept { return PI_source; }
 
 #endif

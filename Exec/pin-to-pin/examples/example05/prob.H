@@ -4,14 +4,16 @@
 #include <AMReX_Geometry.H>
 #include <AMReX_FArrayBox.H>
 
-#include "mechanism.h"
-
-#include "IndexDefines.H"
-#include "Constants.H"
 #include "EOS.H"
+#include "prob_parm.H"
+
+#include "PeleC.H"
+#include "IndexDefines.H"
+#include "PelePhysics.H"
+
+#include "Constants.H"
 #include "Tagging.H"
 #include "ProblemDerive.H"
-#include "prob_parm.H"
 
 AMREX_GPU_DEVICE
 AMREX_FORCE_INLINE
@@ -68,8 +70,9 @@ pc_initdata(
   // mfs[8] = 0.0;             // O2+N2
   // mfs[9] = 1.597029e-18;    // O4+
 
-  EOS::RYP2E(prob_parm.rho, mfs, prob_parm.p, tempE);
-  EOS::EY2T(tempE, mfs, tempT);
+  auto eos = pele::physics::PhysicsType::eos();
+  eos.RYP2E(prob_parm.rho, mfs, prob_parm.p, tempE);
+  eos.EY2T(tempE, mfs, tempT);
 
   state(i, j, k, URHO) = prob_parm.rho;
   state(i, j, k, UMX) = prob_parm.rho * prob_parm.vx_in;

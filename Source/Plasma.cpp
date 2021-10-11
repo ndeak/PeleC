@@ -45,7 +45,9 @@ PeleC::plasma_init()
     pp.query("Poisson_verbose",ef_PoissonVerbose);
     pp.query("noSpaceCharge",ef_noSpaceCharge);
     pp.query("constVoltage",ef_constVoltage);
+    pp.query("triangle_pulse",ef_triangle_pulse);
     pp.query("do_drift",ef_do_drift);
+    pp.query("do_photoionization", ef_do_photoionization);
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);
@@ -86,6 +88,14 @@ PeleC::plasma_init()
 
 void PeleC::plasma_define_data() {
 
+   // Define vector of PI source MFs so coarse BC data is available
+   // if(level == 0){
+   //    const int max_level = parent->maxLevel();
+   //    const int nlevs = max_level + 1;
+
+   //    PI_source.resize(nlevs);
+   // }
+
    // TODO Solve Poisson problem for potential, and fill in E components and redE after creating
    Efield.define(grids, dmap, NUM_E, numGrow(), amrex::MFInfo(), Factory()); Efield.setVal(0.0);
    redEfield.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); redEfield.setVal(0.0);
@@ -96,6 +106,7 @@ void PeleC::plasma_define_data() {
    Q_ext.define(grids,dmap,NQ,numGrow()); Q_ext.setVal(0.0);
    Qaux_ext.define(grids,dmap,NQAUX,numGrow()); Qaux_ext.setVal(0.0);
    ionFlx_eb.define(grids,dmap,1,numGrow()); ionFlx_eb.setVal(0.0);      // EB ion fluxes - a bit inefficient to store as full MF
+   PI_source.define(grids, dmap, 4, 1, amrex::MFInfo(), Factory()); PI_source.setVal(0.0);
 
    if (ef_use_NLsolve) {
       nl_state.define(grids,dmap,2,2);
@@ -509,9 +520,18 @@ void PeleC::getCurrVoltage(Real time) {
   amrex::Real pulse_time_tmp;
 
   curr_voltage = 0.0;
-  for(int i=0; i<pulse_num; i++){
-    pulse_time_tmp = pulse_timing  + (i)*(1.0/pulse_freq);
-    curr_voltage += pulse_peak * exp(-0.5 * pow( (time - pulse_time_tmp) / pulse_sigma, 2) );
+  if(ef_triangle_pulse == 1){
+    // Triangular pulse assumes a rise time equal to the pulse fwhm
+    for(int i=0; i<pulse_num; i++){
+      pulse_time_tmp = pulse_timing  + (i)*(1.0/pulse_freq);
+      curr_voltage += (amrex::Math::abs(time - pulse_time_tmp) < pulse_fwhm) ? (1.0 - amrex::Math::abs(time - pulse_time_tmp)/pulse_fwhm)*pulse_peak :0.0;
+    }
+  }
+  else{
+    for(int i=0; i<pulse_num; i++){
+      pulse_time_tmp = pulse_timing  + (i)*(1.0/pulse_freq);
+      curr_voltage += pulse_peak * exp(-0.5 * pow( (time - pulse_time_tmp) / pulse_sigma, 2) );
+    }
   }
 
   if(ef_constVoltage == 1) curr_voltage = pulse_peak;

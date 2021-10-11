@@ -133,6 +133,8 @@ ifeq ($(USE_EB), TRUE)
   Pdirs += EB
   Bpack += $(AMREX_HYDRO_HOME)/Redistribution/Make.package
   Blocs += $(AMREX_HYDRO_HOME)/Redistribution
+  Bpack += $(AMREX_HYDRO_HOME)/Slopes/Make.package
+  Blocs += $(AMREX_HYDRO_HOME)/Slopes
 endif
 
 ifeq ($(USE_PARTICLES), TRUE)

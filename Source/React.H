@@ -50,6 +50,7 @@ pc_expl_reactions(
   amrex::Array4<const amrex::Real> const& nr_src,
 #ifdef PELEC_USE_PLASMA
   amrex::Array4<const amrex::Real> const& eon,
+  amrex::Array4<const amrex::Real> const& pi_source,
 #endif
   amrex::Array4<amrex::Real> const& IR,
   const amrex::Real dt_react,
@@ -157,7 +158,7 @@ pc_expl_reactions(
       amrex::Real wdot[NUM_SPECIES];
       auto eos = pele::physics::PhysicsType::eos();
 #ifdef PELEC_USE_PLASMA
-      eos.RTY2WDOT(urk[URHO], urk[UTEMP], massfrac, wdot, eon(i,j,k,0));
+      eos.RTY2WDOT(urk[URHO], urk[UTEMP], massfrac, wdot, eon(i,j,k,0), pi_source(i,j,k,0));
 #else
       eos.RTY2WDOT(urk[URHO], urk[UTEMP], massfrac, wdot);
 #endif

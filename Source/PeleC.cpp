@@ -75,7 +75,7 @@ int PeleC::ef_debug = 0;
 int PeleC::ef_use_NLsolve = 0;
 int PeleC::ef_use_PETSC_direct = 0;
 int PeleC::ef_diffT_jfnk = 1;
-int PeleC::ef_maxNewtonIter = 10;
+int PeleC::ef_maxNewtonIter = 50;
 int PeleC::ef_GMRES_size = 10;
 int PeleC::ef_GMRES_maxRst = 2;
 int PeleC::ef_GMRES_verbose = 0;
@@ -85,6 +85,8 @@ int PeleC::ef_PoissonMaxIter = 100;
 int PeleC::ef_noSpaceCharge = 0;
 int PeleC::ef_constVoltage = 0;
 int PeleC::ef_do_drift = 1;
+int PeleC::ef_do_photoionization = 0;
+int PeleC::ef_triangle_pulse = 0.0;
 int PeleC::ion_bc_type = 0;
 int PeleC::zero_bc_flux = 0;
 int PeleC::ef_PC_fixedIter = -1;
@@ -92,10 +94,11 @@ int PeleC::ef_PC_approx = 1;
 bool PeleC::def_harm_avg_cen2edge  = false;
 amrex::Real PeleC::ef_PoissonTol = 1.0e-8;
 amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
-// amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
-amrex::Real PeleC::ef_newtonTol = 1.0e-11;
-amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
-amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
+amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
+//amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
+//amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
+amrex::Real PeleC::ef_GMRES_reltol = 1.0e-6;
+amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-4;
 amrex::Real PeleC::secondary_em_coef = 0.0;
 amrex::Real PeleC::electron_emit_const = 0.0;
 amrex::Real PeleC::pulse_freq = 0.0;
@@ -755,6 +758,23 @@ PeleC::initData()
   const ProbParmDevice* lprobparm = d_prob_parm_device;
   getCurrVoltage(0.0);
   solveEF( cur_time, 0.0, *lprobparm );
+  // for (amrex::MFIter mfi(redEfield, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+  //    const amrex::Box& tbox = mfi.tilebox();
+  //    const auto Efab = Efield.array(mfi);
+  //    const auto redEfab = redEfield.array(mfi);
+  //    const auto Sfab = S_new.array(mfi);
+  //    amrex::ParallelFor(
+  //      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+  //        amrex::Real ndens = 0.0;
+  //        for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
+  //        redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
+  //      });
+  // }
+
+
+  if(ef_do_photoionization){
+    solvePI( cur_time, 0.0, *lprobparm );
+  }
   // if ( ef_debug) {
   //    amrex::MultiFab phiV_a(S_new,amrex::make_alias,PhiV,1);
   //    amrex::VisMF::Write(phiV_a,"InitialPhiV");
@@ -922,8 +942,6 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     amrex::Print() << "PeleC::estTimeStep (" << limiter << "-limited) at level "
                    << level << ":  estdt = " << estdt << '\n';
   }
-
-  return estdt;
 #endif
 
     if (do_hydro) {
@@ -1043,10 +1061,10 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     amrex::ParallelDescriptor::ReduceRealMin(estdt_hydro);
     estdt_hydro *= cfl;
 
-    if (verbose) {
+    // if (verbose) {
       amrex::Print() << "...estimated hydro-limited timestep at level " << level
                      << ": " << estdt_hydro << std::endl;
-    }
+    // }
 
     // Determine if this is more restrictive than the maximum timestep limiting
     if (estdt_hydro < estdt) {
@@ -1914,6 +1932,16 @@ PeleC::errorEst(
           tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             tag_graderror(
               i, j, k, tag_arr, ne_arr, captured_negraderr, tagval);
+          });
+      }
+
+      // Tagging reduced electric field gradient
+      if (level < tagging_parm->max_efieldgrad_lev) {
+        const amrex::Real captured_efieldgraderr = tagging_parm->efieldgraderr;
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_graderror(
+              i, j, k, tag_arr, redEfield_arr, captured_efieldgraderr, tagval);
           });
       }
 

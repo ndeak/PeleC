@@ -33,11 +33,11 @@ USE_EB = FALSE
 USE_PLASMA =TRUE
 Eos_dir := Fuego
 Reactions_dir := Fuego
-Chemistry_Model := PlasmaAir
+Chemistry_Model := PlasmaAir-temp
 Transport_dir := Simple
 
 # GNU Make
 Bpack := ./Make.package
 Blocs := .
 PELEC_HOME := ../../../..
-include $(PELEC_HOME)/ExecCpp/Make.PeleC
+include $(PELEC_HOME)/Exec/Make.PeleC

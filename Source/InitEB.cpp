@@ -794,6 +794,7 @@ initialize_EB2(
   }
   else if (geom_type == "pins")
   {
+      // FIXME : UPDATE MAX COARSENING LEVEL FOR THIS CASE
       //setting some constants
       //we can only do a maximum of 2 pins (change if needed)
       const int max_pin=2;
@@ -854,6 +855,7 @@ initialize_EB2(
 
       auto gshop = amrex::EB2::makeShop(allpin_IF);
       amrex::EB2::Build(gshop, geom, max_level, max_level);
+      // amrex::EB2::Build(gshop, geom, max_level+2, max_level+30);
   }
   else if (geom_type == "boxes")
   {
@@ -922,6 +924,160 @@ initialize_EB2(
 
       auto gshop = amrex::EB2::makeShop(allbox_IF);
       amrex::EB2::Build(gshop, geom, max_level, max_level);
+      // amrex::EB2::Build(gshop, geom, max_level+2, max_level+30);
+  }
+  else if (geom_type == "sandia_pins")
+  {
+      const int max_pin=2;
+      
+      //number of user defined pins
+      int num_pin;
+      
+      amrex::ParmParse pp("sandia_pins");
+      amrex::Vector<amrex::Array<amrex::Real,AMREX_SPACEDIM>> allbase(max_pin);
+      amrex::Vector<amrex::Array<amrex::Real,AMREX_SPACEDIM>> allspherecent(max_pin);
+
+      //initalize pins with some dummy values
+      //that fall outside of the domain
+      //
+      const amrex::Real *problo,*probhi;
+      amrex::Real maxlen;
+
+      problo=geom.ProbLo();
+      probhi=geom.ProbHi();
+
+      maxlen=std::max(std::max(geom.ProbLength(0),geom.ProbLength(1)),geom.ProbLength(2));
+
+      //setting pins to be way outside the domain initially
+      for(int ipin=0;ipin<max_pin;ipin++)
+      {
+         allbase[ipin][0] = problo[0]-100.0*maxlen;
+         allbase[ipin][1] = problo[1]-100.0*maxlen;
+         allbase[ipin][2] = problo[2]-100.0*maxlen;
+      }
+            
+      //get user defined number of pins
+      pp.get("num_pin", num_pin);
+
+      amrex::Vector <std::unique_ptr<amrex::EB2::TruncatedConeIF>> impfunc_cones(max_pin);
+      amrex::Vector <std::unique_ptr<amrex::EB2::SphereIF>> impfunc_spheres(max_pin);
+      for(int ipin = 0; ipin < num_pin; ipin++)
+      {
+          amrex::Array<amrex::Real,AMREX_SPACEDIM> base{0.0,0.0,0.0};
+          amrex::Array<amrex::Real,AMREX_SPACEDIM> sphere_cent{0.0,0.0,0.0};
+
+          std::string  basestr = "pin_" + convertIntGG(ipin) + "_base"; 
+          std::string  r1str = "pin_" + convertIntGG(ipin) + "_radius1"; 
+          std::string  r2str = "pin_" + convertIntGG(ipin) + "_radius2"; 
+          std::string  hstr = "pin_" + convertIntGG(ipin) + "_height"; 
+          std::string  dirstr = "pin_" + convertIntGG(ipin) + "_dir"; 
+          amrex::Vector<amrex::Real> vecbase;
+          amrex::Real  pinr1;
+          amrex::Real  pinr2;
+          amrex::Real  pinh;
+          int  pindir;
+          pp.getarr(basestr.c_str(), vecbase,  0, AMREX_SPACEDIM);
+          pp.get(r1str.c_str(), pinr1);
+          pp.get(r2str.c_str(), pinr2);
+          pp.get(hstr.c_str(), pinh);
+          pp.get(dirstr.c_str(), pindir);
+          for(int idir = 0; idir < AMREX_SPACEDIM; idir++)
+          {
+              base[idir] = vecbase[idir] ;
+              sphere_cent[idir] = vecbase[idir];
+              if(idir == pindir) sphere_cent[idir] += pinh;
+          }
+          allbase[ipin] = base;
+          allspherecent[ipin] = sphere_cent;
+
+          impfunc_cones[ipin] = std::unique_ptr<amrex::EB2::TruncatedConeIF>
+                              (new amrex::EB2::TruncatedConeIF(pinr1, pinr2, pinh, allbase[ipin], pindir, false));
+          impfunc_spheres[ipin] = std::unique_ptr<amrex::EB2::SphereIF>
+                              (new amrex::EB2::SphereIF(pinr2, allspherecent[ipin], false));
+      }
+
+      auto allpin_IF = amrex::EB2::makeUnion(*impfunc_cones[0],*impfunc_cones[1],*impfunc_spheres[0],*impfunc_spheres[1]);
+
+      auto gshop = amrex::EB2::makeShop(allpin_IF);
+      amrex::EB2::Build(gshop, geom, max_level, max_level);
+      // amrex::EB2::Build(gshop, geom, max_level+2, max_level+30);
+  }
+  else if (geom_type == "cylinder_pins")
+  {
+      const int max_pin=2;
+      
+      //number of user defined pins
+      int num_pin;
+      
+      amrex::ParmParse pp("cylinder_pins");
+      amrex::Vector<amrex::Array<amrex::Real,AMREX_SPACEDIM>> allcylcent(max_pin);
+      amrex::Vector<amrex::Array<amrex::Real,AMREX_SPACEDIM>> allspherecent(max_pin);
+
+      //initalize pins with some dummy values
+      //that fall outside of the domain
+      //
+      const amrex::Real *problo,*probhi;
+      amrex::Real maxlen;
+
+      problo=geom.ProbLo();
+      probhi=geom.ProbHi();
+
+      maxlen=std::max(std::max(geom.ProbLength(0),geom.ProbLength(1)),geom.ProbLength(2));
+
+      //setting pins to be way outside the domain initially
+      for(int ipin=0;ipin<max_pin;ipin++)
+      {
+         allcylcent[ipin][0] = problo[0]-100.0*maxlen;
+         allcylcent[ipin][1] = problo[1]-100.0*maxlen;
+         allcylcent[ipin][2] = problo[2]-100.0*maxlen;
+      }
+            
+      //get user defined number of pins
+      pp.get("num_pin", num_pin);
+
+      amrex::Vector <std::unique_ptr<amrex::EB2::CylinderIF>> impfunc_cylinders(max_pin);
+      amrex::Vector <std::unique_ptr<amrex::EB2::SphereIF>> impfunc_spheres(max_pin);
+      for(int ipin = 0; ipin < num_pin; ipin++)
+      {
+          amrex::Array<amrex::Real,AMREX_SPACEDIM> cyl_cent{0.0,0.0,0.0};
+          amrex::Array<amrex::Real,AMREX_SPACEDIM> sphere_cent{0.0,0.0,0.0};
+
+          std::string  centstr = "pin_" + convertIntGG(ipin) + "_center"; 
+          std::string  rstr = "pin_" + convertIntGG(ipin) + "_radius"; 
+          std::string  hstr = "pin_" + convertIntGG(ipin) + "_height"; 
+          std::string  dirstr = "pin_" + convertIntGG(ipin) + "_dir"; 
+          std::string  signstr = "pin_" + convertIntGG(ipin) + "_sign"; 
+          amrex::Vector<amrex::Real> veccent;
+          amrex::Real  pinr;
+          amrex::Real  pinh;
+          int  pindir;
+          int  pinsign;
+          pp.getarr(centstr.c_str(), veccent,  0, AMREX_SPACEDIM);
+          pp.get(rstr.c_str(), pinr);
+          pp.get(hstr.c_str(), pinh);
+          pp.get(dirstr.c_str(), pindir);
+          pp.get(signstr.c_str(), pinsign);
+          for(int idir = 0; idir < AMREX_SPACEDIM; idir++)
+          {
+              cyl_cent[idir] = veccent[idir] ;
+              sphere_cent[idir] = veccent[idir];
+              if(idir == pindir) sphere_cent[idir] += pinsign * pinh / 2.0;
+          }
+          allcylcent[ipin] = cyl_cent;
+          allspherecent[ipin] = sphere_cent;
+
+          impfunc_cylinders[ipin] = std::unique_ptr<amrex::EB2::CylinderIF>
+                              (new amrex::EB2::CylinderIF(pinr, pinh, pindir, allcylcent[ipin], false));
+          impfunc_spheres[ipin] = std::unique_ptr<amrex::EB2::SphereIF>
+                              (new amrex::EB2::SphereIF(pinr, allspherecent[ipin], false));
+      }
+
+      auto allpin_IF = amrex::EB2::makeUnion(*impfunc_cylinders[0],*impfunc_cylinders[1],*impfunc_spheres[0],*impfunc_spheres[1]);
+
+      auto gshop = amrex::EB2::makeShop(allpin_IF);
+      amrex::EB2::Build(gshop, geom, max_level, max_level);
+      // amrex::EB2::Build(gshop, geom, 1, 1);
+      // amrex::EB2::Build(gshop, geom, max_level+2, max_level+30);
   }
   else if (geom_type == "rboxes")
   {

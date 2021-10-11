@@ -26,7 +26,12 @@ class GMRESSolver
      void define(PeleC* a_level,
                  const int a_KrylovSize,
                  const int a_nComp,
-                 const int a_nGrow);
+                 const int a_nGrow
+#ifdef PELEC_USE_EB
+               , const amrex::MFInfo& info,
+                 const amrex::FabFactory<amrex::FArrayBox>& factory
+#endif
+                );
 
      void setJtimesV(JtimesVFunc a_jtv);
      void setPrecond(PrecondFunc a_prec);
