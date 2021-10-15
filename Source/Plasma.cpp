@@ -62,18 +62,6 @@ PeleC::plasma_init()
     pp.query("Precond_fixedIter",ef_PC_fixedIter);
     pp.query("Precond_SchurApprox",ef_PC_approx);
 
-    // ndeak add - hard-coding charges for now
-    // zk[0] = -1.0;
-    // zk[1] =  0.0;
-    // zk[2] =  0.0;
-    // zk[3] =  0.0;
-    // zk[4] =  1.0;
-    // zk[5] =  1.0;
-    // zk[6] =  1.0;
-    // zk[7] =  1.0;
-    // zk[8] =  1.0;
-    // zk[9] = -1.0;
-
     // get charge per unit mass (C/g) CGS
     Real zk_temp[NUM_SPECIES] = {0.0};
     int zk_num_temp[NUM_SPECIES] = {0};
@@ -114,6 +102,8 @@ void PeleC::plasma_define_data() {
       bg_charge.define(grids,dmap,1,1);
       ef_state_old.define(grids,dmap,2,2);
       gasN_cc.define(grids,dmap,1,1);
+      old_state_NL.define(grids,dmap,1,2,MFInfo(),Factory()); old_state_NL.setVal(0.0);
+      old_old_state_NL.define(grids,dmap,1,2,MFInfo(),Factory()); old_old_state_NL.setVal(0.0);
 
       // Valgrind complained about unitialized values here
       // if (elec_Ueff != 0) delete [] elec_Ueff;

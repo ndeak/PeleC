@@ -204,7 +204,8 @@ void PeleC::ef_solve_NL(const Real     &dt,
    for (MFIter mfi(forcing_nE,TilingIfNotGPU()); mfi.isValid(); ++mfi)
    {
       const Box& bx = mfi.tilebox();
-      auto const& old_nE   = ef_state_old.const_array(mfi,1);
+      // auto const& old_nE   = ef_state_old.const_array(mfi,1);
+      auto const& old_nE   = old_state_NL.const_array(mfi,0);
       auto const& new_nE   = nl_state.const_array(mfi,1);
       auto const& I_R_nE   = I_R_in.const_array(mfi,NUM_SPECIES+2);
       auto const& force    = forcing_nE.array(mfi);
@@ -327,7 +328,9 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
       auto const& ne_diff  = diffnE.const_array(mfi);
       auto const& ne_adv   = advnE.const_array(mfi);
       auto const& ne_curr  = nE_a.const_array(mfi);
-      auto const& ne_old   = ef_state_old.const_array(mfi,1);
+      // auto const& ne_old   = ef_state_old.const_array(mfi,1);
+      auto const& ne_old   = old_state_NL.const_array(mfi,0);
+      auto const& ne_old_old   = old_old_state_NL.const_array(mfi,0);
       auto const& charge   = bg_charge.const_array(mfi);
       auto const& res_nE   = a_nl_resid.array(mfi,1);
       auto const& res_phiV = a_nl_resid.array(mfi,0);
@@ -335,7 +338,7 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
       auto flag_arr = flags.const_array(mfi);
 #endif
       Real scalLap         = EFConst::eps0_cgs * EFConst::epsr / EFConst::elemCharge;
-      amrex::ParallelFor(bx, [ne_curr,ne_old,lapPhiV,I_R_nE,ne_diff,ne_adv,charge,res_nE,res_phiV,
+      amrex::ParallelFor(bx, [ne_curr,ne_old,ne_old_old,lapPhiV,I_R_nE,ne_diff,ne_adv,charge,res_nE,res_phiV,
                               dt_lcl,scalLap,do_react
 #ifdef PELEC_USE_EB
                               , flag_arr
@@ -343,9 +346,14 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
                                                       ]
       AMREX_GPU_DEVICE (int i, int j, int k) noexcept
       {    
-         res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) );
-         if (do_react) res_nE(i,j,k) += dt_lcl * I_R_nE(i,j,k);
-         res_phiV(i,j,k) = lapPhiV(i,j,k) * scalLap - ne_curr(i,j,k) + charge(i,j,k);
+         // res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) );
+         // if (do_react) res_nE(i,j,k) += dt_lcl * I_R_nE(i,j,k);
+         res_nE(i,j,k) = -(1.0/3.0)*ne_old_old(i,j,k) + (4.0/3.0)*ne_old(i,j,k) - ne_curr(i,j,k) + (2.0/3.0)*dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) );
+         if (do_react) res_nE(i,j,k) += (2.0/3.0)*dt_lcl * I_R_nE(i,j,k);
+         res_nE(i,j,k) = 0.0;
+         res_phiV(i,j,k) = lapPhiV(i,j,k) * scalLap;
+         if(ef_noSpaceCharge == 0) res_phiV(i,j,k) += -ne_curr(i,j,k) + charge(i,j,k);
+         // if(i == 4 && j == 111 && k == 4) printf("ADV (110) = %.6e, (111) = %.6e, NECURR (110) = %.6e, (111) = %.6e, LPHI (110) = %.6e, (111) = %.6e, BGC (110) = %.6e, (111) = %.6e\n", ne_adv(i,j-1,k), ne_adv(i,j,k), ne_curr(i,j-1,k), ne_curr(i,j,k),lapPhiV(i,j-1,k), lapPhiV(i,j,k), charge(i,j-1,k), charge(i,j,k));
 #ifdef PELEC_USE_EB
          if(flag_arr(i,j,k).isCovered()){
             res_nE(i,j,k) = 0.0;
@@ -355,7 +363,8 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
          // if(i == 4 && k == 4) printf("res_nE(%i) = %.12e, res_phiV = %.12e, ne_diff = %.12e, ne_adv = %.12e, ne_curr = %.12e, lapphi = %.12e\n", j, res_nE(i,j,k), res_phiV(i,j,k), ne_diff(i,j,k), ne_adv(i,j,k), ne_curr(i,j,k), lapPhiV(i,j,k));
       });  
    }
-
+   // exit(1);
+  
    // Deal with scaling
    if ( update_res_scaling ) {
       FnE_scale = (a_nl_resid.norm0(1) > 1.0e-12) ? a_nl_resid.norm0(1) : 1.0 ;
@@ -837,6 +846,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
 #endif
 
          // Computing fluxes
+         // TODO TURN ADVECTION BACK ON!!
          amrex::ParallelFor(xbx, [u,xstate,xflux,area_x]
          AMREX_GPU_DEVICE (int i, int j, int k) noexcept
          {
@@ -1365,7 +1375,7 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
 
    mg_diff->setVerbose(0);
    mg_drift->setVerbose(0);
-   mg_Stilda->setVerbose(0);
+   mg_Stilda->setVerbose(2);
    if ( ef_PC_fixedIter > 0 ) {
       mg_diff->setFixedIter(ef_PC_fixedIter);
       mg_drift->setFixedIter(ef_PC_fixedIter);

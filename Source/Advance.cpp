@@ -192,15 +192,19 @@ PeleC::do_mol_advance(
   if (verbose) {
     amrex::Print() << "... Computing MOL source term at t^{n} " << std::endl;
   }
+  if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
   FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
   amrex::Real flux_factor = 0;
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
+  if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
 
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve
+     amrex::MultiFab::Copy(old_old_state_NL, old_state_NL, 0,0,1,old_old_state_NL.nGrow());
+     amrex::MultiFab::Copy(old_state_NL, Sborder, PhiV+1,0,1,old_state_NL.nGrow());
      MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
-     ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);
+     ef_solve_NL(dt,time,Sborder, molSrc,I_R,forcing_nE);
   }
 #endif
 
@@ -276,7 +280,9 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   // TODO: re-evaluate efield based on * quantities
 #endif
+  if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
+  if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
 
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
@@ -343,6 +349,7 @@ PeleC::do_mol_advance(
   }
 #endif
   computeTemp(S_new, 0);
+  if(ef_use_NLsolve) S_new.setVal(0.0, UFS+E_ID, 1);
 
   // // floor negative electron number density values after reactive update
   //  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {

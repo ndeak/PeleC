@@ -121,12 +121,12 @@ PeleC::solvePI ( Real time,
 
           // Old fit data, only valid at low E/N (<300 Td)
           if(eon_ar(i,j,k) > 1.0e-10){
-            // frateN2 = pow(10, -8.3 - 365.0/eon_ar(i,j,k)); 
-            // frateO2 = pow(10, -8.8 - 281.0/eon_ar(i,j,k)); 
+            frateN2 = pow(10, -8.3 - 365.0/eon_ar(i,j,k)); 
+            frateO2 = pow(10, -8.8 - 281.0/eon_ar(i,j,k)); 
             // frateN2 = pow(10, -7.6 - 600.0/eon_ar(i,j,k)); 
             // frateO2 = pow(10, -8.0 - 400.0/eon_ar(i,j,k)); 
-            frateN2 = pow(10, -7.2 - 700.0/eon_ar(i,j,k)); 
-            frateO2 = pow(10, -7.4 - 550.0/eon_ar(i,j,k)); 
+            // frateN2 = pow(10, -7.2 - 700.0/eon_ar(i,j,k)); 
+            // frateO2 = pow(10, -7.4 - 550.0/eon_ar(i,j,k)); 
           }
     
           // Convert mass to number density
@@ -222,7 +222,7 @@ PeleC::solvePI ( Real time,
       mlmg.setVerbose(ef_PoissonVerbose);
        
       // Solve linear system
-      mlmg.solve({&PI_comp}, {&helmholtzRHS}, 1.0e2*tol_rel, 1.0e2*tol_abs);
+      mlmg.solve({&PI_comp}, {&helmholtzRHS}, 1.0e3*tol_rel, 1.0e3*tol_abs);
 
       // Copy solution back into PI_sources
       for (MFIter mfi(PI_comp,true); mfi.isValid(); ++mfi)

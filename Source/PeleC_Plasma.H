@@ -100,6 +100,8 @@
   amrex::MultiFab*           elec_Ueff;
   amrex::MultiFab            gasN_cc;
   amrex::MultiFab            ionFlx_eb;
+  amrex::MultiFab            old_state_NL;
+  amrex::MultiFab            old_old_state_NL;
 
   // Preconditioner data
 #ifdef PELEC_USE_EB
