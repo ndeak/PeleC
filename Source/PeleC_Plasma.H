@@ -23,6 +23,7 @@
   static int         pulse_num;                             // Number of pulses
   static amrex::Real pulse_dt;                              // Constant time step size taken around each plasma pulse (s)
   static int         ef_triangle_pulse;                     // Use a triangular pulse with pulse_fwhm rise time?
+  static int         ef_trapezoidal_pulse;                  // Use a trapezoidal pulse with pulse_fwhm/2.0 rise time, and pulse_fwhm plateau?
   static amrex::Real pulse_sigma;     
   static amrex::Real curr_voltage;                          // Voltage at time t=n (erg/C)
   static amrex::Real dfact;
@@ -40,7 +41,7 @@
   static int         ef_do_drift;             // Include drift processes for charged species
   static int         ef_do_photoionization;   // Include photoionization
 
-  // Non-linear solve options
+  // Non-linear solve options and variables
   static int         ef_use_PETSC_direct;      // Flag to trigger using PETSC direct solve
   static amrex::Real ef_lambda_jfnk;           // Perturbation mag. for JFNK differencing
   static int         ef_diffT_jfnk;            // Differencing type: 1 - one-sided first order, 2 - centered second order
@@ -93,6 +94,11 @@
   amrex::Real                nl_dt;
   amrex::Real                nl_stateNorm;
   amrex::Real                nl_residNorm;
+  amrex::Real                nl_residNormnE;
+  amrex::Real                nl_residNormphiV;
+  amrex::Real                nl_curr_residNorm;           
+  amrex::Real                nl_correctionNorm;
+  amrex::Real                nl_time_in;
   amrex::MultiFab            bg_charge;
   amrex::MultiFab            ef_state_old;
   amrex::MultiFab            nl_state;
@@ -168,6 +174,7 @@
 
 // Newton exit test
   int testExitNewton(const amrex::MultiFab  &res,
+                     const amrex::MultiFab  &nDir,
                            int              newtonIter);
 
   void compute_bg_charge( const amrex::Real      &dt,
@@ -212,6 +219,10 @@
 // GMRES signatures
   void ef_normMF(const amrex::MultiFab  &a_vec,
                        amrex::Real  &norm);
+
+  void ef_normMFsingle(const amrex::MultiFab  &a_vec,
+                       amrex::Real  &norm,
+                       int compNum);
 
   void jtimesv(const amrex::MultiFab  &x, amrex::MultiFab  &Ax);
 

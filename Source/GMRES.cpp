@@ -128,6 +128,7 @@ GMRESSolver::solve(MultiFab& a_sol,
    m_converged = false;
    do {
 //    Prepare for solve
+      amrex::Print() << "DOIN A RESTART!\n";
       prepareForSolve();
       one_restart(a_sol,a_rhs);
       restart_count++;
@@ -157,12 +158,31 @@ GMRESSolver::prepareForSolve()
 void
 GMRESSolver::one_restart(MultiFab& a_x, const MultiFab& a_rhs)
 {
+
+
    computeResidual(a_x,a_rhs,res);
+
+   // for (MFIter mfi(a_x,TilingIfNotGPU()); mfi.isValid(); ++mfi)
+   // {
+   //   const Box& bx = mfi.growntilebox(1);
+   //   auto const& x_ar  = a_x.const_array(mfi);
+   //   auto const& rhs_ar  = a_rhs.const_array(mfi);
+   //   auto const& res_ar  = res.const_array(mfi);
+   //   amrex::ParallelFor(bx, [x_ar, rhs_ar, res_ar]
+   //   AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+   //   {
+   //       if(i == 4 && k == 4) printf("(%i) a_x 1 = %.12e, a_x 2 = %.12e, a_rhs 1 = %.12e, a_rhs2 = %.12e, res1 = %.12e, res2 = %.12e\n", j, x_ar(i,j,k,0), x_ar(i,j,k,1), rhs_ar(i,j,k,0), rhs_ar(i,j,k,1), res_ar(i,j,k,0), res_ar(i,j,k,1));
+   //   });
+   // }
+   // Real resNorm_0 = std::max(computeNorm(res), 1.0e-15);
    Real resNorm_0 = computeNorm(res);
    if ( m_verbose > 1 ) amrex::Print() << "     [Restart:"<< restart_count << "] initial relative res: " << resNorm_0/initResNorm << "\n";
 
    // Initialize KspBase with normalized residual
    g[0] = resNorm_0;
+   if(resNorm_0 == 0.0) {
+      amrex::Print() << "WARNING: RESNORM IN GMRES ONE RESTART US ZERO!\n";
+   }
    res.mult(1.0/resNorm_0);
    MultiFab::Copy(KspBase[0],res, 0 ,0, m_nComp, 0);
 
@@ -176,6 +196,7 @@ GMRESSolver::one_restart(MultiFab& a_x, const MultiFab& a_rhs)
 
       // Test exit condition
       if ( resNorm < targetResNorm ) {
+         amrex::Print() << "EXIT CONDITION MET ON ITER " << k << "\n";
          m_converged = true;
          k_end = k;
          break;

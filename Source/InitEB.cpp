@@ -26,6 +26,200 @@ PeleC::init_eb(
   initialize_eb2_structs();
 }
 
+static
+void cylinderpin_bottom_profile(std::vector<amrex::RealVect> &points) {
+  amrex::RealVect p;
+
+  p = amrex::RealVect(D_DECL(0.25, 0.1, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24975,0.0999937460888595, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2495,0.099974937185533, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24925,0.09994342998332, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.249,0.099898979485566356, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24875,0.099841229182759, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2485,0.099769696007, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24825,0.0996837484988, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.248,0.09958257569495584, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24775,0.09946514277487, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2475,0.099330127, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24725,0.099175823272, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.247,0.099, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24675,0.09879967103839, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2465,0.09857071421427, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24625,0.09830718913883, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.246,0.098, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24575,0.0976339134382, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2455,0.09717944947177, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24525,0.09656125, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.245, 0.095, 0.25));
+  points.push_back(p);
+
+}
+
+static
+void cylinderpintall_bottom_profile(std::vector<amrex::RealVect> &points) {
+  amrex::RealVect p;
+
+  p = amrex::RealVect(D_DECL(0.25, 0.35, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24975,0.3499937460888595, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2495, 0.349974937185533, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24925,0.34994342998332, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.249,0.349898979485566356, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24875,0.349841229182759, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2485,0.349769696007, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24825,0.3496837484988, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.248,0.34958257569495584, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24775,0.34946514277487, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2475,0.349330127, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24725,0.349175823272, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.247,0.349, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24675,0.34879967103839, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2465,0.34857071421427, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24625,0.34830718913883, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.246,0.348, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24575,0.3476339134382, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2455,0.34717944947177, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24525,0.34656125, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.245, 0.345, 0.25));
+  points.push_back(p);
+
+}
+
+static
+void cylinderpin_top_profile(std::vector<amrex::RealVect> &points) {
+  amrex::RealVect p;
+
+  p = amrex::RealVect(D_DECL(0.245, 0.405, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24525,0.40343875, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2455,0.40282055052823, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24575,0.4023660865618, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.246,0.402, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24625,0.40169281086117, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2465,0.40142928578573, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24675,0.40120032896161, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.247,0.401, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24725,0.400824176728, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2475,0.400669873, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24775,0.40053485722513, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.248,0.40041742430504416, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24825,0.4003162515012, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2485,0.400230303993, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24875,0.400158770817241, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.249,0.400101020514433644, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24925,0.40005657001668, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2495,0.400025062814467, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24975,0.4000062539111405, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.25, 0.4, 0.25));
+  points.push_back(p);
+}
+
+static
+void cylinderpintall_top_profile(std::vector<amrex::RealVect> &points) {
+  amrex::RealVect p;
+
+  p = amrex::RealVect(D_DECL(0.245, 0.655, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24525,0.65343875, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2455,0.65282055052823, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24575,0.6523660865618, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.246,0.652, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24625,0.65169281086117, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2465,0.65142928578573, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24675,0.65120032896161, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.247,0.651, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24725,0.650824176728, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2475,0.650669873, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24775,0.65053485722513, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.248,0.65041742430504416, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24825,0.6503162515012, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2485,0.650230303993, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24875,0.650158770817241, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.249,0.650101020514433644, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24925,0.65005657001668, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.2495,0.650025062814467, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.24975,0.6500062539111405, 0.25));
+  points.push_back(p);
+  p = amrex::RealVect(D_DECL(0.25, 0.65, 0.25));
+  points.push_back(p);
+}
+
 // Set up PeleC EB Datastructures from AMReX EB2 constructs
 // At the end of this routine, the following structures are populated:
 //   - FabArray ebmask
@@ -854,8 +1048,8 @@ initialize_EB2(
       auto allpin_IF = amrex::EB2::makeUnion(*impfunc_pins[0],*impfunc_pins[1]);
 
       auto gshop = amrex::EB2::makeShop(allpin_IF);
-      amrex::EB2::Build(gshop, geom, max_level, max_level);
-      // amrex::EB2::Build(gshop, geom, max_level+2, max_level+30);
+      // amrex::EB2::Build(gshop, geom, max_level, max_level);
+      amrex::EB2::Build(gshop, geom, max_level+1, max_level+30);
   }
   else if (geom_type == "boxes")
   {
@@ -923,8 +1117,9 @@ initialize_EB2(
       auto allbox_IF = amrex::EB2::makeUnion(*impfunc_boxes[0],*impfunc_boxes[1]);
 
       auto gshop = amrex::EB2::makeShop(allbox_IF);
-      amrex::EB2::Build(gshop, geom, max_level, max_level);
-      // amrex::EB2::Build(gshop, geom, max_level+2, max_level+30);
+      // amrex::EB2::Build(gshop, geom, max_level, max_level);
+      amrex::EB2::Build(gshop, geom, max_level+2, max_level+30);
+      // amrex::EB2::Build(gshop, geom, max_level+3, max_level+30);
   }
   else if (geom_type == "sandia_pins")
   {
@@ -1077,7 +1272,119 @@ initialize_EB2(
       auto gshop = amrex::EB2::makeShop(allpin_IF);
       amrex::EB2::Build(gshop, geom, max_level, max_level);
       // amrex::EB2::Build(gshop, geom, 1, 1);
-      // amrex::EB2::Build(gshop, geom, max_level+2, max_level+30);
+      // amrex::EB2::Build(gshop, geom, max_level+1, max_level+30);
+  }
+  else if (geom_type == "cylinder_pins_spline")
+  {
+    amrex::EB2::SplineIF bottomPin;
+    amrex::EB2::SplineIF topPin;
+    amrex::RealVect p;
+
+    // Create bottom pin
+    std::vector<amrex::RealVect> bsplpts;
+    cylinderpin_bottom_profile(bsplpts);
+    bottomPin.addSplineElement(bsplpts);
+
+    std::vector<amrex::RealVect> blnpts;
+
+    p = amrex::RealVect(D_DECL(0.245, 0.095, 0.25));
+    blnpts.push_back(p);
+    p = amrex::RealVect(D_DECL(0.245, 0.05, 0.25));
+    blnpts.push_back(p);
+    p = amrex::RealVect(D_DECL(0.245, -0.01, 0.25));
+    blnpts.push_back(p);
+    bottomPin.addLineElement(blnpts);
+    blnpts.clear();
+
+    std::vector<amrex::RealVect> tlnpts;
+
+    p = amrex::RealVect(D_DECL(0.245, 5.05, 0.25));
+    tlnpts.push_back(p);
+    p = amrex::RealVect(D_DECL(0.245, 0.455, 0.25));
+    tlnpts.push_back(p);
+    p = amrex::RealVect(D_DECL(0.245, 0.405, 0.25));
+    tlnpts.push_back(p);
+    topPin.addLineElement(tlnpts);
+    tlnpts.clear();
+
+    // // Create top pins
+    std::vector<amrex::RealVect> tsplpts;
+    cylinderpin_top_profile(tsplpts);
+    topPin.addSplineElement(tsplpts);
+
+    // amrex::RealArray translateArray;
+    // translateArray[0] = 0.0;
+    // translateArray[1] = 0.3;
+    // translateArray[2] = 0.0;
+
+
+    auto revolveBottomPin  = amrex::EB2::lathe(bottomPin);
+    auto revolveTopPin  = amrex::EB2::lathe(topPin);
+    // auto rotatePin = amrex::EB2::rotate(revolveBottomPin, constants::PI(), 1);
+    // auto translatePin = amrex::EB2::translate(revolveBottomPin, translateArray);
+  
+
+    // auto revolveTopPin  = amrex::EB2::lathe(topPin);
+    auto TopBottomPins = amrex::EB2::makeUnion(revolveBottomPin, revolveTopPin);
+    // auto TopBottomPins = amrex::EB2::makeUnion(revolveBottomPin);
+    auto gshop = amrex::EB2::makeShop(TopBottomPins);
+    amrex::EB2::Build(gshop, geom, max_level, max_level);
+  }
+  else if (geom_type == "cylinder_pins_tall_spline")
+  {
+    amrex::EB2::SplineIF bottomPin;
+    amrex::EB2::SplineIF topPin;
+    amrex::RealVect p;
+
+    // Create bottom pin
+    std::vector<amrex::RealVect> bsplpts;
+    cylinderpintall_bottom_profile(bsplpts);
+    bottomPin.addSplineElement(bsplpts);
+
+    std::vector<amrex::RealVect> blnpts;
+
+    p = amrex::RealVect(D_DECL(0.245, 0.345, 0.25));
+    blnpts.push_back(p);
+    p = amrex::RealVect(D_DECL(0.245, 0.15, 0.25));
+    blnpts.push_back(p);
+    p = amrex::RealVect(D_DECL(0.245, -0.1, 0.25));
+    blnpts.push_back(p);
+    bottomPin.addLineElement(blnpts);
+    blnpts.clear();
+
+    std::vector<amrex::RealVect> tlnpts;
+
+    p = amrex::RealVect(D_DECL(0.245, 1.1, 0.25));
+    tlnpts.push_back(p);
+    p = amrex::RealVect(D_DECL(0.245, 0.85, 0.25));
+    tlnpts.push_back(p);
+    p = amrex::RealVect(D_DECL(0.245, 0.655, 0.25));
+    tlnpts.push_back(p);
+    topPin.addLineElement(tlnpts);
+    tlnpts.clear();
+
+    // // Create top pins
+    std::vector<amrex::RealVect> tsplpts;
+    cylinderpintall_top_profile(tsplpts);
+    topPin.addSplineElement(tsplpts);
+
+    // amrex::RealArray translateArray;
+    // translateArray[0] = 0.0;
+    // translateArray[1] = 0.3;
+    // translateArray[2] = 0.0;
+
+
+    auto revolveBottomPin  = amrex::EB2::lathe(bottomPin);
+    auto revolveTopPin  = amrex::EB2::lathe(topPin);
+    // auto rotatePin = amrex::EB2::rotate(revolveBottomPin, constants::PI(), 1);
+    // auto translatePin = amrex::EB2::translate(revolveBottomPin, translateArray);
+  
+
+    // auto revolveTopPin  = amrex::EB2::lathe(topPin);
+    auto TopBottomPins = amrex::EB2::makeUnion(revolveBottomPin, revolveTopPin);
+    // auto TopBottomPins = amrex::EB2::makeUnion(revolveBottomPin);
+    auto gshop = amrex::EB2::makeShop(TopBottomPins);
+    amrex::EB2::Build(gshop, geom, max_level, max_level);
   }
   else if (geom_type == "rboxes")
   {

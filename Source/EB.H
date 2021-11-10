@@ -16,6 +16,7 @@
 #include <AMReX_EB2_IF_Translation.H>
 #include <AMReX_EB2_IF_Lathe.H>
 #include <AMReX_EB2_IF_Box.H>
+#include <AMReX_EB2_IF_Spline.H>
 #include <AMReX_EB2_IF_Cylinder.H>
 #include <AMReX_EB2_IF_Ellipsoid.H>
 #include <AMReX_EB2_IF_Sphere.H>

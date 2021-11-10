@@ -76,8 +76,10 @@ int PeleC::ef_use_NLsolve = 0;
 int PeleC::ef_use_PETSC_direct = 0;
 int PeleC::ef_diffT_jfnk = 1;
 int PeleC::ef_maxNewtonIter = 50;
-int PeleC::ef_GMRES_size = 20;
-int PeleC::ef_GMRES_maxRst = 5;
+int PeleC::ef_GMRES_size = 50;
+// int PeleC::ef_GMRES_size = 10;
+// int PeleC::ef_GMRES_maxRst = 1;
+int PeleC::ef_GMRES_maxRst = 10;
 int PeleC::ef_GMRES_verbose = 0;
 int PeleC::ef_PoissonVerbose = 0;
 int PeleC::ef_PoissonMaxOrder = 2;
@@ -86,7 +88,8 @@ int PeleC::ef_noSpaceCharge = 0;
 int PeleC::ef_constVoltage = 0;
 int PeleC::ef_do_drift = 1;
 int PeleC::ef_do_photoionization = 0;
-int PeleC::ef_triangle_pulse = 0.0;
+int PeleC::ef_triangle_pulse = 0;
+int PeleC::ef_trapezoidal_pulse = 0;
 int PeleC::ion_bc_type = 0;
 int PeleC::zero_bc_flux = 0;
 int PeleC::ef_PC_fixedIter = -1;
@@ -97,8 +100,8 @@ amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
 amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
 // amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
 // amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
-amrex::Real PeleC::ef_GMRES_reltol = 1.0e-6;
-amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-4;
+amrex::Real PeleC::ef_GMRES_reltol = 1.0e-8;
+amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-8;
 amrex::Real PeleC::secondary_em_coef = 0.0;
 amrex::Real PeleC::electron_emit_const = 0.0;
 amrex::Real PeleC::pulse_freq = 0.0;
@@ -1955,6 +1958,20 @@ PeleC::errorEst(
             amrex::Real y = problo[1] + (j + 0.5)*dx[1];
             amrex::Real z = problo[2] + (k + 0.5)*dx[2];
             tag_plasma_channel(
+              i, j, k, x, y, z, tag_arr, tagval);
+          });
+      }
+
+      // Tagging pin tip region
+      if (level < tagging_parm->pin_tip_lev) {
+        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> problo = geom.ProbLoArray();
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            amrex::Real x = problo[0] + (i + 0.5)*dx[0];
+            amrex::Real y = problo[1] + (j + 0.5)*dx[1];
+            amrex::Real z = problo[2] + (k + 0.5)*dx[2];
+            tag_pin_tips(
               i, j, k, x, y, z, tag_arr, tagval);
           });
       }

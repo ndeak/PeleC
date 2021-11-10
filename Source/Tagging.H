@@ -48,7 +48,9 @@ struct TaggingParm
   amrex::Real efieldgraderr = 1.0e10;
   int max_efieldgrad_lev = 10;
 
-  int plasma_channel_lev = 10;
+  int plasma_channel_lev = 0;
+
+  int pin_tip_lev = 0;
 #endif
 };
 
@@ -156,6 +158,27 @@ tag_plasma_channel(
   // Tag in central pin to pin region (hard code for time being)
   amrex::Real r = sqrt((x-0.25)*(x-0.25) + (z-0.25)*(z-0.25));
   if (r < 0.05 && y > 0.1 && y < 0.4)
+  {
+    tag(i, j, k) = tagval;
+  }
+}
+
+AMREX_GPU_DEVICE
+AMREX_FORCE_INLINE
+void
+tag_pin_tips(
+  const int i,
+  const int j,
+  const int k,
+  amrex::Real x,
+  amrex::Real y,
+  amrex::Real z, 
+  amrex::Array4<char> const& tag,
+  char tagval) noexcept
+{
+  // Tag pin tip region (hard code for time being)
+  amrex::Real r = sqrt((x-0.25)*(x-0.25) + (z-0.25)*(z-0.25));
+  if (r < 0.01 && ((y > 0.095 && y < 0.105) || (y > 0.395 && y < 0.405)) )
   {
     tag(i, j, k) = tagval;
   }

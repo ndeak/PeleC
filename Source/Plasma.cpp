@@ -46,6 +46,7 @@ PeleC::plasma_init()
     pp.query("noSpaceCharge",ef_noSpaceCharge);
     pp.query("constVoltage",ef_constVoltage);
     pp.query("triangle_pulse",ef_triangle_pulse);
+    pp.query("trapezoidal_pulse",ef_trapezoidal_pulse);
     pp.query("do_drift",ef_do_drift);
     pp.query("do_photoionization", ef_do_photoionization);
 
@@ -117,6 +118,9 @@ void PeleC::plasma_define_data() {
       // Transport coefficients
       diff_e.define(this);
       De_ec = diff_e.get();
+      De_ec[0]->setVal(0.0);
+      De_ec[1]->setVal(0.0);
+      De_ec[2]->setVal(0.0);
       mob_e.define(this);
       Ke_ec = mob_e.get();
       gasN_fb.define(this);
@@ -213,6 +217,8 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   amrex::Real mwt[NUM_SPECIES];
   auto eos = pele::physics::PhysicsType::eos();
   eos.molecular_weight(mwt);   // CGS
+  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> problo = geom.ProbLoArray();
 
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -229,15 +235,19 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      auto const& redEfab = redEfield.array(mfi);
      Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
      int useNL   = ef_use_NLsolve;
-     amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rhoD, Ke, De, useNL, redEfab, mwt]
+     amrex::ParallelFor(gbox, [dx, problo, rhoY, T, factor, Ks, rhoD, Ke, De, useNL, redEfab, mwt]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
+        amrex::Real x = problo[0] + (i + 0.5)*dx[0];
+        amrex::Real y = problo[1] + (j + 0.5)*dx[1];
+        amrex::Real z = problo[2] + (k + 0.5)*dx[2];
+
         if (useNL) {
            getKappaE(i,j,k,0,Ke,redEfab,rhoY,mwt);
-           getDiffE(i,j,k,0,useNL,factor,T,rhoY,Ke,De,redEfab,mwt);
+           getDiffE(i,j,k,x,y,z,0,useNL,factor,T,rhoY,Ke,De,redEfab,mwt);
         } else {
            getKappaE(i,j,k,E_ID,Ks,redEfab,rhoY,mwt);
-           getDiffE(i,j,k,E_ID,useNL,factor,T,rhoY,Ks,rhoD,redEfab,mwt);
+           getDiffE(i,j,k,x,y,z,E_ID,useNL,factor,T,rhoY,Ks,rhoD,redEfab,mwt);
         }
      });
      Real mwt[NUM_SPECIES];
@@ -517,6 +527,24 @@ void PeleC::getCurrVoltage(Real time) {
       curr_voltage += (amrex::Math::abs(time - pulse_time_tmp) < pulse_fwhm) ? (1.0 - amrex::Math::abs(time - pulse_time_tmp)/pulse_fwhm)*pulse_peak :0.0;
     }
   }
+  else if(ef_trapezoidal_pulse == 1){
+    for(int i=0; i<pulse_num; i++){
+      pulse_time_tmp = pulse_timing  + (i)*(1.0/pulse_freq);
+    
+      if(pulse_time_tmp - time > pulse_fwhm/2.0 && pulse_time_tmp - time < pulse_fwhm){
+        curr_voltage += (1.0 - amrex::Math::abs( (pulse_time_tmp - (pulse_fwhm/2.0) - time) / (pulse_fwhm/2.0))) * pulse_peak;
+      }
+      else if(time - pulse_time_tmp > pulse_fwhm/2.0 && time - pulse_time_tmp < pulse_fwhm){
+        curr_voltage += (1.0 - amrex::Math::abs( (pulse_time_tmp + (pulse_fwhm/2.0) - time) / (pulse_fwhm/2.0))) * pulse_peak;
+      }
+      else if( amrex::Math::abs(pulse_time_tmp - time) < pulse_fwhm/2.0){
+        curr_voltage += pulse_peak;
+      }
+      else{
+        curr_voltage += 0.0;
+      }
+    }
+  }
   else{
     for(int i=0; i<pulse_num; i++){
       pulse_time_tmp = pulse_timing  + (i)*(1.0/pulse_freq);
@@ -526,7 +554,11 @@ void PeleC::getCurrVoltage(Real time) {
 
   if(ef_constVoltage == 1) curr_voltage = pulse_peak;
 
+  amrex::Print() << "CURRENT APPLIED VOLTAGE IS " << curr_voltage << "\n";
+
   ProbParmDevice* lprobparm = d_prob_parm_device;
   lprobparm->PhiV_top = 0.0;
   lprobparm->PhiV_bottom = curr_voltage;
+  // lprobparm->PhiV_top = curr_voltage;
+  // lprobparm->PhiV_bottom = 0.0;
 }

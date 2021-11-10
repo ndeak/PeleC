@@ -14,6 +14,8 @@
 
 using namespace amrex;
 
+// TODO: figure out why residual due to lapPhiV is so much larger when using EB than without 
+
 void PeleC::jtimesv(const MultiFab &v,
                           MultiFab &Jv)
 {
@@ -27,16 +29,15 @@ void PeleC::jtimesv(const MultiFab &v,
     }
  
     Real delta_pert = ef_lambda_jfnk * ( ef_lambda_jfnk + nl_stateNorm / vNorm );
-    // amrex::Print() << "DELTA PERT = " << delta_pert << " LAMBDA JFNK = " << ef_lambda_jfnk << " NLSTATENORM = " << nl_stateNorm << " vNORM = " << vNorm << "\n";
  
     if ( ef_diffT_jfnk == 1 ) {
        // Create perturbed state
-       MultiFab S_pert(grids,dmap,2,2);
+       MultiFab S_pert(grids,dmap,2,2,amrex::MFInfo(), Factory());
        MultiFab::Copy(S_pert, nl_state, 0, 0, 2, 2);
        MultiFab::Saxpy(S_pert,delta_pert,v, 0, 0, 2 ,0);
  
        // Get perturbed residual
-       MultiFab res_pert(grids,dmap,2,1);
+       MultiFab res_pert(grids,dmap,2,1,amrex::MFInfo(), Factory());
        ef_nlResidual(nl_dt,S_pert,res_pert);
        res_pert.mult(-1.0);
  
@@ -45,16 +46,16 @@ void PeleC::jtimesv(const MultiFab &v,
        Jv.mult(-1.0/delta_pert);
     } else if ( ef_diffT_jfnk == 2 ) {
        // Create perturbed states
-       MultiFab S_pertm(grids,dmap,2,2);
-       MultiFab S_pertp(grids,dmap,2,2);
+       MultiFab S_pertm(grids,dmap,2,2,amrex::MFInfo(), Factory());
+       MultiFab S_pertp(grids,dmap,2,2,amrex::MFInfo(), Factory());
        MultiFab::Copy(S_pertp, nl_state, 0, 0, 2, 2);
        MultiFab::Copy(S_pertm, nl_state, 0, 0, 2, 2);
        MultiFab::Saxpy(S_pertp,delta_pert,v, 0, 0, 2 ,0);
        MultiFab::Saxpy(S_pertm,-delta_pert,v, 0, 0, 2 ,0);
  
        // Get perturbed residuals
-       MultiFab res_pertp(grids,dmap,2,1);
-       MultiFab res_pertm(grids,dmap,2,1);
+       MultiFab res_pertp(grids,dmap,2,1,amrex::MFInfo(), Factory());
+       MultiFab res_pertm(grids,dmap,2,1,amrex::MFInfo(), Factory());
        ef_nlResidual(nl_dt,S_pertp,res_pertp);
        ef_nlResidual(nl_dt,S_pertm,res_pertm);
        res_pertm.mult(-1.0);
@@ -78,6 +79,7 @@ void PeleC::ef_solve_NL(const Real     &dt,
    BL_PROFILE("PC_EF::ef_solve_NL()");
 
    const Real strt_time = ParallelDescriptor::second();
+   nl_time_in = time;
 
    // Substepping of non-linear solve: DEACTIVATE for now
    nl_dt = dt/1.0;
@@ -138,9 +140,11 @@ void PeleC::ef_solve_NL(const Real     &dt,
    ef_nlResidual( nl_dt, nl_state, nl_resid, true, true );
    nl_resid.mult(-1.0,0,2,2);
    ef_normMF(nl_resid,nl_residNorm);
+   nl_curr_residNorm = nl_residNorm;
    if ( ef_debug ) VisMF::Write(nl_resid,"NLResInit_Lvl"+std::to_string(level));
 
    // Check for direct convergence
+   amrex::Print() << "PRE NEWTON: NORM0 VALUES ARE " << nl_resid.norm0(0) << " AND " << nl_resid.norm0(1) << "\n"; 
    Real max_nlres = std::max(nl_resid.norm0(0),nl_resid.norm0(1));
    if ( max_nlres <= ef_newtonTol ) {
       if ( ef_verbose ) {
@@ -163,16 +167,18 @@ void PeleC::ef_solve_NL(const Real     &dt,
       }
 
       // Solve for Newton direction
-      MultiFab newtonDir(grids,dmap,2,1);
+      MultiFab newtonDir(grids,dmap,2,1,amrex::MFInfo(), Factory());
       newtonDir.setVal(0.0,0,2,1);
       if ( !ef_use_PETSC_direct ) {
          const Real S_tol     = ef_GMRES_reltol;
          const Real S_tol_abs = max_nlres * ef_GMRES_reltol;
          GMRES_tot_count += gmres.solve(newtonDir,nl_resid,S_tol_abs,S_tol);
+         // GMRES_tot_count += gmres.solve(newtonDir,nl_resid,1.0e-5,S_tol);
          if ( ef_debug ) VisMF::Write(newtonDir,"NLDir_NewtIte"+std::to_string(NK_ite)+"_Lvl"+std::to_string(level));
       } else {
          amrex::Print() << "PETSC direct solve in Newton not implemented \n";
       }
+      // exit(1);
 
       // Linesearch & update state: TODO
       nl_state.plus(newtonDir,0,2,0);
@@ -182,13 +188,57 @@ void PeleC::ef_solve_NL(const Real     &dt,
       if ( ef_debug ) VisMF::Write(nl_resid,"NLRes_NewtIte"+std::to_string(NK_ite)+"_Lvl"+std::to_string(level));
       if ( ef_debug ) VisMF::Write(nl_state,"NLState_NewtIte"+std::to_string(NK_ite)+"_Lvl"+std::to_string(level));
       ef_normMF(nl_resid,nl_residNorm);
+      
+      amrex::Print() << "NORM0 VALUES ARE " << nl_resid.norm0(0) << " AND " << nl_resid.norm0(1) << "\n"; 
       max_nlres = std::max(nl_resid.norm0(0),nl_resid.norm0(1));
+      // ef_normMFsingle(nl_resid,nl_residNormphiV, 0);
+      // ef_normMFsingle(nl_resid,nl_residNormnE, 1);
+      // max_nlres = std::max(nl_residNormphiV,nl_residNormnE);
+
+      // Linesearch & update state: TODO
+      // int ls_max = 2;
+
+      // for(int ls = 0; ls < ls_max; ls++){
+      //   // Update the solution 
+      //   nl_state.plus(newtonDir,0,2,0);
+      //   ef_normMF(nl_state,nl_stateNorm);
+
+      //   // Calculate the residual norm based on the new state
+      //   ef_nlResidual( nl_dt, nl_state, nl_resid, false, true );
+      //   nl_resid.mult(-1.0,0,2,2);
+      //   amrex::Print() << "THIS IS RESID NORM!\n";
+      //   ef_normMF(nl_resid,nl_residNorm);
+
+      //   if(ef_verbose) amrex::Print() << "On linesearch iteration " << ls+1 << " , original residNorm = " << nl_curr_residNorm << " ,new residNorm = " << nl_residNorm << "\n";
+
+      //   // Compare the new residual norm with the old one
+      //   if(nl_residNorm > nl_curr_residNorm){
+      //     if(ls+1 == ls_max){
+      //       amrex::Print() << "Error: linesearch unable to find a solution that reduces the residual!";
+      //       exit(1);
+      //     }
+
+      //     // Remove the update from the solution
+      //     nl_state.minus(newtonDir,0,2,0);
+
+      //     // Reduce the update direction by a factor of 2 and try again
+      //     newtonDir.mult(0.5, 0, 2, 0);
+      //   }
+      //   else{
+      //     nl_curr_residNorm = nl_residNorm;
+      //     break;
+      //   }
+      // }
+      // if ( ef_debug ) VisMF::Write(nl_resid,"NLRes_NewtIte"+std::to_string(NK_ite)+"_Lvl"+std::to_string(level));
+      // if ( ef_debug ) VisMF::Write(nl_state,"NLState_NewtIte"+std::to_string(NK_ite)+"_Lvl"+std::to_string(level));
+      // max_nlres = std::max(nl_resid.norm0(0),nl_resid.norm0(1));
 
       // Exit condition
-      exit_newton = testExitNewton(nl_resid,NK_ite);
+      exit_newton = testExitNewton(nl_resid, newtonDir, NK_ite);
 
    } while( !exit_newton );
    NK_tot_count += NK_ite;
+   // exit(1);
 
    // -------------------------------------------
    // Post Newton   
@@ -206,15 +256,16 @@ void PeleC::ef_solve_NL(const Real     &dt,
       const Box& bx = mfi.tilebox();
       // auto const& old_nE   = ef_state_old.const_array(mfi,1);
       auto const& old_nE   = old_state_NL.const_array(mfi,0);
-      auto const& new_nE   = nl_state.const_array(mfi,1);
+      auto const& new_nE   = nl_state.array(mfi,1);
       auto const& I_R_nE   = I_R_in.const_array(mfi,NUM_SPECIES+2);
       auto const& force    = forcing_nE.array(mfi);
       Real dtinv           = 1.0 / nl_dt;
       amrex::ParallelFor(bx, [old_nE, new_nE, I_R_nE, force, dtinv, do_react]
       AMREX_GPU_DEVICE (int i, int j, int k) noexcept
       {
+         // if(new_nE(i,j,k) < 0.0) printf("WARNING! NEGATIVE NEW NE AFTER COUPSYS nE(%i %i %i) = %.6e\n", i, j, k, new_nE(i,j,k));
+         if(new_nE(i,j,k) < 0.0) new_nE(i,j,k) = 1.0e-30;
          force(i,j,k) = (new_nE(i,j,k) - old_nE(i,j,k)) * dtinv;
-         if(new_nE(i,j,k) < 0.0) printf("WARNING! NEGATIVE NEW NE AFTER COUPSYS nE(%i %i %i) = %.6e\n", i, j, k, new_nE(i,j,k));
          if (do_react) force(i,j,k) -= I_R_nE(i,j,k);
       });
    }
@@ -239,10 +290,13 @@ void PeleC::ef_solve_NL(const Real     &dt,
 }
 
 int PeleC::testExitNewton(const MultiFab  &res,
+                          const MultiFab  &nDir,
                                 int       newtonIter){
 
    int exit = 0; 
    Real max_res = std::max(res.norm0(0),res.norm0(1));
+   Real max_dir = std::max(nDir.norm0(0),nDir.norm0(1));
+   ef_normMF(nDir,nl_correctionNorm);
    if ( max_res <= ef_newtonTol ) {
       exit = 1; 
       if ( ef_verbose ) {
@@ -251,12 +305,40 @@ int PeleC::testExitNewton(const MultiFab  &res,
          amrex::Print() << " Final Newton Linf res norm : " << max_res << "\n";
       }    
    }
+  
+   // Exit if Newton correction sufficiently small
+   if ( max_dir <= ef_newtonTol ) {
+      exit = 1; 
+      if ( ef_verbose ) {
+         amrex::Print() << " Newton correction sufficiently small: \n";
+         amrex::Print() << " Final Newton L2**2 correction norm : " << 0.5*nl_correctionNorm*nl_correctionNorm << "\n";
+         amrex::Print() << " Final Newton Linf res norm : " << max_dir << "\n";
+      }    
+   }
 
    if ( newtonIter >= ef_maxNewtonIter && exit == 0 ) {
       exit = 1; 
       amrex::Print() << " Max Newton iteration reached without convergence !!! \n";
       std::exit(1);
    }
+
+   // If we cannot exit due to the phiV residual check it's size relative to its
+   // initial scaling value
+   ef_normMFsingle(nl_resid,nl_residNormphiV, 0);
+   ef_normMFsingle(nl_resid,nl_residNormnE, 1);
+   amrex::Print() << "phiV L2 component = " << nl_residNormphiV << ", initial scaling value = " << phiV_scale << ", nE L2 component = " << nl_residNormnE << ", norm0 nE = " << res.norm0(1) <<"\n"; 
+   if(exit == 0 && res.norm0(1) <= ef_newtonTol){
+      ef_normMFsingle(nl_resid,nl_residNormphiV, 0);
+      ef_normMFsingle(nl_resid,nl_residNormnE, 1);
+      
+      if(nl_residNormphiV/phiV_scale <= ef_newtonTol){
+         exit = 1;
+         amrex::Print() << " Newton iterations converged: \n";
+         amrex::Print() << " Final Newton nE L2**2 res norm : " << 0.5*nl_residNormnE*nl_residNormnE << "\n";
+         amrex::Print() << " Final Newton phiV L2 res norm / S(phiV) : " << nl_residNormphiV/phiV_scale << "\n";
+      }
+   }
+
 
    return exit;
 }
@@ -269,42 +351,32 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
    BL_PROFILE("PC_EF::ef_nlResidual()");
 
    // Get the unscaled non-linear state
-   MultiFab nl_state_usc(grids,dmap,2,2);
+   MultiFab nl_state_usc(grids,dmap,2,2,amrex::MFInfo(), Factory());
    MultiFab::Copy(nl_state_usc, a_nl_state, 0, 0, 2, 2);
    nl_state_usc.mult(nE_scale,1,1,1);
    nl_state_usc.mult(phiV_scale,0,1,1);
+
+   nl_state_usc.FillBoundary(0, 2, geom.periodicity());
 
    // Get aliases to make it easier
    MultiFab nE_a(nl_state_usc,amrex::make_alias,1,1);
    MultiFab phi_a(nl_state_usc,amrex::make_alias,0,1);
 
-   // for (MFIter mfi(nE_a,TilingIfNotGPU()); mfi.isValid(); ++mfi)
-   // {
-   //    const Box& bx = mfi.growntilebox();
-   //    auto const& ne_curr  = nE_a.const_array(mfi);
-   //    auto const& phi_curr  = phi_a.const_array(mfi);
-   //    amrex::ParallelFor(bx, [ne_curr, phi_curr]
-   //    AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-   //    {    
-   //       if(i == 4 && k == 4) printf("(%i) ne_in = %.12e, phi_in = %.12e\n", j, ne_curr(i,j,k), phi_curr(i,j,k));
-   //    });  
-   // }
-
    // Lap(PhiV) and grad(PhiV)
    FluxBoxes gphi_fb(this, 1, 0);
    MultiFab** gphiV = gphi_fb.get();
-   MultiFab laplacian_term(grids, dmap, 1, 0);
+   MultiFab laplacian_term(grids, dmap, 1, 0, amrex::MFInfo(), Factory());
    const ProbParmDevice* lprobparm = d_prob_parm_device;
    compPhiVLap(phi_a,laplacian_term,gphiV, *lprobparm);
    if ( ef_debug ) VisMF::Write(laplacian_term,"NLRes_phiVLap_"+std::to_string(level));
 
    // Diffusion term nE
-   MultiFab diffnE(grids, dmap, 1, 0);
+   MultiFab diffnE(grids, dmap, 1, 0, amrex::MFInfo(), Factory());
    compElecDiffusion(nE_a,diffnE);
    if ( ef_debug ) VisMF::Write(diffnE,"NLRes_ElecDiff_"+std::to_string(level));
 
    // Advective term nE
-   MultiFab advnE(grids, dmap, 1, 0);
+   MultiFab advnE(grids, dmap, 1, 0, amrex::MFInfo(), Factory());
    compElecAdvection(nE_a,phi_a,gphiV,advnE);
    if ( ef_debug ) VisMF::Write(advnE,"NLRes_ElecAdv_"+std::to_string(level));
 
@@ -324,6 +396,7 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
    {
       const Box& bx = mfi.tilebox();
       auto const& I_R_nE   = get_new_data(Reactions_Type).const_array(mfi,NUM_SPECIES+2);
+      // auto const& I_R_nE   = I_R.const_array(mfi,NUM_SPECIES+2);
       auto const& lapPhiV  = laplacian_term.const_array(mfi);
       auto const& ne_diff  = diffnE.const_array(mfi);
       auto const& ne_adv   = advnE.const_array(mfi);
@@ -346,21 +419,21 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
                                                       ]
       AMREX_GPU_DEVICE (int i, int j, int k) noexcept
       {    
-         // res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) );
-         // if (do_react) res_nE(i,j,k) += dt_lcl * I_R_nE(i,j,k);
-         res_nE(i,j,k) = -(1.0/3.0)*ne_old_old(i,j,k) + (4.0/3.0)*ne_old(i,j,k) - ne_curr(i,j,k) + (2.0/3.0)*dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) );
-         if (do_react) res_nE(i,j,k) += (2.0/3.0)*dt_lcl * I_R_nE(i,j,k);
-         res_nE(i,j,k) = 0.0;
+         // TODO: REMOVE FACTOR
+         res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) );
+         if (do_react) res_nE(i,j,k) += dt_lcl * I_R_nE(i,j,k);
+         // res_nE(i,j,k) = -(1.0/3.0)*ne_old_old(i,j,k) + (4.0/3.0)*ne_old(i,j,k) - ne_curr(i,j,k) + (2.0/3.0)*dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) );
+         // if (do_react) res_nE(i,j,k) += (2.0/3.0)*dt_lcl * I_R_nE(i,j,k);
          res_phiV(i,j,k) = lapPhiV(i,j,k) * scalLap;
          if(ef_noSpaceCharge == 0) res_phiV(i,j,k) += -ne_curr(i,j,k) + charge(i,j,k);
-         // if(i == 4 && j == 111 && k == 4) printf("ADV (110) = %.6e, (111) = %.6e, NECURR (110) = %.6e, (111) = %.6e, LPHI (110) = %.6e, (111) = %.6e, BGC (110) = %.6e, (111) = %.6e\n", ne_adv(i,j-1,k), ne_adv(i,j,k), ne_curr(i,j-1,k), ne_curr(i,j,k),lapPhiV(i,j-1,k), lapPhiV(i,j,k), charge(i,j-1,k), charge(i,j,k));
+         // res_phiV(i,j,k) = 0.0;
 #ifdef PELEC_USE_EB
          if(flag_arr(i,j,k).isCovered()){
             res_nE(i,j,k) = 0.0;
             res_phiV(i,j,k) = 0.0;
          }
 #endif
-         // if(i == 4 && k == 4) printf("res_nE(%i) = %.12e, res_phiV = %.12e, ne_diff = %.12e, ne_adv = %.12e, ne_curr = %.12e, lapphi = %.12e\n", j, res_nE(i,j,k), res_phiV(i,j,k), ne_diff(i,j,k), ne_adv(i,j,k), ne_curr(i,j,k), lapPhiV(i,j,k));
+         // if(i == 4 && k == 4) printf("res_nE(%i) = %.12e, ne_adv = %.12e, ne_diff = %.12e, res_phiV = %.12e, lapphi = %.12e\n", j, res_nE(i,j,k), ne_adv(i,j,k), ne_diff(i,j,k), res_phiV(i,j,k), lapPhiV(i,j,k));
       });  
    }
    // exit(1);
@@ -396,44 +469,62 @@ void PeleC::compPhiVLap(MultiFab& phi,
    info.setConsolidation(1);
    info.setMetricTerm(false);
    info.setMaxCoarseningLevel(0);
+   const ProbParmDevice* lprobparm = d_prob_parm_device;
 #ifdef AMREX_USE_EB
     const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
+    auto const& flags = ebf->getMultiEBCellFlagFab();
     MLEBABecLap phiV_poisson({geom}, {grids}, {dmap}, info, {ebf});
+
+   // for (MFIter mfi(phi,true); mfi.isValid(); ++mfi)
+   // {
+   //     const Box& bx = mfi.growntilebox();
+   //     const auto& phiV_ar = phi.array(mfi);
+   //     auto flag_arr = flags.const_array(mfi);
+   //     amrex::ParallelFor(bx,
+   //     [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+   //     {
+   //        if(flag_arr(i,j,k).isCovered()){
+   //            phiV_ar(i,j,k) = 0.0;
+   //        }
+   //     });
+   // }
 #else
     MLPoisson phiV_poisson({geom}, {grids}, {dmap}, info);
 #endif
     phiV_poisson.setMaxOrder(ef_PoissonMaxOrder);
 
+    MultiFab PhiVborder(grids, dmap, 1, 1, amrex::MFInfo(), Factory());
+    PhiVborder.setVal(0.0);
+    amrex::MultiFab::Copy(PhiVborder,phi,0,0,1,0);
+    PhiVborder.FillBoundary(geom.periodicity());
+    const BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
+    const Vector<BCRec>& bc = {bcphiV};
+    if (not geom.isAllPeriodic()) {
+       amrex::GpuBndryFuncFab<PhiVFill>  bf(PhiVFill{lprobparm});
+       PhysBCFunct<GpuBndryFuncFab<PhiVFill> > phiVf(geom, bc, bf);
+       phiVf(PhiVborder, 0, 1, PhiVborder.nGrowVect(), nl_time_in, 0);
+    }
+    MultiFab phiV_borders(PhiVborder, amrex::make_alias, 0, 1);
+
 // Set-up BC's
    std::array<LinOpBCType,AMREX_SPACEDIM> mlmg_lobc;
    std::array<LinOpBCType,AMREX_SPACEDIM> mlmg_hibc;
-   ef_set_PoissonBC(mlmg_lobc, mlmg_hibc);
+   // ef_set_PoissonBC(mlmg_lobc, mlmg_hibc);
+   setBCPhiV(mlmg_lobc, mlmg_hibc);
    phiV_poisson.setDomainBC(mlmg_lobc, mlmg_hibc);
 
-   MultiFab phiV_crse;
+   // MultiFab phiV_crse;
+   Real prev_time = state[State_Type].prevTime();
+   std::unique_ptr<MultiFab> phiV_crse;
    if (level > 0) {
-      amrex::Abort("ef_compPhiVLap need to be modified for ML");
       auto& crselev = getLevel(level-1);
-      phiV_crse.define(crselev.grids, crselev.dmap, 1, 0, MFInfo(), crselev.Factory());
-      //FillPatch(crselev, phiV_crse, 0, time, State_Type, PhiV, 1, 0);
-      phiV_poisson.setCoarseFineBC(&phiV_crse, crse_ratio[0]);
+      phiV_crse.reset(new MultiFab(crselev.boxArray(), crselev.DistributionMap(), 1, 0));
+      MultiFab& Coarse_State = (nl_time_in == prev_time) ? crselev.get_old_data(State_Type) : crselev.get_new_data(State_Type);
+      MultiFab::Copy(*phiV_crse, Coarse_State,PhiV,0,1,0);
+      phiV_poisson.setCoarseFineBC(phiV_crse.get(), crse_ratio[0]);
    }
    // Set the inhomogenous domain BCs
-   phiV_poisson.setLevelBC(0, &phi);
-
-// #ifndef PELEC_USE_EB
-//    for (MFIter mfi(phi,true); mfi.isValid(); ++mfi)
-//    {
-//        const Box& bx = mfi.growntilebox();
-//        const auto& phi_ar = phi.array(mfi);
-//        amrex::ParallelFor(bx,
-//        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-//        {
-//           if(i == 4 && k == 4 && j == -1) printf("LOWER PHI DOMAIN BC = %.6e\n", phi_ar(i,j,k));
-//           if(i == 4 && k == 4 && j == 256) printf("UPPER PHI DOMAIN BC = %.6e\n", phi_ar(i,j,k));
-//        });
-//    }
-// #endif
+   phiV_poisson.setLevelBC(0, &phiV_borders);
 
 #ifdef AMREX_USE_EB
     // Setup solver coefficient: general form is (ascal * acoef - bscal * div bcoef grad ) phi = rhs
@@ -456,7 +547,6 @@ void PeleC::compPhiVLap(MultiFab& phi,
    MultiFab beta(grids, dmap, 1, 0, MFInfo(), Factory());
    beta.setVal(1.0);
    // TODO make sure bottom_phiv is updated to be at t=n+1
-   const ProbParmDevice* lprobparm = d_prob_parm_device;
    for (MFIter mfi(beta,true); mfi.isValid(); ++mfi)
    {
        const Box& bx = mfi.growntilebox();
@@ -464,16 +554,15 @@ void PeleC::compPhiVLap(MultiFab& phi,
        const Real* dx      = geom.CellSize();
        const Real* problo  = geom.ProbLo();
        const Real* probhi  = geom.ProbHi();
+       auto flag_arr = flags.const_array(mfi);
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {
            Real y = problo[1] + (j + 0.5)*dx[1];
            if (y >= probhi[1] / 2.0) {
                phiV_ar(i,j,k) = prob_parm.PhiV_top;
-               // if(i == 4 && k == 4 && j == 384) printf("UPPER EB PHI = %.6e\n", phiV_ar(i,j,k));
            } else {
                phiV_ar(i,j,k) = prob_parm.PhiV_bottom;
-               // if(i == 4 && k == 4 && j == 127) printf("LOWER EB PHI = %.6e\n",phiV_ar(i,j,k));
            }
        });
    }
@@ -483,11 +572,21 @@ void PeleC::compPhiVLap(MultiFab& phi,
 
 // LinearSolver to get divergence
    MLMG solver(phiV_poisson);
-   solver.apply({&phiLap},{&phi});
+   solver.apply({&phiLap},{&phiV_borders});
+   // solver.apply({&phiLap},{&phi});
    
 // Need the flux (grad(phi))
    Array<MultiFab*,AMREX_SPACEDIM> fp{D_DECL(gPhiV[0],gPhiV[1],gPhiV[2])};
-   solver.getFluxes({fp},{&phi});
+   gPhiV[0]->setVal(0.0);
+   gPhiV[1]->setVal(0.0);
+   gPhiV[2]->setVal(0.0);
+
+   // std::array<MultiFab*,AMREX_SPACEDIM> fp{D_DECL(gradPhiV[0],gradPhiV[1],gradPhiV[2])};
+   // solver.getGradSolution({fp});
+
+   // solver.getFluxes({fp},{&phi});
+   solver.getFluxes({fp},{&phiV_borders});
+   // solver.getEBFluxes({fp},{&phiV_borders});
 }  
 
 void PeleC::compElecDiffusion(const MultiFab& a_ne,
@@ -499,6 +598,7 @@ void PeleC::compElecDiffusion(const MultiFab& a_ne,
    info.setConsolidation(1);
    info.setMetricTerm(false);
    info.setMaxCoarseningLevel(0);
+   const ProbParmDevice* lprobparm = d_prob_parm_device;
 #ifdef AMREX_USE_EB
     const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
     MLEBABecLap ne_lapl({geom}, {grids}, {dmap}, info, {ebf});
@@ -507,6 +607,19 @@ void PeleC::compElecDiffusion(const MultiFab& a_ne,
 #endif
     ne_lapl.setMaxOrder(ef_PoissonMaxOrder);
 
+    MultiFab nEborder(grids, dmap, 1, 1, amrex::MFInfo(), Factory());
+    nEborder.setVal(0.0);
+    amrex::MultiFab::Copy(nEborder,a_ne,0,0,1,0);
+    nEborder.FillBoundary(geom.periodicity());
+    const BCRec& bcnE = get_desc_lst()[State_Type].getBC(nE);
+    const Vector<BCRec>& bc = {bcnE};
+    if (not geom.isAllPeriodic()) {
+       amrex::GpuBndryFuncFab<nEFill>  bf(nEFill{lprobparm});
+       PhysBCFunct<GpuBndryFuncFab<nEFill> > nEf(geom, bc, bf);
+       nEf(nEborder, 0, 1, nEborder.nGrowVect(), nl_time_in, 0);
+    }
+    MultiFab nE_borders(nEborder, amrex::make_alias, 0, 1);
+
    // Set-up BC's
    // Domain BCs
    std::array<LinOpBCType,AMREX_SPACEDIM> mlmg_lobc;
@@ -514,51 +627,20 @@ void PeleC::compElecDiffusion(const MultiFab& a_ne,
    ef_set_neBC(mlmg_lobc, mlmg_hibc);
    ne_lapl.setDomainBC(mlmg_lobc, mlmg_hibc);
 
-   // Level BCs
-   // Needed since span-wise BCs are not homogenous
-   MultiFab nE_crse;
+   // Filling coarse/fine BCs
+   Real prev_time = state[State_Type].prevTime();
+   std::unique_ptr<MultiFab> nE_crse;
    if (level > 0) {
       auto& crselev = getLevel(level-1);
-      nE_crse.define(crselev.grids, crselev.dmap, 1, 0, MFInfo(), crselev.Factory());
-//      FillPatch(crselev, nE_crse, 0, curtime, State_Type, nE, 1, 0);
-      ne_lapl.setCoarseFineBC(&nE_crse, crse_ratio[0]);
+      nE_crse.reset(new MultiFab(crselev.boxArray(), crselev.DistributionMap(), 1, 0));
+      MultiFab& Coarse_State = (nl_time_in == prev_time) ? crselev.get_old_data(State_Type) : crselev.get_new_data(State_Type);
+      MultiFab::Copy(*nE_crse, Coarse_State,PhiV+1,0,1,0);
+      ne_lapl.setCoarseFineBC(nE_crse.get(), crse_ratio[0]);
    }
+
+   // Level BCs
+   // Needed since span-wise BCs are not homogenous
    ne_lapl.setLevelBC(0, &a_ne);
-
-// #ifndef PELEC_USE_EB
-//    for (MFIter mfi(a_ne,true); mfi.isValid(); ++mfi)
-//    {
-//        const Box& bx = mfi.growntilebox();
-//        const auto& ne_ar = a_ne.array(mfi);
-//        amrex::ParallelFor(bx,
-//        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-//        {
-//           if(i == 4 && k == 4 && j == -1) printf("LOWER NE DIFF DOMAIN BC = %.12e\n", ne_ar(i,j,k));
-//           if(i == 4 && k == 4 && j == 256) printf("UPPER NE DIFF DOMAIN BC = %.12e\n", ne_ar(i,j,k));
-//        });
-//    }
-// #endif
-
-   // EB BCs
-   // TODO: default for EB is neumann BCs everywhere - do we need to do anything else?
-// #ifdef PELEC_USE_EB
-//     MultiFab beta(grids, dmap, 1, 0, MFInfo(), Factory());
-//     beta.setVal(1.0);
-// 
-//    for (MFIter mfi(beta,true); mfi.isValid(); ++mfi)
-//    {
-//        const Box& bx = mfi.growntilebox();
-//        const auto& ne_ar = a_ne.array(mfi);
-//        amrex::ParallelFor(bx,
-//        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-//        {
-//           if(i == 4 && k == 4 && j == 127) printf("LOWER NE DIFF EB BC = %.12e\n", ne_ar(i,j,k));
-//           if(i == 4 && k == 4 && j == 384) printf("UPPER NE DIFF EB BC = %.12e\n", ne_ar(i,j,k));
-//        });
-//    }
-// 
-//    // ne_lapl.setEBDirichlet(0,a_ne,beta);
-// #endif
 
    // Coeffs
    // TODO: figure out whether edge state accounts for EBs
@@ -572,54 +654,10 @@ void PeleC::compElecDiffusion(const MultiFab& a_ne,
    MultiFab::Copy(neOp,a_ne,0,0,1,2);
    MLMG solver(ne_lapl);
 
-// #ifdef PELEC_USE_EB
-//    for (MFIter mfi(neOp,true); mfi.isValid(); ++mfi)
-//    {
-//        const Box& bx = mfi.growntilebox();
-//        const auto& ne_ar = neOp.array(mfi);
-//        const auto& diff_ar = elecDiff.array(mfi);
-//        amrex::ParallelFor(bx,
-//        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-//        {
-//           // if(i == 4 && k == 4) printf("(%i) ne_ar = %.6e, diff_ar = %.6e\n", j, ne_ar(i,j,k), diff_ar(i,j,k));
-//           if(i == 4 && k == 4) printf("(%i) ne_ar = %.12e\n", j, ne_ar(i,j,k));
-//        });
-//    }
-// #endif
-// 
-// #ifndef PELEC_USE_EB
-//    for (MFIter mfi(neOp,true); mfi.isValid(); ++mfi)
-//    {
-//        const Box& bx = mfi.growntilebox();
-//        const auto& ne_ar = neOp.array(mfi);
-//        const auto& diff_ar = elecDiff.array(mfi);
-//        amrex::ParallelFor(bx,
-//        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-//        {
-//           // if(i == 4 && k == 4) printf("(%i) ne_ar = %.6e, diff_ar = %.6e\n", j, ne_ar(i,j,k), diff_ar(i,j,k));
-//           if(i == 4 && k == 4) printf("(%i) ne_ar = %.12e\n", j, ne_ar(i,j,k));
-//        });
-//    }
-// #endif
-
-
-
-   solver.apply({&elecDiff},{&neOp});
+   solver.apply({&elecDiff},{&nE_borders});
+   // solver.apply({&elecDiff},{&neOp});
 
    elecDiff.mult(-1.0);
-
-   // for (MFIter mfi(elecDiff,true); mfi.isValid(); ++mfi)
-   // {
-   //     const Box& bx = mfi.growntilebox();
-   //     const auto& elecDiff_ar = elecDiff.array(mfi);
-   //     amrex::ParallelFor(bx,
-   //     [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-   //     {
-   //        // if(i == 4 && k == 4) printf("diff source (%i) = %.6e\n", j, elecDiff_ar(i,j,k));
-   //     });
-   // }
-   // amrex::Print() << " FINISHED ELEC DIFF: " << "\n";
-
 }
 
 void PeleC::compElecAdvection(MultiFab &a_ne,
@@ -629,6 +667,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
 {
 
    // TODO: Need to incorporate bulk velocity into function...
+   // TODO: Assuming that appropriate values are already fill-patch'd... need to verify this is the case
    int order = 1;
    // Get the face effective velocity
    // effVel = Umac - \mu_e * gradPhiVcurr
@@ -707,11 +746,11 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
    }
    // ------------------------------------------------------
 
+
    MultiFab nE_new(grids,dmap,1,1);
    nE_new.setVal(0.0);
    MultiFab::Copy(nE_new,a_ne,0,0,1,1);
-   // TODO remove?
-   // nE_new.FillBoundary();
+   nE_new.FillBoundary();
 
    {
       FArrayBox cflux[AMREX_SPACEDIM];
@@ -852,7 +891,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
          {
             xflux(i,j,k) = u(i,j,k) * xstate(i,j,k) * area_x(i,j,k);
          });
-         amrex::ParallelFor(ybx, [v,ystate,yflux,area_y]
+         amrex::ParallelFor(ybx, [ne_arr,v,ystate,yflux,area_y]
          AMREX_GPU_DEVICE (int i, int j, int k) noexcept
          {
             yflux(i,j,k) = v(i,j,k) * ystate(i,j,k) * area_y(i,j,k);
@@ -924,19 +963,13 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
  
                   if ( on_lo ) {
                      yflux(i,j,k) = -0.5 * ystate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * constants::PI()), 0.5 );// * a[0](i, j, k);
-                     // if(i == 4 && k == 4) printf("BC flux loss (%i) = %.6e\n", j, -0.5 * ystate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * constants::PI()), 0.5 ));
                      yflux(i,j,k) *= area_y(i,j,k);
-                     // if(i == 4 && k == 4) printf("BC ion flux lo (%i) = %.6e\n", j, -2.0 * secondary_em_coef * ionFy(i,j,k));
                      yflux(i,j,k) -= 2.0 * secondary_em_coef * ionFy(i,j,k);
-                     // if(i == 4 && k == 4) printf("BCflux 2 lo (%i) = %.6e\n", j, yflux(i,j,k));
                   }
                   if ( on_hi ) { 
                      yflux(i,j,k) = 0.5 * ystate(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * constants::PI()), 0.5 );// * a[0](i, j, k);
-                     // if(i == 4 && k == 4) printf("BCflux hi (%i) = %.6e\n", j, yflux(i,j,k));
                      yflux(i,j,k) *= area_y(i,j,k);
-                     // if(i == 4 && k == 4) printf("BC ion flux hi (%i) = %.6e\n", j, 2.0 * secondary_em_coef * ionFy(i,j,k));
                      yflux(i,j,k) -= 2.0 * secondary_em_coef * ionFy(i,j,k);
-                     // if(i == 4 && k == 4) printf("BCflux 2 hi (%i) = %.6e\n", j, yflux(i,j,k));
                   }
                }
             });
@@ -1030,11 +1063,8 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
       
             // Calculate the electron flux into the EB
             ebflux = -0.5 * ne_arr(i,j,k) * std::pow( (8.0*EFConst::kB*Te)/(mwt[E_ID]/EFConst::Na * constants::PI()), 0.5 );
-            // if(i == 4 && k == 4) printf("ebflux (%i) = %.6e\n", j, ebflux);
             ebflux -= 2.0 * secondary_em_coef * ionFeb(i,j,k); 
-            // if(i == 4 && k == 4) printf("eb ion flux (%i) = %.6e\n", j, -2.0 * secondary_em_coef * ionFeb(i,j,k) * ebg[L].eb_area * full_area);
             ebflux *= -1.0 * ebg[L].eb_area * full_area;
-            // if(i == 4 && k == 4) printf("ebflux 2 (%i) = %.6e\n", j, ebflux);
 
             // TODO: Flux interpolation to face centroids...
 
@@ -1060,8 +1090,6 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
 void PeleC::ef_setUpPrecond (const Real &dt_lcl,
                              const MultiFab& a_nl_state) {    
    BL_PROFILE("PLM_EF::ef_setUpPrecond()");
-
-   // amrex::Print() << " STARTED PC SETUP: " << "\n";
 
    if ( PCLinOp_needUpdate ) {
       LPInfo info;
@@ -1252,19 +1280,27 @@ void PeleC::ef_setUpPrecond (const Real &dt_lcl,
    pnp_pc_Stilda->setDomainBC(phiV_lobc, phiV_hibc);
    pnp_pc_diff->setDomainBC(ne_lobc, ne_hibc);
    pnp_pc_drift->setDomainBC(phiV_lobc, phiV_hibc);
+  
+   // Set up the coarse/fine BCs
+   // FIXME: Maybe just try 0 Dirichlet...?
+   // std::unique_ptr<MultiFab> PC_crse;
+   // if (level > 0) {
+   //    auto& crselev = getLevel(level-1);
+   //    PC_crse.reset(new MultiFab(crselev.boxArray(), crselev.DistributionMap(), 1, 0));
+   //    PC_crse->setVal(0.0);
+   //    pnp_pc_Stilda->setCoarseFineBC(PC_crse.get(), crse_ratio[0]);
+   //    pnp_pc_diff->setCoarseFineBC(PC_crse.get(), crse_ratio[0]);
+   //    pnp_pc_drift->setCoarseFineBC(PC_crse.get(), crse_ratio[0]);
+   // }
 
    // Trigger update of the MLMGs
    PCMLMG_needUpdate = 1;
-
-   // amrex::Print() << " FINISHED PC SETUP: " << "\n";
 }
 
 void PeleC::ef_applyPrecond (const MultiFab  &v,
                                    MultiFab  &Pv) {
    BL_PROFILE("PC_EF::ef_applyPrecond()");
  
-   // amrex::Print() << " STARTED PC APPLY: " << "\n";
-
    //MultiFab::Copy(Pv,v,0,0,2,v.nGrow());
    //return;
 
@@ -1286,37 +1322,6 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
    pnp_pc_diff->setLevelBC(0, &a_Pne);
    pnp_pc_drift->setLevelBC(0, &a_PphiV);
    pnp_pc_Stilda->setLevelBC(0, &a_PphiV);
-
-// #ifndef PELEC_USE_EB
-//    for (MFIter mfi(a_PphiV,true); mfi.isValid(); ++mfi)
-//    {
-//        const Box& bx = mfi.growntilebox();
-//        const auto& phi_ar = a_PphiV.array(mfi);
-//        amrex::ParallelFor(bx,
-//        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-//        {
-//           if(i == 4 && k == 4 && j == -1) printf("PRECON: LOWER PHI DOMAIN BC = %.6e\n", phi_ar(i,j,k));
-//           if(i == 4 && k == 4 && j == -0) printf("PRECON: LOWER PHI DOMAIN BC = %.6e\n", phi_ar(i,j,k));
-//           if(i == 4 && k == 4 && j == 255) printf("PRECON: UPPER PHI DOMAIN BC = %.6e\n", phi_ar(i,j,k));
-//           if(i == 4 && k == 4 && j == 256) printf("PRECON: UPPER PHI DOMAIN BC = %.6e\n", phi_ar(i,j,k));
-//        });
-//    }
-// 
-//    for (MFIter mfi(a_Pne,true); mfi.isValid(); ++mfi)
-//    {
-//        const Box& bx = mfi.growntilebox();
-//        const auto& ne_ar = a_Pne.array(mfi);
-//        amrex::ParallelFor(bx,
-//        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-//        {
-//           if(i == 4 && k == 4 && j == -1) printf("PRECON: LOWER ne DOMAIN BC = %.6e\n", ne_ar(i,j,k));
-//           if(i == 4 && k == 4 && j == 0) printf("PRECON: LOWER ne DOMAIN BC = %.6e\n", ne_ar(i,j,k));
-//           if(i == 4 && k == 4 && j == 255) printf("PRECON: UPPER ne DOMAIN BC = %.6e\n", ne_ar(i,j,k));
-//           if(i == 4 && k == 4 && j == 256) printf("PRECON: UPPER ne DOMAIN BC = %.6e\n", ne_ar(i,j,k));
-//        });
-//    }
-// #endif
-
 #ifdef PELEC_USE_EB
    // Use same approach for EBs as with domain BCs?
    MultiFab beta(grids, dmap, 1, 0, MFInfo(), Factory());
@@ -1335,20 +1340,6 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
    pnp_pc_Stilda->setEBDirichlet(0,phiV_BC,beta);
    // pnp_pc_drift->setEBDirichlet(0,a_PphiV,beta);
    // pnp_pc_Stilda->setEBDirichlet(0,a_PphiV,beta);
-
-   // for (MFIter mfi(a_Pne,true); mfi.isValid(); ++mfi)
-   // {
-   //     const Box& bx = mfi.growntilebox();
-   //     const auto& ne_ar = a_Pne.array(mfi);
-   //     amrex::ParallelFor(bx,
-   //     [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-   //     {
-   //        if(i == 4 && k == 4 && j == 127) printf("PRECON: LOWER PHI EB BC = %.6e\n", ne_ar(i,j,k));
-   //        if(i == 4 && k == 4 && j == 128) printf("PRECON: LOWER PHI EB BC = %.6e\n", ne_ar(i,j,k));
-   //        if(i == 4 && k == 4 && j == 384) printf("PRECON: UPPER PHI EB BC = %.6e\n", ne_ar(i,j,k));
-   //        if(i == 4 && k == 4 && j == 383) printf("PRECON: UPPER PHI EB BC = %.6e\n", ne_ar(i,j,k));
-   //     });
-   // }
 #endif
 
    // Set Coarse/Fine BCs
@@ -1375,7 +1366,7 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
 
    mg_diff->setVerbose(0);
    mg_drift->setVerbose(0);
-   mg_Stilda->setVerbose(2);
+   mg_Stilda->setVerbose(0);
    if ( ef_PC_fixedIter > 0 ) {
       mg_diff->setFixedIter(ef_PC_fixedIter);
       mg_drift->setFixedIter(ef_PC_fixedIter);
@@ -1384,9 +1375,8 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
 
 
    Real S_tol     = ef_PC_MG_Tol;
+   // Real S_tol_abs = std::max(a_ne.norm0() * ef_PC_MG_Tol, 1.0e-5);
    Real S_tol_abs = a_ne.norm0() * ef_PC_MG_Tol;
-
-   // amrex::Print() << " STARTED DIFF MAT SOLVE: " << "\n";
 
    // Most inner mat
    // --                --
@@ -1396,22 +1386,6 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
    // --                --
    mg_diff->solve({&a_Pne}, {&a_ne}, S_tol, S_tol_abs);
    MultiFab::Copy(a_PphiV,a_phiV,0,0,1,0);
-
-   // exit(1);
-   // amrex::Print() << " FINISHED DIFF MAT SOLVE: " << "\n";
-
-   // for (MFIter mfi(a_Pne,true); mfi.isValid(); ++mfi)
-   // {
-   //     const Box& bx = mfi.growntilebox();
-   //     const auto& ne_ar = a_Pne.array(mfi);
-   //     const auto& rhs_ar = a_ne.array(mfi);
-   //     amrex::ParallelFor(bx,
-   //     [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-   //     {
-   //        printf("value(%i, %i, %i) = %.6e, rhs = %.6e\n", i,j,k, ne_ar(i,j,k), rhs_ar(i,j,k));
-   //     });
-   // }
-   // exit(1);
 
    // Assembling mat
    // --       --
@@ -1427,17 +1401,26 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
    // |           |
    // | 0   S*^-1 |
    // --         --
-   // amrex::Print() << " STARTED STILDE MAT SOLVE: " << "\n";
 
    MultiFab temp(grids,dmap,1,1);
    temp.setVal(0.0,0,1,0);
    // Scale the solve RHS
    a_PphiV.mult(FphiV_scale/phiV_scale);
    S_tol_abs = a_PphiV.norm0() * ef_PC_MG_Tol;
+   // S_tol_abs = std::max(a_PphiV.norm0() * ef_PC_MG_Tol, 1.0e-5);
    mg_Stilda->solve({&temp},{&a_PphiV}, S_tol, S_tol_abs);
    MultiFab::Copy(a_PphiV, temp, 0, 0, 1, 0);
-
-   // amrex::Print() << " FINISHED STILDE MAT SOLVE: " << "\n";
+   // for (MFIter mfi(a_Pne,true); mfi.isValid(); ++mfi)
+   // {
+   //     const Box& bx = mfi.growntilebox();
+   //     const auto& phiV_ar = a_PphiV.array(mfi);
+   //     const auto& temp_ar = temp.array(mfi);
+   //     amrex::ParallelFor(bx,
+   //     [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+   //     {
+   //        if(i == 4 && k == 4) printf("PPHIV IN PREC APPLY AFTER STILDE value(%i) = %.12e, tempval = %.12e\n", j, phiV_ar(i,j,k), temp_ar(i,j,k));
+   //     });
+   // }
 
    // Final mat
    // --                          --
@@ -1447,15 +1430,13 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
    // --                          --
 
    mg_drift->apply({&temp},{&a_PphiV});
+   // S_tol_abs = std::max(temp.norm0() * ef_PC_MG_Tol, 1.0e-5);
    S_tol_abs = temp.norm0() * ef_PC_MG_Tol;
    MultiFab temp2(grids,dmap,1,1);
    temp2.setVal(0.0,0,1,0);
-   // amrex::Print() << " STARTED SECOND DIFF MAT SOLVE: " << "\n";
    mg_diff->solve({&temp2},{&temp}, S_tol, S_tol_abs);
    temp2.mult(-1.0);
    MultiFab::Add(a_Pne,temp2,0,0,1,0);
-
-   // amrex::Print() << " FINISHED PC APPLY: " << "\n";
 }
 
 void PeleC::ef_normMF(const MultiFab &a_vec,
@@ -1503,21 +1484,47 @@ void PeleC::ef_normMF(const MultiFab &a_vec,
 
   norm = norm1 + norm2;
   norm = std::sqrt(norm);
+}
 
-   // for ( int comp = 0; comp < a_vec.nComp(); comp++ ) {
-   //   for (MFIter mfi(a_vec,true); mfi.isValid(); ++mfi)
-   //   {
-   //       int nghost = 0;
-   //       int numcomp = 1;
-   //       Box const& bx = mfi.growntilebox(nghost);
-   //       Array4<Real const> const& xfab = a_vec.const_array(mfi);
-   //       Array4<Real const> const& yfab = a_vec.const_array(mfi);
-   //       AMREX_LOOP_4D(bx, numcomp, i, j, k, n,
-   //       {
-   //           if(i == 4 && k == 4) printf("(%i) comp %i val = %.6e\n", j, comp, xfab(i,j,k,comp+n) * yfab(i,j,k,comp+n));
-   //       });
-   //   }
-   // }
+void PeleC::ef_normMFsingle(const MultiFab &a_vec,
+                            Real &norm,
+                            int compNum){
+                
+#ifdef PELEC_USE_EB
+  auto const& fact =
+    dynamic_cast<amrex::EBFArrayBoxFactory const&>(Sborder.Factory());
+  auto const& flags = fact.getMultiEBCellFlagFab();
+#endif
+
+  norm = 0.0;
+  int nghost = 0;
+  for (MFIter mfi(a_vec,TilingIfNotGPU()); mfi.isValid(); ++mfi)
+  {
+     const Box& bx = mfi.tilebox();
+     // const Box& bx = mfi.growntilebox(nghost);
+     auto const& comp_ar  = a_vec.const_array(mfi,compNum);
+#ifdef PELEC_USE_EB
+     auto flag_arr = flags.const_array(mfi);
+#endif
+     amrex::ParallelFor(bx, [comp_ar, &norm
+#ifdef PELEC_USE_EB
+                              , flag_arr
+#endif
+                                        ]
+     AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+     {    
+#ifdef PELEC_USE_EB
+        if(!flag_arr(i,j,k).isCovered()){
+#endif
+          norm += comp_ar(i,j,k) * comp_ar(i,j,k);
+#ifdef PELEC_USE_EB          
+        }
+#endif
+     });  
+  }
+
+  ParallelAllReduce::Sum(norm, ParallelContext::CommunicatorSub());
+  norm = std::sqrt(norm);
 }
 
 void PeleC::ef_normMFv(const MultiFab &a_vec,
@@ -1568,6 +1575,7 @@ void PeleC::compute_gasN(const Real &dt_lcl,
 
    // Get a reaction MF with an extrapolated ghost cell layer
    MultiFab I_R_GC(grids,dmap,I_R.nComp(),1);
+   I_R_GC.setVal(0.0);
    if (do_react) {
       MultiFab::Copy(I_R_GC,I_R,0,0,I_R.nComp(),0);
       I_R_GC.FillBoundary(0,I_R.nComp(),geom.periodicity());
