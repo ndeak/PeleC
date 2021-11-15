@@ -58,8 +58,9 @@ getKappaE(int i, int j, int k, int Ecomp,
 AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void
-getDiffE(int i, int j, int k, int Ecomp, 
-         int use_NL,
+getDiffE(int i, int j, int k, 
+         amrex::Real x, amrex::Real y, amrex::Real z,
+         int Ecomp, int use_NL,
          const amrex::Real &factor,
          amrex::Array4<const amrex::Real> const& T,
          amrex::Array4<const amrex::Real> const& rhoY,
@@ -118,6 +119,14 @@ getDiffE(int i, int j, int k, int Ecomp,
       amrex::Real ndens = 0.0;
       for(int n=0; n<NUM_SPECIES; n++) ndens += rhoY(i,j,k,n) * (1.0/mwt[n]) * Na;
       rhoD(i,j,k,Ecomp) *= (rho/ndens);       // Convert to (cm2/s)*(g/cm3)
+
+      // Increase diffusivity around cathode region
+      // amrex::Real r = sqrt((x-0.25)*(x-0.25) + (z-0.25)*(z-0.25));
+      // if (r < 0.05 && (y > 0.06 && y < 0.12) )
+      // {
+      //    rhoD(i,j,k,Ecomp) *= 10.0;
+      // }
+
    }
 }
 
