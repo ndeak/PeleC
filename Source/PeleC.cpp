@@ -42,6 +42,7 @@ using namespace MASA;
 bool PeleC::signalStopJob = false;
 bool PeleC::dump_old = false;
 bool PeleC::monitor_file = false;
+bool PeleC::NL_convergence_file = false;
 int PeleC::verbose = 0;
 int PeleC::radius_grow = 1;
 amrex::BCRec PeleC::phys_bc;
@@ -76,10 +77,10 @@ int PeleC::ef_use_NLsolve = 0;
 int PeleC::ef_use_PETSC_direct = 0;
 int PeleC::ef_diffT_jfnk = 1;
 int PeleC::ef_maxNewtonIter = 50;
-int PeleC::ef_GMRES_size = 50;
+int PeleC::ef_GMRES_size = 100;
 // int PeleC::ef_GMRES_size = 10;
 // int PeleC::ef_GMRES_maxRst = 1;
-int PeleC::ef_GMRES_maxRst = 10;
+int PeleC::ef_GMRES_maxRst = 25;
 int PeleC::ef_GMRES_verbose = 0;
 int PeleC::ef_PoissonVerbose = 0;
 int PeleC::ef_PoissonMaxOrder = 2;
@@ -90,6 +91,7 @@ int PeleC::ef_do_drift = 1;
 int PeleC::ef_do_photoionization = 0;
 int PeleC::ef_triangle_pulse = 0;
 int PeleC::ef_trapezoidal_pulse = 0;
+int PeleC::ef_sigmoid_pulse = 0;
 int PeleC::ion_bc_type = 0;
 int PeleC::zero_bc_flux = 0;
 int PeleC::ef_PC_fixedIter = -1;
@@ -100,8 +102,8 @@ amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
 amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
 // amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
 // amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
-amrex::Real PeleC::ef_GMRES_reltol = 1.0e-8;
-amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-8;
+amrex::Real PeleC::ef_GMRES_reltol = 1.0e-4;
+amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-12;
 amrex::Real PeleC::secondary_em_coef = 0.0;
 amrex::Real PeleC::electron_emit_const = 0.0;
 amrex::Real PeleC::pulse_freq = 0.0;
@@ -200,6 +202,7 @@ PeleC::read_params()
   pp.query("sum_interval", sum_interval);
   pp.query("dump_old", dump_old);
   pp.query("monitor_file", monitor_file);
+  pp.query("NL_convergence_file", NL_convergence_file);
 
   // Get boundary conditions
   amrex::Vector<std::string> lo_bc_char(AMREX_SPACEDIM);
@@ -1428,6 +1431,12 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
   if(monitor_file){
     int nlevs = parent->maxLevel() + 1;
     for(int i=0; i<nlevs; i++) monitorFileSetup(i);
+  }
+
+  // Set up NL convergence statistics file
+  if(NL_convergence_file){
+    int nlevs = parent->maxLevel() + 1;
+    for(int i=0; i<nlevs; i++) NLConvergenceFileSetup(i);
   }
 }
 

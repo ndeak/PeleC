@@ -135,6 +135,7 @@ public:
   void writeDebugPlotFile(const amrex::Vector<const amrex::MultiFab*> &a_MF, const std::string &pltname, int firstLevel, int firstComp, int nComp);
   void writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::Real dt, amrex::Real time, int i);
   void monitorFileSetup(int i);
+  void NLConvergenceFileSetup(int i);
 
   // Define data descriptors.
   static void variableSetUp();
@@ -658,6 +659,7 @@ protected:
   static bool signalStopJob;
   static bool dump_old;
   static bool monitor_file;
+  static bool NL_convergence_file;
   static int radius_grow;
   static int verbose;
   static amrex::BCRec phys_bc;

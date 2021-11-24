@@ -73,6 +73,7 @@ PeleC::plasma_init()
        zk[k] = zk_temp[k];
        zk_num[k] = zk_num_temp[k];
     }
+
 }
 
 void PeleC::plasma_define_data() {
@@ -105,6 +106,7 @@ void PeleC::plasma_define_data() {
       gasN_cc.define(grids,dmap,1,1);
       old_state_NL.define(grids,dmap,1,2,MFInfo(),Factory()); old_state_NL.setVal(0.0);
       old_old_state_NL.define(grids,dmap,1,2,MFInfo(),Factory()); old_old_state_NL.setVal(0.0);
+      tmp_nE_forcing.define(grids,dmap,1,2,MFInfo(),Factory()); tmp_nE_forcing.setVal(0.0);
 
       // Valgrind complained about unitialized values here
       // if (elec_Ueff != 0) delete [] elec_Ueff;
@@ -114,6 +116,9 @@ void PeleC::plasma_define_data() {
          const BoxArray& edgeba = getEdgeBoxArray(d);
          elec_Ueff[d].define(edgeba, dmap, 1, 1,MFInfo(),Factory());
       }
+
+      // Allocate the linear residuals array
+      lin_residuals = new Real[ef_GMRES_size*ef_GMRES_maxRst]{0.0};
 
       // Transport coefficients
       diff_e.define(this);
@@ -258,6 +263,8 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
         getKappaSp(i,j,k, mwt, zk, rhoY, rhoD, T, Ks);
      });
   }
+  // Copy NL Ke results back into normal array for CFL calculation later
+  if(ef_use_NLsolve) MultiFab::Copy(KSpec_old, Ke_cc, 0, E_ID, 1, 0);
   if ( ef_debug ) {
      std::string timetag = (whichTime == AmrOldTime) ? "old" : "new";
      VisMF::Write(KSpec_old,"KappaSpec"+timetag+"_Lvl"+std::to_string(level));
@@ -544,6 +551,13 @@ void PeleC::getCurrVoltage(Real time) {
         curr_voltage += 0.0;
       }
     }
+  }
+  else if(ef_sigmoid_pulse == 1){
+    amrex::Real pulse_tr = pulse_fwhm/2.0;
+    amrex::Real pulse_lambda = 8.0 / pulse_tr;
+    amrex::Real pulse_t1 = time - pulse_tr;
+    amrex::Real pulse_t2 = time - 2.0*pulse_fwhm; 
+    curr_voltage = pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
   }
   else{
     for(int i=0; i<pulse_num; i++){

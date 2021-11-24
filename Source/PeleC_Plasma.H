@@ -24,6 +24,7 @@
   static amrex::Real pulse_dt;                              // Constant time step size taken around each plasma pulse (s)
   static int         ef_triangle_pulse;                     // Use a triangular pulse with pulse_fwhm rise time?
   static int         ef_trapezoidal_pulse;                  // Use a trapezoidal pulse with pulse_fwhm/2.0 rise time, and pulse_fwhm plateau?
+  static int         ef_sigmoid_pulse;                      // Use a sigmoid pulse with pulse_fwhm/2.0 rise time, and pulse_fwhm plateau?
   static amrex::Real pulse_sigma;     
   static amrex::Real curr_voltage;                          // Voltage at time t=n (erg/C)
   static amrex::Real dfact;
@@ -91,6 +92,7 @@
   // Temporary holders
   int                        PCLinOp_needUpdate; // Flag to update the preconditioner linear operators
   int                        PCMLMG_needUpdate;  // Flag to update the preconditioner MLMGs
+  amrex::Real*               lin_residuals;
   amrex::Real                nl_dt;
   amrex::Real                nl_stateNorm;
   amrex::Real                nl_residNorm;
@@ -108,6 +110,7 @@
   amrex::MultiFab            ionFlx_eb;
   amrex::MultiFab            old_state_NL;
   amrex::MultiFab            old_old_state_NL;
+  amrex::MultiFab            tmp_nE_forcing;
 
   // Preconditioner data
 #ifdef PELEC_USE_EB
