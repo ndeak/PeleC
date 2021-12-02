@@ -1048,8 +1048,8 @@ initialize_EB2(
       auto allpin_IF = amrex::EB2::makeUnion(*impfunc_pins[0],*impfunc_pins[1]);
 
       auto gshop = amrex::EB2::makeShop(allpin_IF);
-      // amrex::EB2::Build(gshop, geom, max_level, max_level);
-      amrex::EB2::Build(gshop, geom, max_level+1, max_level+30);
+      amrex::EB2::Build(gshop, geom, max_level, max_level);
+      // amrex::EB2::Build(gshop, geom, max_level+1, max_level+30);
   }
   else if (geom_type == "boxes")
   {

@@ -97,7 +97,7 @@ int PeleC::zero_bc_flux = 0;
 int PeleC::ef_PC_fixedIter = -1;
 int PeleC::ef_PC_approx = 1;
 bool PeleC::def_harm_avg_cen2edge  = false;
-amrex::Real PeleC::ef_PoissonTol = 1.0e-8;
+amrex::Real PeleC::ef_PoissonTol = 1.0e-7;
 amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
 amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
 // amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
@@ -1434,10 +1434,10 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
   }
 
   // Set up NL convergence statistics file
-  if(NL_convergence_file){
-    int nlevs = parent->maxLevel() + 1;
-    for(int i=0; i<nlevs; i++) NLConvergenceFileSetup(i);
-  }
+  // if(NL_convergence_file){
+  //   int nlevs = parent->maxLevel() + 1;
+  //   for(int i=0; i<nlevs; i++) NLConvergenceFileSetup(i);
+  // }
 }
 
 int

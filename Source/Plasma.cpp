@@ -47,6 +47,7 @@ PeleC::plasma_init()
     pp.query("constVoltage",ef_constVoltage);
     pp.query("triangle_pulse",ef_triangle_pulse);
     pp.query("trapezoidal_pulse",ef_trapezoidal_pulse);
+    pp.query("sigmoid_pulse",ef_sigmoid_pulse);
     pp.query("do_drift",ef_do_drift);
     pp.query("do_photoionization", ef_do_photoionization);
 
@@ -553,10 +554,12 @@ void PeleC::getCurrVoltage(Real time) {
     }
   }
   else if(ef_sigmoid_pulse == 1){
+    amrex::Real pulse_delta = 3.0e-9;
     amrex::Real pulse_tr = pulse_fwhm/2.0;
     amrex::Real pulse_lambda = 8.0 / pulse_tr;
-    amrex::Real pulse_t1 = time - pulse_tr;
-    amrex::Real pulse_t2 = time - 2.0*pulse_fwhm; 
+    amrex::Real pulse_plateau = 12.0e-9;
+    amrex::Real pulse_t1 = time - pulse_delta;
+    amrex::Real pulse_t2 = time - pulse_delta - pulse_plateau - pulse_tr; 
     curr_voltage = pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
   }
   else{
@@ -568,11 +571,11 @@ void PeleC::getCurrVoltage(Real time) {
 
   if(ef_constVoltage == 1) curr_voltage = pulse_peak;
 
-  amrex::Print() << "CURRENT APPLIED VOLTAGE IS " << curr_voltage << "\n";
+  amrex::Print() << "CURRENT APPLIED VOLTAGE IS " << curr_voltage/1.0e10 << " kV\n";
 
   ProbParmDevice* lprobparm = d_prob_parm_device;
-  lprobparm->PhiV_top = 0.0;
-  lprobparm->PhiV_bottom = curr_voltage;
-  // lprobparm->PhiV_top = curr_voltage;
-  // lprobparm->PhiV_bottom = 0.0;
+  // lprobparm->PhiV_top = 0.0;
+  // lprobparm->PhiV_bottom = curr_voltage;
+  lprobparm->PhiV_top = curr_voltage;
+  lprobparm->PhiV_bottom = 0.0;
 }

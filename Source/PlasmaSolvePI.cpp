@@ -127,6 +127,12 @@ PeleC::solvePI ( Real time,
             frateO2 = pow(10, -8.0 - 400.0/eon_ar(i,j,k)); 
             // frateN2 = pow(10, -7.2 - 700.0/eon_ar(i,j,k)); 
             // frateO2 = pow(10, -7.4 - 550.0/eon_ar(i,j,k)); 
+
+            // Bourdon/Morrow rates
+            // amrex::Real alphaN = (eon_ar(i,j,k) >= 150.0) ? (2.0e-16*exp(-724.7/eon_ar(i,j,k))):(6.619e-17*exp(-559.3/eon_ar(i,j,k)));
+            // amrex::Real We = (eon_ar(i,j,k) >= 200.0) ? (7.4e4*eon_ar(i,j,k) + 7.1e6):(eon_ar(i,j,k) >= 10.0) ? (1.03e5*eon_ar(i,j,k) + 1.3e6):(eon_ar(i,j,k) >= 2.6) ? (7.2973e4*eon_ar(i,j,k) + 1.63e6):(6.87e5*eon_ar(i,j,k) + 3.38e4);
+            // frateN2 = alphaN * We;
+            // frateO2 = alphaN * We;
           }
     
           // Convert mass to number density

@@ -135,7 +135,7 @@ public:
   void writeDebugPlotFile(const amrex::Vector<const amrex::MultiFab*> &a_MF, const std::string &pltname, int firstLevel, int firstComp, int nComp);
   void writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::Real dt, amrex::Real time, int i);
   void monitorFileSetup(int i);
-  void NLConvergenceFileSetup(int i);
+  // void NLConvergenceFileSetup(int i);
 
   // Define data descriptors.
   static void variableSetUp();
