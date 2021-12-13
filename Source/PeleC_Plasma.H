@@ -31,6 +31,7 @@
   static amrex::Real sfact;
   static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;      // Species charge per unit mass (C/g)
   static amrex::GpuArray<int, NUM_SPECIES> zk_num;      // Species charge number 
+  static bool pac_mechanism;            // If using PAC mechanism, output maximum reactor-type data in monitor file
 
   // Efield Poisson solve options
   static amrex::Real ef_PoissonTol;
