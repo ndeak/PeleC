@@ -135,7 +135,7 @@ public:
   void writeDebugPlotFile(const amrex::Vector<const amrex::MultiFab*> &a_MF, const std::string &pltname, int firstLevel, int firstComp, int nComp);
   void writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::Real dt, amrex::Real time, int i);
   void monitorFileSetup(int i);
-  // void NLConvergenceFileSetup(int i);
+  void NLConvergenceFileSetup(int i);
 
   // Define data descriptors.
   static void variableSetUp();
@@ -334,7 +334,7 @@ public:
 
   void construct_new_ext_source(amrex::Real time, amrex::Real dt);
 
-  static void fill_ext_source(
+  void fill_ext_source(
     amrex::Real time,
     amrex::Real dt,
     const amrex::MultiFab& state_old,

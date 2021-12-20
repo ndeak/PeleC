@@ -41,6 +41,13 @@ PeleC::plasma_init()
     pp.query("def_harm_avg_cen2edge",def_harm_avg_cen2edge);
     pp.query("use_nonLinearSolve",ef_use_NLsolve);
 
+#ifdef PELEC_TWO_TEMPERATURE
+    if (ef_use_NLsolve == 1){
+      amrex::Print() << "PeleC two-temperature plasma model not currently compatible with the coupled system!\n";
+      exit(1);
+    }
+#endif
+
     pp.query("Poisson_tol",ef_PoissonTol);
     pp.query("Poisson_verbose",ef_PoissonVerbose);
     pp.query("noSpaceCharge",ef_noSpaceCharge);
@@ -99,6 +106,7 @@ void PeleC::plasma_define_data() {
    Qaux_ext.define(grids,dmap,NQAUX,numGrow()); Qaux_ext.setVal(0.0);
    ionFlx_eb.define(grids,dmap,1,numGrow()); ionFlx_eb.setVal(0.0);      // EB ion fluxes - a bit inefficient to store as full MF
    PI_source.define(grids, dmap, 4, 1, amrex::MFInfo(), Factory()); PI_source.setVal(0.0);
+   joule_heating.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); joule_heating.setVal(0.0);
 
    if (ef_use_NLsolve) {
       nl_state.define(grids,dmap,2,2);

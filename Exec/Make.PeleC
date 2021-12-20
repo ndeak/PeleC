@@ -37,6 +37,10 @@ ifeq ($(USE_PLASMA), TRUE)
   DEFINES += -DPELEC_USE_PLASMA
 endif
 
+ifeq ($(TWO_TEMPERATURE), TRUE)
+  DEFINES += -DPELEC_TWO_TEMPERATURE
+endif
+
 all: $(executable) 
 	$(SILENT) $(RM) AMReX_buildInfo.cpp
 	@echo SUCCESS

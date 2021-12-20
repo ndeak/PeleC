@@ -66,6 +66,10 @@ int PeleC::pstateY = -1;
 int PeleC::pstateNum = 0;
 
 #ifdef PELEC_USE_PLASMA
+#ifdef PELEC_TWO_TEMPERATURE
+int PeleC::Uele = -1;
+int PeleC::Tele = -1;
+#endif
 int PeleC::PhiV = -1;
 int PeleC::nE = -1;
 int PeleC::Efieldx = -1;
@@ -116,6 +120,7 @@ amrex::Real PeleC::curr_voltage = 0.0;
 amrex::Real PeleC::dfact = 0.0;
 amrex::Real PeleC::sfact = 0.0;
 int PeleC::pulse_num = 0;
+bool PeleC::pac_mechanism = false;
 
 amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
 amrex::GpuArray<int,NUM_SPECIES> PeleC::zk_num;
@@ -764,27 +769,10 @@ PeleC::initData()
   const ProbParmDevice* lprobparm = d_prob_parm_device;
   getCurrVoltage(0.0);
   solveEF( cur_time, 0.0, *lprobparm );
-  // for (amrex::MFIter mfi(redEfield, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-  //    const amrex::Box& tbox = mfi.tilebox();
-  //    const auto Efab = Efield.array(mfi);
-  //    const auto redEfab = redEfield.array(mfi);
-  //    const auto Sfab = S_new.array(mfi);
-  //    amrex::ParallelFor(
-  //      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //        amrex::Real ndens = 0.0;
-  //        for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
-  //        redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
-  //      });
-  // }
-
 
   if(ef_do_photoionization){
     solvePI( cur_time, 0.0, *lprobparm );
   }
-  // if ( ef_debug) {
-  //    amrex::MultiFab phiV_a(S_new,amrex::make_alias,PhiV,1);
-  //    amrex::VisMF::Write(phiV_a,"InitialPhiV");
-  // }
 #endif
 
   // computeTemp(S_new,0);
@@ -900,6 +888,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
   // set_amr_info(level, -1, -1, -1.0, -1.0);
 
   amrex::Real estdt = max_dt;
+  min_dielectric = 1.0e10;  
 
   const amrex::MultiFab& stateMF = get_new_data(State_Type);
 
@@ -958,6 +947,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 #ifdef PELEC_USE_PLASMA
         spec_drift,
+        KSpec_old,
 #endif
         0,
         [=] AMREX_GPU_HOST_DEVICE(
@@ -968,7 +958,8 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 #ifdef PELEC_USE_PLASMA
           ,
-          const amrex::Array4<const amrex::Real>& drift_arr
+          const amrex::Array4<const amrex::Real>& drift_arr,
+          const amrex::Array4<const amrex::Real>& K_arr
 #endif
           ) noexcept -> amrex::Real {
           return pc_estdt_hydro(
@@ -978,6 +969,8 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 #ifdef PELEC_USE_PLASMA
             drift_arr,
+            K_arr,
+            min_dielectric,
 #endif
             AMREX_D_DECL(dx1, dx2, dx3));
         });
@@ -1434,10 +1427,10 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
   }
 
   // Set up NL convergence statistics file
-  // if(NL_convergence_file){
-  //   int nlevs = parent->maxLevel() + 1;
-  //   for(int i=0; i<nlevs; i++) NLConvergenceFileSetup(i);
-  // }
+  if(NL_convergence_file){
+    int nlevs = parent->maxLevel() + 1;
+    for(int i=0; i<nlevs; i++) NLConvergenceFileSetup(i);
+  }
 }
 
 int

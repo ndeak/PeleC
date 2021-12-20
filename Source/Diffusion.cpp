@@ -8,6 +8,59 @@ PeleC::getMOLSrcTerm(
   amrex::Real dt,
   amrex::Real flux_factor)
 {
+#ifdef PELEC_USE_PLASMA
+// ndeak add 
+// TODO : redundant calculations - fold into loop below if possible
+// step 1: MFI iter over extended region to fully fill in diffusivity MF
+//    step 1a: Get primitivie variables in an grown MF 
+//    step 1b: Use primitive variables to calculate ion diffusivities
+//    step 1c: Leave electron diffusivity alone, it is handled in ef transport fcn
+// step 2: Call the ef transport fcn
+  for (amrex::MFIter mfi(MOLSrcTerm, amrex::TilingIfNotGPU()); mfi.isValid();
+         ++mfi) {
+    const amrex::Box& tbox = mfi.tilebox();
+    int ng = S.nGrow();
+    const amrex::Box gbox = amrex::grow(tbox, ng);
+    auto const& s = S.array(mfi);
+    auto const& q = Q_ext.array(mfi);
+    auto const& qaux = Qaux_ext.array(mfi);
+    {
+        PassMap const* lpmap = d_pass_map;
+        const int captured_clean_massfrac = clean_massfrac;
+        BL_PROFILE("PeleC::ctoprim()");
+        amrex::ParallelFor(
+          gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            pc_ctoprim(i, j, k, s, q, qaux, *lpmap, captured_clean_massfrac);
+        });
+    }
+    
+    {
+      // Calculate species diffusivities
+      auto const* ltransparm = trans_parms.device_trans_parm();
+      auto const& qar_yin = Q_ext.array(mfi,QFS);
+      auto const& qar_Tin = Q_ext.array(mfi,QTEMP);
+      auto const& qar_rhoin = Q_ext.array(mfi,QRHO);
+      auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
+      auto const& coe_mu = coeffs_old.array(mfi,dComp_mu);
+      auto const& coe_xi = coeffs_old.array(mfi,dComp_xi);
+      auto const& coe_lambda = coeffs_old.array(mfi,dComp_lambda);
+      BL_PROFILE("PeleC::get_transport_coeffs()");
+      // Get Transport coefs on GPU.
+      amrex::launch(tbox, [=] AMREX_GPU_DEVICE(amrex::Box const& tbx) 
+      {
+        auto trans = pele::physics::PhysicsType::transport();
+        trans.get_transport_coeffs(tbox, qar_yin, qar_Tin, qar_rhoin, coe_rhoD, coe_mu, coe_xi,coe_lambda, ltransparm);
+      });
+    }
+  }
+
+  // Get the cc species transport properties
+  ef_calc_transport(S, time); 
+
+  // Obtain potential BCRec to use later
+  const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
+  const int* PhiVbc = bcphiV.data();
+#endif
   BL_PROFILE("PeleC::getMOLSrcTerm()");
   BL_PROFILE_VAR_NS("diffusion_stuff", diff);
   if (
@@ -108,59 +161,6 @@ PeleC::getMOLSrcTerm(
 
 #endif
 
-#ifdef PELEC_USE_PLASMA
-// ndeak add 
-// TODO : redundant calculations - fold into loop below if possible
-// step 1: MFI iter over extended region to fully fill in diffusivity MF
-//    step 1a: Get primitivie variables in an grown MF 
-//    step 1b: Use primitive variables to calculate ion diffusivities
-//    step 1c: Leave electron diffusivity alone, it is handled in ef transport fcn
-// step 2: Call the ef transport fcn
-  for (amrex::MFIter mfi(MOLSrcTerm, amrex::TilingIfNotGPU()); mfi.isValid();
-         ++mfi) {
-    const amrex::Box& tbox = mfi.tilebox();
-    int ng = S.nGrow();
-    const amrex::Box gbox = amrex::grow(tbox, ng);
-    auto const& s = S.array(mfi);
-    auto const& q = Q_ext.array(mfi);
-    auto const& qaux = Qaux_ext.array(mfi);
-    {
-        PassMap const* lpmap = d_pass_map;
-        const int captured_clean_massfrac = clean_massfrac;
-        BL_PROFILE("PeleC::ctoprim()");
-        amrex::ParallelFor(
-          gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            pc_ctoprim(i, j, k, s, q, qaux, *lpmap, captured_clean_massfrac);
-        });
-    }
-    
-    {
-      // Calculate species diffusivities
-      auto const* ltransparm = trans_parms.device_trans_parm();
-      auto const& qar_yin = Q_ext.array(mfi,QFS);
-      auto const& qar_Tin = Q_ext.array(mfi,QTEMP);
-      auto const& qar_rhoin = Q_ext.array(mfi,QRHO);
-      auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
-      auto const& coe_mu = coeffs_old.array(mfi,dComp_mu);
-      auto const& coe_xi = coeffs_old.array(mfi,dComp_xi);
-      auto const& coe_lambda = coeffs_old.array(mfi,dComp_lambda);
-      BL_PROFILE("PeleC::get_transport_coeffs()");
-      // Get Transport coefs on GPU.
-      amrex::launch(tbox, [=] AMREX_GPU_DEVICE(amrex::Box const& tbx) 
-      {
-        auto trans = pele::physics::PhysicsType::transport();
-        trans.get_transport_coeffs(tbox, qar_yin, qar_Tin, qar_rhoin, coe_rhoD, coe_mu, coe_xi,coe_lambda, ltransparm);
-      });
-    }
-  }
-
-  // Get the cc species transport properties
-  ef_calc_transport(S, time); 
-
-  // Obtain potential BCRec to use later
-  const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
-  const int* PhiVbc = bcphiV.data();
-#endif
 
 #ifdef _OPENMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())

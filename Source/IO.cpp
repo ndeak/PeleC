@@ -1193,6 +1193,7 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
     amrex::Real max_nN2exci = S.max(UFS+45, 0, false)* (1.0/mwt[45]) * NA + S.max(UFS+46, 0, false)* (1.0/mwt[46]) * NA + S.max(UFS+47, 0, false)* (1.0/mwt[47]) * NA;
     amrex::Real max_nCO = S.max(UFS+10, 0, false) * (1.0/mwt[10]) * NA;
     amrex::Real max_nCO2 = S.max(UFS+11, 0, false) * (1.0/mwt[11]) * NA;
+    amrex::Real max_nC2H4 = S.max(UFS+21, 0, false) * (1.0/mwt[21]) * NA;
   
     if (amrex::ParallelDescriptor::IOProcessor()) {
       std::string baseName = "MonitorFile_Level";
@@ -1202,7 +1203,7 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
 
       std::ofstream MonitorFile;
       MonitorFile.open(monitorFileName.c_str(), std::ios::out | std::ios::app);
-      MonitorFile << time << "\t" << max_EN  << "\t" << max_Te  << "\t" << max_Tg  << "\t" << max_nE  << "\t" << max_nO  << "\t" << max_nOH  << "\t" << max_nH  << "\t" << max_nN2exci  << "\t" << max_nCO  << "\t" << max_nCO2 << "\t "<< dt  <<  std::endl;
+      MonitorFile << time << "\t" << max_EN  << "\t" << max_Te  << "\t" << max_Tg  << "\t" << max_nE  << "\t" << max_nO  << "\t" << max_nOH  << "\t" << max_nH  << "\t" << max_nN2exci  << "\t" << max_nCO  << "\t" << max_nCO2 << "\t "<< max_nC2H4 << "\t" << dt << std::endl;
       MonitorFile.close();
     }
   }
@@ -1240,7 +1241,7 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
 
       std::ofstream MonitorFile;
       MonitorFile.open(monitorFileName.c_str(), std::ios::out | std::ios::app);
-      MonitorFile << time << "\t" << min_nE  << "\t" << max_nE  << "\t" << min_nO4p  << "\t" << max_nO4p  << "\t" << min_nO2m  << "\t" << max_nO2m  << "\t" << min_phiV  << "\t" << max_phiV  << "\t" << min_EN  << "\t" << max_EN  << "\t" << max_De/min_rho  << "\t" << Ddtodx2  << "\t" << CFL << "\t" << dt << std::endl;
+      MonitorFile << time << "\t" << min_nE  << "\t" << max_nE  << "\t" << min_nO4p  << "\t" << max_nO4p  << "\t" << min_nO2m  << "\t" << max_nO2m  << "\t" << min_phiV  << "\t" << max_phiV  << "\t" << min_EN  << "\t" << max_EN  << "\t" << max_De/min_rho  << "\t" << Ddtodx2  << "\t" << CFL << "\t" << min_dielectric  <<"\t" << dt << std::endl;
       MonitorFile.close();
     }
   }
@@ -1258,9 +1259,9 @@ void PeleC::monitorFileSetup(int i){
     std::ofstream MonitorFile;
     MonitorFile.open(monitorFileName.c_str(), std::ios::out);
     if(pac_mechanism){
-      MonitorFile << "(1)time[s] \t (2)E/N[Td] \t (3)Te[eV] \t (4)Tgas[k] \t (5)nE[1/cm3] \t (6)nO[1/cm3] \t (7)nOH[1/cm3] \t (8)nH[1/cm3] \t (9)nN2*[1/cm3] \t (10)nCO[1/cm3] \t (11)nCO2[1/cm3] \t (12)dt[s]" << std::endl;
+      MonitorFile << "(1)time[s] \t (2)E/N[Td] \t (3)Te[eV] \t (4)Tgas[k] \t (5)nE[1/cm3] \t (6)nO[1/cm3] \t (7)nOH[1/cm3] \t (8)nH[1/cm3] \t (9)nN2*[1/cm3] \t (10)nCO[1/cm3] \t (11)nCO2[1/cm3] \t (12)nC2H4[1/cm3] \t (13)dt[s]" << std::endl;
     }else{
-      MonitorFile << "(1)time[s] \t (2)min_nE[1/cm3] \t (3)max_nE[1/cm3] \t (4)min_nO4+[1/cm3] \t (5)max_nO4+[1/cm3] \t (6)min_nO2-[1/cm3] \t (7)max_nO2-[1/cm3] \t (8)min_phiV[kV] \t (9)max_phiV[kV] \t (10)min_EN[Td] \t (11)max_EN[Td] \t (12)max_De[cm2/s] \t (13)Ddtodx2 \t (14)CFL \t (15)dt[s]" << std::endl;
+      MonitorFile << "(1)time[s] \t (2)min_nE[1/cm3] \t (3)max_nE[1/cm3] \t (4)min_nO4+[1/cm3] \t (5)max_nO4+[1/cm3] \t (6)min_nO2-[1/cm3] \t (7)max_nO2-[1/cm3] \t (8)min_phiV[kV] \t (9)max_phiV[kV] \t (10)min_EN[Td] \t (11)max_EN[Td] \t (12)max_De[cm2/s] \t (13)Ddtodx2 \t (14)CFL \t (15)min_dielectric[s] \t (16)dt[s]" << std::endl;
     }
     MonitorFile.close();
   }

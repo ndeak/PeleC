@@ -353,6 +353,9 @@ PeleC::variableSetUp()
   if(ef_use_NLsolve){
     react_num += 1;
   }
+#ifdef PELEC_TWO_TEMPERATURE
+  react_num += 1;
+#endif
   amrex::Vector<amrex::BCRec> react_bcs(react_num);
   amrex::Vector<std::string> react_name(react_num);
 #else
@@ -426,8 +429,12 @@ PeleC::variableSetUp()
   }
   // Get the auxiliary names from the network model.
 #ifdef PELEC_USE_PLASMA
-  // TODO: Fix any problems in 2D
+  
+#ifdef PELEC_TWO_TEMPERATURE
+  AMREX_ASSERT(NUM_AUX == 7);
+#else
   AMREX_ASSERT(NUM_AUX == 5);
+#endif
   // Add phiV
   cnt++;
   set_phiV_bc(bc, phys_bc);
@@ -453,12 +460,28 @@ PeleC::variableSetUp()
   set_scalar_bc(bc, phys_bc);
   bcs[cnt] = bc;
   name[cnt] = "Efieldz";
+#ifdef PELEC_TWO_TEMPERATURE
+  // Add Uele
+  cnt++;
+  set_scalar_bc(bc, phys_bc);
+  bcs[cnt] = bc;
+  name[cnt] = "Uele";
+  // Add Tele
+  cnt++;
+  set_scalar_bc(bc, phys_bc);
+  bcs[cnt] = bc;
+  name[cnt] = "Tele";
+#endif
 
   PhiV = FirstAux;
   nE = FirstAux+1;
   Efieldx = FirstAux+2;
   Efieldy = FirstAux+3;
   Efieldz = FirstAux+4;
+#ifdef PELEC_TWO_TEMPERATURE
+  Uele = FirstAux+5;
+  Tele = FirstAux+6;
+#endif
 #else
   amrex::Vector<std::string> aux_names;
   for (int i = 0; i < NUM_AUX; i++) {
@@ -515,6 +538,10 @@ PeleC::variableSetUp()
      react_bcs[NUM_SPECIES+2] = bc;
      react_name[NUM_SPECIES+2] = "rho_omega_nE";
   }
+#ifdef PELEC_TWO_TEMPERATURE
+  react_bcs[NUM_SPECIES+2] = bc;
+  react_name[NUM_SPECIES+2] = "omega_Uele";
+#endif
 #endif
 
   amrex::StateDescriptor::BndryFunc bndryfunc2(pc_reactfill_hyp);
@@ -734,26 +761,6 @@ PeleC::variableSetUp()
     derive_lst.addComponent("pmmserror", desc_lst, State_Type, Density, NVAR);
   }
 #endif
-
-  // Plasma derives
-#ifdef PELEC_USE_PLASMA
-//   derive_lst.add(
-//     "Efieldx", amrex::IndexType::TheCellType(), 1, pc_derEfieldx, grow_box_by_one);
-//   derive_lst.addComponent("Efieldx", desc_lst, State_Type, Density, NVAR);
-// 
-//   derive_lst.add(
-//     "Efieldy", amrex::IndexType::TheCellType(), 1, pc_derEfieldy, grow_box_by_one);
-//   derive_lst.addComponent("Efieldy", desc_lst, State_Type, Density, NVAR);
-// #if AMREX_SPACEDIM == 3
-//   derive_lst.add(
-//     "Efieldz", amrex::IndexType::TheCellType(), 1, pc_derEfieldz, grow_box_by_one);
-//   derive_lst.addComponent("Efieldz", desc_lst, State_Type, Density, NVAR);
-// #endif
-//   derive_lst.add(
-//     "redEfield", amrex::IndexType::TheCellType(), 1, pc_derredEfield, grow_box_by_one);
-//   derive_lst.addComponent("redEfield", desc_lst, State_Type, Density, NVAR);
-#endif
-
 
   // Problem-specific derives
   add_problem_derives<ProblemDerives>(derive_lst, desc_lst);

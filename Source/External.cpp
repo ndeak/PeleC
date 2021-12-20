@@ -38,19 +38,20 @@ PeleC::construct_new_ext_source(amrex::Real time, amrex::Real dt)
 
 void
 PeleC::fill_ext_source(
-  amrex::Real /*time*/,
-  amrex::Real /*dt*/,
-  const amrex::MultiFab&
-#ifdef PELEC_USE_EB
-    state_old
-#endif
-  ,
-  const amrex::MultiFab& /*state_new*/,
+  amrex::Real time,
+  amrex::Real dt,
+  const amrex::MultiFab& state_old,
+  const amrex::MultiFab& state_new,
   amrex::MultiFab& ext_src,
   int ng)
 {
   // const amrex::Real* dx = geom.CellSize();
   // const amrex::Real* prob_lo = geom.ProbLo();
+
+  amrex::Real prev_time = state[State_Type].prevTime();
+  amrex::Real elemChrg = 1.60217662e-19;     //Coulomb per charge
+  amrex::Real me_g = 9.10938356e-28;         // electron mass (g)
+
 
 #ifdef PELEC_USE_EB
   auto const& fact =
@@ -74,13 +75,23 @@ PeleC::fill_ext_source(
 #endif
 
     // auto const& So = state_old.array(mfi);
-    // auto const& Sn = state_new.array(mfi);
+    auto const& S_arr = (time == prev_time) ? state_old.array(mfi):state_new.array(mfi);
     auto const& Farr = ext_src.array(mfi);
+    auto const& joule_src = joule_heating.array(mfi);
+    auto const& E_cc = Efield.array(mfi);
+    auto const& ve = spec_drift.array(mfi, NUM_E * E_ID);
+    auto const& K_cc = KSpec_old.array(mfi);
+
 
     // Evaluate the external source
+    // Calculating joule heating source term: S_joule = -e * ne * u_e \dot E    [erg/cm3-s]
     amrex::ParallelFor(
-      bx, NVAR, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
-        Farr(i, j, k, n) = 0.0;
-      });
+      bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        // joule_src(i,j,k) = -1.0*elemChrg * S_arr(i,j,k,UFS+E_ID) * (ve(i,j,k,0)*E_cc(i,j,k,0) + ve(i,j,k,1)*E_cc(i,j,k,1) + ve(i,j,k,2)*E_cc(i,j,k,2));
+        joule_src(i,j,k) = -(1.0/me_g)*elemChrg * S_arr(i,j,k,UFS+E_ID) * K_cc(i,j,k,E_ID) * (E_cc(i,j,k,0)*E_cc(i,j,k,0) + E_cc(i,j,k,1)*E_cc(i,j,k,1) + E_cc(i,j,k,2)*E_cc(i,j,k,2));
+        Farr(i, j, k, UEDEN) = joule_src(i,j,k);
+        Farr(i, j, k, UEINT) = joule_src(i,j,k);
+        if(i == 1 && j == 1 && k == 1) printf("JOULE HEATING SRC IS %.6e, Eden = %.6e, Eint = %.6e, lterm = %.6e, sterm = %.6e\n", Farr(i,j,k,Eden), S_arr(i,j,k,Eden), S_arr(i,j,k,Eint), K_cc(i,j,k,E_ID) * (E_cc(i,j,k,0)*E_cc(i,j,k,0) + E_cc(i,j,k,1)*E_cc(i,j,k,1) + E_cc(i,j,k,2)*E_cc(i,j,k,2)), elemChrg * S_arr(i,j,k,UFS+E_ID));
+    });
   }
 }

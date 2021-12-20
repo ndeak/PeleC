@@ -8,6 +8,9 @@
 
   // Static variables/options
   static int         PhiV, nE, Efieldx, Efieldy, Efieldz;   // Additional scalar indices
+#ifdef PELEC_TWO_TEMPERATURE
+  static int         Uele, Tele;                            // Two-temperature variables
+#endif
   static int         ef_verbose;                            // Runtime verbose
   static int         ef_debug;                              // Use VisMF to dump data (a lot ...)
   static int         ef_use_NLsolve;                        // Switch nonlinear solve ON/OFF
@@ -72,6 +75,7 @@
   FluxBoxes gphi;
   amrex::MultiFab** gradPhiV;
   amrex::MultiFab     PI_source;  
+  amrex::MultiFab     joule_heating;  
 
   // Non-linear solve MFs/data
   // Transport
@@ -89,6 +93,8 @@
   amrex::Real                phiV_scale;
   amrex::Real                FnE_scale = 1.0;
   amrex::Real                FphiV_scale = 1.0;
+
+
 
   // Temporary holders
   int                        PCLinOp_needUpdate; // Flag to update the preconditioner linear operators
@@ -112,6 +118,8 @@
   amrex::MultiFab            old_state_NL;
   amrex::MultiFab            old_old_state_NL;
   amrex::MultiFab            tmp_nE_forcing;
+
+  amrex::Real                min_dielectric;    // Keep track of minimum dielectric relaxaion timescale for simulation monitoring
 
   // Preconditioner data
 #ifdef PELEC_USE_EB
