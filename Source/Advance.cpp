@@ -198,6 +198,21 @@ PeleC::do_mol_advance(
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
 
+  // Calculate the cel-centered dielectric relaxation timescales
+  for (amrex::MFIter mfi(KSpec_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+     const amrex::Box& tbox = mfi.tilebox();
+     const amrex::Box gbox = amrex::grow(tbox, numGrow());
+     const auto muEfab = KSpec_old.array(mfi,E_ID);
+     const auto ne_fab = Sborder.array(mfi,UFS+E_ID);
+     const auto diele_fab = dielectric_ts.array(mfi);
+     amrex::ParallelFor(
+       gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          amrex::Real ne_val = amrex::max(amrex::Math::abs(ne_fab(i,j,k))/EFConst::me_cgs, 1.0e-10);
+          amrex::Real mu_E = amrex::max(amrex::Math::abs(muEfab(i,j,k)), 1.0e-10);
+          diele_fab(i,j,k) = amrex::Math::abs(EFConst::eps0_cgs / (EFConst::elemCharge * mu_E * ne_val));
+       });
+  }
+
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve

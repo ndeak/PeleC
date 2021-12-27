@@ -94,6 +94,7 @@ int PeleC::ef_trapezoidal_pulse = 0;
 int PeleC::ef_sigmoid_pulse = 0;
 int PeleC::ion_bc_type = 0;
 int PeleC::zero_bc_flux = 0;
+int PeleC::zero_bc_grad = 0;
 int PeleC::ef_PC_fixedIter = -1;
 int PeleC::ef_PC_approx = 1;
 bool PeleC::def_harm_avg_cen2edge  = false;
@@ -392,6 +393,7 @@ PeleC::read_params()
   // TODO PUT IN plasma.cpp
   pp.query("ion_bc_type", ion_bc_type);
   pp.query("zero_bc_flux", zero_bc_flux);
+  pp.query("zero_bc_grad", zero_bc_grad);
   pp.query("secondary_em_coef", secondary_em_coef);
   pp.query("electron_emit_const", electron_emit_const);
   pp.query("pulse_freq", pulse_freq);

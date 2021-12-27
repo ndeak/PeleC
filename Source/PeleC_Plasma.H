@@ -14,6 +14,7 @@
   static bool        def_harm_avg_cen2edge;                 // Face averaging type
   static int         ion_bc_type;                           // Sets the ion electrode loss type (0 = weak efield approx., 1 = strong efield approx.)
   static int         zero_bc_flux;                          // Set to 1 to zero out all electrode fluxes for electrons and ions
+  static int         zero_bc_grad;                          // Set to 1 to set a flux consistent with a zero-grad BC
   static amrex::Real secondary_em_coef;                     // Boundary emission
   static amrex::Real electron_emit_const;                     // Boundary emission
   static amrex::Real pulse_freq;                            // Pulse frequency (Hz)
@@ -71,6 +72,8 @@
   FluxBoxes gphi;
   amrex::MultiFab** gradPhiV;
   amrex::MultiFab     PI_source;  
+  amrex::MultiFab     dielectric_ts;
+
 
   // Non-linear solve MFs/data
   // Transport
