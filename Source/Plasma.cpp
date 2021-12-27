@@ -64,6 +64,8 @@ PeleC::plasma_init()
     pp.query("Precond_fixedIter",ef_PC_fixedIter);
     pp.query("Precond_SchurApprox",ef_PC_approx);
 
+    pp.query("pac_mechanism", pac_mechanism);
+
     // get charge per unit mass (C/g) CGS
     Real zk_temp[NUM_SPECIES] = {0.0};
     int zk_num_temp[NUM_SPECIES] = {0};
@@ -74,7 +76,6 @@ PeleC::plasma_init()
        zk[k] = zk_temp[k];
        zk_num[k] = zk_num_temp[k];
     }
-
 }
 
 void PeleC::plasma_define_data() {
@@ -263,7 +264,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      amrex::ParallelFor(gbox, [rhoY, rhoD, T, Ks, mwt]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
-        getKappaSp(i,j,k, mwt, zk, rhoY, rhoD, T, Ks);
+        getKappaSp(i,j,k, mwt, zk, zk_num, rhoY, rhoD, T, Ks);
      });
   }
   // Copy NL Ke results back into normal array for CFL calculation later

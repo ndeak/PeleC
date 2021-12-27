@@ -48,6 +48,7 @@ getKappaE(int i, int j, int k, int Ecomp,
      }
      Ks(i,j,k,Ecomp) = JfitA * exp(Janev_sum);    // 1/m-V-s
    }
+   // TODO REMOVE
    Ks(i,j,k,Ecomp) *= 1.0e-9;           // Convert to C/cm-erg-s
 
    amrex::Real ndens = 0.0;
@@ -136,6 +137,7 @@ void
 getKappaSp(int i, int j, int k,
            amrex::Real const mwt[NUM_SPECIES],
            amrex::GpuArray<amrex::Real, NUM_SPECIES> a_zk,
+           amrex::GpuArray<int, NUM_SPECIES> a_zk_num,
            amrex::Array4<const amrex::Real> const& rhoY,
            amrex::Array4<      amrex::Real> const& rhoD,
            amrex::Array4<const amrex::Real> const& T,
@@ -157,16 +159,15 @@ getKappaSp(int i, int j, int k,
       if(n != E_ID) Ksp(i,j,k,n) = 0.0;
    }
 
-   // TODO remove after testing 1D code
-   // for (int n = 0; n < NUM_SPECIES; n++) {
-   //    if(n != E_ID) Ksp(i,j,k,n) = 2.738979530 * amrex::Math::copysign(1.0, a_zk[n]);
-   // }
-   Ksp(i, j, k, 4) = 2.738979530e-7;
-   Ksp(i, j, k, 5) = 2.738979530e-7;
-   Ksp(i, j, k, 6) = 2.738979530e-7;
-   Ksp(i, j, k, 7) = 2.738979530e-7;
-   Ksp(i, j, k, 8) = 2.738979530e-7;
-   Ksp(i, j, k, 9) = -2.738979530e-7;
+   for (int n = 0; n < NUM_SPECIES; n++) {
+      if(n != E_ID && a_zk_num[n] != 0) Ksp(i,j,k,n) = 2.738979530e-7 * amrex::Math::copysign(1.0, a_zk_num[n]);
+   }
+   // Ksp(i, j, k, 4) = 2.738979530e-7;
+   // Ksp(i, j, k, 5) = 2.738979530e-7;
+   // Ksp(i, j, k, 6) = 2.738979530e-7;
+   // Ksp(i, j, k, 7) = 2.738979530e-7;
+   // Ksp(i, j, k, 8) = 2.738979530e-7;
+   // Ksp(i, j, k, 9) = -2.738979530e-7;
 
 }
 

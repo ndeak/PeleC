@@ -117,6 +117,7 @@ amrex::Real PeleC::curr_voltage = 0.0;
 amrex::Real PeleC::dfact = 0.0;
 amrex::Real PeleC::sfact = 0.0;
 int PeleC::pulse_num = 0;
+bool PeleC::pac_mechanism = false;
 
 amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
 amrex::GpuArray<int,NUM_SPECIES> PeleC::zk_num;
@@ -1436,10 +1437,10 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
   }
 
   // Set up NL convergence statistics file
-  // if(NL_convergence_file){
-  //   int nlevs = parent->maxLevel() + 1;
-  //   for(int i=0; i<nlevs; i++) NLConvergenceFileSetup(i);
-  // }
+  if(NL_convergence_file){
+    int nlevs = parent->maxLevel() + 1;
+    for(int i=0; i<nlevs; i++) NLConvergenceFileSetup(i);
+  }
 }
 
 int
