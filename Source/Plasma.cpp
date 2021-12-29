@@ -107,6 +107,7 @@ void PeleC::plasma_define_data() {
    ionFlx_eb.define(grids,dmap,1,numGrow()); ionFlx_eb.setVal(0.0);      // EB ion fluxes - a bit inefficient to store as full MF
    PI_source.define(grids, dmap, 4, 1, amrex::MFInfo(), Factory()); PI_source.setVal(0.0);
    joule_heating.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); joule_heating.setVal(0.0);
+   dielectric_ts.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); dielectric_ts.setVal(1.0);
 
    if (ef_use_NLsolve) {
       nl_state.define(grids,dmap,2,2);

@@ -77,6 +77,7 @@
   amrex::MultiFab** gradPhiV;
   amrex::MultiFab     PI_source;  
   amrex::MultiFab     joule_heating;  
+  amrex::MultiFab     dielectric_ts;
 
   // Non-linear solve MFs/data
   // Transport
@@ -119,8 +120,6 @@
   amrex::MultiFab            old_state_NL;
   amrex::MultiFab            old_old_state_NL;
   amrex::MultiFab            tmp_nE_forcing;
-
-  amrex::Real                min_dielectric;    // Keep track of minimum dielectric relaxaion timescale for simulation monitoring
 
   // Preconditioner data
 #ifdef PELEC_USE_EB

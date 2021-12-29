@@ -1232,6 +1232,7 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
     amrex::Real max_Edrift = amrex::max(max_Edrift_x, max_Edrift_y, max_Edrift_z);
     amrex::Real Ddtodx2 = (max_De/min_rho) * dt / (dx[0] * dx[0]);
     amrex::Real CFL = max_Edrift * dt / dx[0];
+    amrex::Real min_dielectric = dielectric_ts.min(0, 0, false);
 
     if (amrex::ParallelDescriptor::IOProcessor()) {
       std::string baseName = "MonitorFile_Level";

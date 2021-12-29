@@ -890,7 +890,6 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
   // set_amr_info(level, -1, -1, -1.0, -1.0);
 
   amrex::Real estdt = max_dt;
-  min_dielectric = 1.0e10;  
 
   const amrex::MultiFab& stateMF = get_new_data(State_Type);
 
@@ -972,7 +971,6 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #ifdef PELEC_USE_PLASMA
             drift_arr,
             K_arr,
-            min_dielectric,
 #endif
             AMREX_D_DECL(dx1, dx2, dx3));
         });

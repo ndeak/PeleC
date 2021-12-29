@@ -143,21 +143,10 @@ PeleC::do_mol_advance(
   // Compute PI sources
   if(ef_do_photoionization){
     solvePI( time, dt, *lprobparm );
-
-    // 6 level
-    // if (level == parent->finestLevel()) {
-    //   auto &SoldLevelfinest = getLevel(parent->finestLevel()).get_PI_data();   
-    //   auto &SoldLevelnexttofinest = getLevel(parent->finestLevel()-1).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest = getLevel(parent->finestLevel()-2).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest2 = getLevel(parent->finestLevel()-3).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest3 = getLevel(parent->finestLevel()-4).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest4 = getLevel(parent->finestLevel()-5).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest5 = getLevel(parent->finestLevel()-6).get_PI_data();  
-    //   writeDebugPlotFile({&SoldLevelnextnexttofinest5, &SoldLevelnextnexttofinest4, &SoldLevelnextnexttofinest3, &SoldLevelnextnexttofinest2, &SoldLevelnextnexttofinest,&SoldLevelnexttofinest,&SoldLevelfinest}, "TestPltSevenLevel",parent->finestLevel()-6,0,4);
-    // }
   }
 
 #endif
+
   // Compute S^{n} = MOLRhs(U^{n})
   if (verbose) {
     amrex::Print() << "... Computing MOL source term at t^{n} " << std::endl;
@@ -168,6 +157,22 @@ PeleC::do_mol_advance(
   amrex::Real flux_factor = 0;
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
+
+  // Calculate the cel-centered dielectric relaxation timescales
+  for (amrex::MFIter mfi(KSpec_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+     const amrex::Box& tbox = mfi.tilebox();
+     const amrex::Box gbox = amrex::grow(tbox, numGrow());
+     const auto muEfab = KSpec_old.array(mfi,E_ID);
+     const auto ne_fab = Sborder.array(mfi,UFS+E_ID);
+     const auto diele_fab = dielectric_ts.array(mfi);
+     amrex::ParallelFor(
+       gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          amrex::Real ne_val = amrex::max(amrex::Math::abs(ne_fab(i,j,k))/EFConst::me_cgs, 1.0e-10);
+          amrex::Real mu_E = amrex::max(amrex::Math::abs(muEfab(i,j,k)), 1.0e-10);
+          diele_fab(i,j,k) = amrex::Math::abs(EFConst::eps0_cgs / (EFConst::elemCharge * mu_E * ne_val));
+       });
+  }
+
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve
