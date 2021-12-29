@@ -109,6 +109,7 @@ pc_rst_int_e(
   }
   auto eos = pele::physics::PhysicsType::eos();
   if (allow_small_energy == 0) {
+    exit(1);
     const amrex::Real rhoInv = 1.0 / S(i, j, k, URHO);
     const amrex::Real Up = S(i, j, k, UMX) * rhoInv;
     const amrex::Real Vp = S(i, j, k, UMY) * rhoInv;
@@ -167,6 +168,7 @@ pc_rst_int_e(
       }
     }
   } else if (allow_negative_energy == 0) {
+    exit(1);
     const amrex::Real rhoInv = 1.0 / S(i, j, k, URHO);
     const amrex::Real Up = S(i, j, k, UMX) * rhoInv;
     const amrex::Real Vp = S(i, j, k, UMY) * rhoInv;

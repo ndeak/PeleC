@@ -470,7 +470,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, area_arr, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, ionFlux_eb_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, ef_use_NLsolve, secondary_em_coef, electron_emit_const, ef_do_drift
+            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, ionFlux_eb_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, zero_bc_grad, ef_use_NLsolve, secondary_em_coef, electron_emit_const, ef_do_drift
 #endif
 #ifdef PELEC_USE_EB
             ,

@@ -47,12 +47,14 @@ class GMRESSolver
      int solve(amrex::MultiFab& sol,
                const amrex::MultiFab& rhs,
                amrex::Real a_abs_tol,
-               amrex::Real a_rel_tol);
+               amrex::Real a_rel_tol,
+               amrex::Real* lin_residuals);
 
    private:
 
      void one_restart(amrex::MultiFab& a_x,
-                      const amrex::MultiFab& a_rhs);
+                      const amrex::MultiFab& a_rhs,
+                      amrex::Real* lin_residuals);
 
      void one_iter(const int iter, amrex::Real &resNorm);
 

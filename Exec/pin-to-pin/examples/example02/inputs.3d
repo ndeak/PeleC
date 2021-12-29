@@ -92,7 +92,7 @@ amr.check_int       = 1000       # number of timesteps between checkpoints
 # PLOTFILES
 amr.plot_files_output = 1
 amr.plot_file       = plt
-amr.plot_int        = 500
+amr.plot_int        = 5
 #amr.derive_plot_vars=pressure x_velocity y_velocity z_velocity vfrac
 amr.derive_plot_vars=ALL
 pelec.plot_massfrac = true

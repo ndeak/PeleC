@@ -7,6 +7,7 @@
 #ifdef AMREX_USE_EB
 #include <AMReX_MLEBABecLap.H>
 #include <AMReX_MLEBABecCecLap.H>
+#include "hydro_redistribution.H"
 #endif
 #include <Plasma_K.H>
 #include <PlasmaBCFill.H>
@@ -108,6 +109,7 @@ void PeleC::ef_solve_NL(const Real     &dt,
       gmres.setMaxRestart(ef_GMRES_maxRst);
    }
 
+
    // Need to create the preconditioner LinOp
    PCLinOp_needUpdate = 1;
    PCMLMG_needUpdate = 1;
@@ -157,8 +159,10 @@ void PeleC::ef_solve_NL(const Real     &dt,
    // Newton   
    int exit_newton = 0;
    int NK_ite = 0;
+   MultiFab newtonDir(grids,dmap,2,1,amrex::MFInfo(), Factory());
    do {
       NK_ite += 1;
+      int GMRES_tmp_count = 0.0;
 
       // Verbose
       if ( ef_verbose ) {
@@ -167,13 +171,12 @@ void PeleC::ef_solve_NL(const Real     &dt,
       }
 
       // Solve for Newton direction
-      MultiFab newtonDir(grids,dmap,2,1,amrex::MFInfo(), Factory());
       newtonDir.setVal(0.0,0,2,1);
       if ( !ef_use_PETSC_direct ) {
          const Real S_tol     = ef_GMRES_reltol;
          const Real S_tol_abs = max_nlres * ef_GMRES_reltol;
-         GMRES_tot_count += gmres.solve(newtonDir,nl_resid,S_tol_abs,S_tol);
-         // GMRES_tot_count += gmres.solve(newtonDir,nl_resid,1.0e-5,S_tol);
+         GMRES_tmp_count = gmres.solve(newtonDir,nl_resid,S_tol_abs,S_tol, lin_residuals);
+         GMRES_tot_count += GMRES_tmp_count;
          if ( ef_debug ) VisMF::Write(newtonDir,"NLDir_NewtIte"+std::to_string(NK_ite)+"_Lvl"+std::to_string(level));
       } else {
          amrex::Print() << "PETSC direct solve in Newton not implemented \n";
@@ -188,6 +191,24 @@ void PeleC::ef_solve_NL(const Real     &dt,
       if ( ef_debug ) VisMF::Write(nl_resid,"NLRes_NewtIte"+std::to_string(NK_ite)+"_Lvl"+std::to_string(level));
       if ( ef_debug ) VisMF::Write(nl_state,"NLState_NewtIte"+std::to_string(NK_ite)+"_Lvl"+std::to_string(level));
       ef_normMF(nl_resid,nl_residNorm);
+      ef_normMFsingle(nl_resid,nl_residNormphiV, 0);
+      ef_normMFsingle(nl_resid,nl_residNormnE, 1);
+
+      if(NL_convergence_file){
+         if (amrex::ParallelDescriptor::IOProcessor()) {
+           std::string baseName = "NLConvergence_Level";
+           std::string datString = ".dat";
+           std::string intString = std::to_string(level);
+           std::string NLConvergenceFileName = (baseName + intString + datString);
+
+           std::ofstream NLConvergenceFile;
+           NLConvergenceFile.open(NLConvergenceFileName.c_str(), std::ios::out | std::ios::app);
+           for (int li = 0; li <= GMRES_tmp_count; li++) {
+              NLConvergenceFile << parent->levelSteps(0) << "\t" << time  << "\t" << NK_ite  << "\t" << nl_residNormnE  << "\t" << nl_residNormphiV << "\t" << li << "\t" << lin_residuals[li] << std::endl;
+           }
+           NLConvergenceFile.close();
+         }
+      }
       
       amrex::Print() << "NORM0 VALUES ARE " << nl_resid.norm0(0) << " AND " << nl_resid.norm0(1) << "\n"; 
       max_nlres = std::max(nl_resid.norm0(0),nl_resid.norm0(1));
@@ -238,7 +259,6 @@ void PeleC::ef_solve_NL(const Real     &dt,
 
    } while( !exit_newton );
    NK_tot_count += NK_ite;
-   // exit(1);
 
    // -------------------------------------------
    // Post Newton   
@@ -254,8 +274,9 @@ void PeleC::ef_solve_NL(const Real     &dt,
    for (MFIter mfi(forcing_nE,TilingIfNotGPU()); mfi.isValid(); ++mfi)
    {
       const Box& bx = mfi.tilebox();
-      // auto const& old_nE   = ef_state_old.const_array(mfi,1);
-      auto const& old_nE   = old_state_NL.const_array(mfi,0);
+      const amrex::Box cbox = amrex::grow(bx, nl_state.nGrow()-1);
+      auto const& old_nE   = ef_state_old.const_array(mfi,1);
+      // auto const& old_nE   = old_state_NL.const_array(mfi,0);
       auto const& new_nE   = nl_state.array(mfi,1);
       auto const& I_R_nE   = I_R_in.const_array(mfi,NUM_SPECIES+2);
       auto const& force    = forcing_nE.array(mfi);
@@ -268,6 +289,54 @@ void PeleC::ef_solve_NL(const Real     &dt,
          force(i,j,k) = (new_nE(i,j,k) - old_nE(i,j,k)) * dtinv;
          if (do_react) force(i,j,k) -= I_R_nE(i,j,k);
       });
+
+
+// #ifdef PELEC_USE_EB
+//       auto const& fact =
+//         dynamic_cast<amrex::EBFArrayBoxFactory const&>(Sborder.Factory());
+//       auto const& flags = fact.getMultiEBCellFlagFab();
+//       const auto& flag_fab = flags[mfi];
+// 
+//       // FIXME: using bcrec for rho.. maybe this is ok?
+//       // FIXME: something here is sized incorrectly.. SRD in indexing out of arrays
+//       const amrex::StateDescriptor* desc = state[State_Type].descriptor();
+//       const auto& bcs = desc->getBCs();
+//       amrex::Gpu::DeviceVector<amrex::BCRec> d_bcs(desc->nComp());
+// 
+//       amrex::FabType typ = flag_fab.getType(bx);
+//       if (typ != amrex::FabType::regular) {
+//         AMREX_D_TERM(auto apx = areafrac[0]->const_array(mfi);
+//                      , auto apy = areafrac[1]->const_array(mfi);
+//                      , auto apz = areafrac[2]->const_array(mfi););
+//         AMREX_D_TERM(auto fcx = fact.getFaceCent()[0]->const_array(mfi);
+//                      , auto fcy = fact.getFaceCent()[1]->const_array(mfi);
+//                      , auto fcz = fact.getFaceCent()[2]->const_array(mfi););
+//         auto ccc = fact.getCentroid().const_array(mfi);
+// 
+//         amrex::FArrayBox tmpfab(cbox, 1);
+//         if (redistribution_type == "FluxRedist") {
+//           tmpfab.setVal<amrex::RunOn::Device>(1.0);
+//         }
+//         amrex::Array4<amrex::Real> scratch = tmpfab.array();
+// 
+//         amrex::FArrayBox nEforce_tmpfab(cbox, 1);
+//         nEforce_tmpfab.setVal(0.0);
+//         amrex::Array4<amrex::Real> nEforce_tmp = nEforce_tmpfab.array();
+//         copy_array4(cbox, 0, force, nEforce_tmp);
+//         amrex::Real voltar = 0.5;
+// 
+//         auto flag_arr = flags.const_array(mfi);
+//         {
+//           BL_PROFILE("Redistribution::Apply()");
+//           Redistribution::ApplyOne(
+//             bx, force, nEforce_tmp, old_nE, scratch,
+//             flag_arr, AMREX_D_DECL(apx, apy, apz), vfrac.const_array(mfi),
+//             AMREX_D_DECL(fcx, fcy, fcz), ccc, d_bcs.dataPtr(), geom, dt,
+//             redistribution_type);
+//         }
+//       }
+// #endif
+
    }
    if ( ef_debug ) VisMF::Write(forcing_nE,"NL_ForcingnE_Lvl"+std::to_string(level));
 
@@ -307,14 +376,14 @@ int PeleC::testExitNewton(const MultiFab  &res,
    }
   
    // Exit if Newton correction sufficiently small
-   if ( max_dir <= ef_newtonTol ) {
-      exit = 1; 
-      if ( ef_verbose ) {
-         amrex::Print() << " Newton correction sufficiently small: \n";
-         amrex::Print() << " Final Newton L2**2 correction norm : " << 0.5*nl_correctionNorm*nl_correctionNorm << "\n";
-         amrex::Print() << " Final Newton Linf res norm : " << max_dir << "\n";
-      }    
-   }
+   // if ( max_dir <= ef_newtonTol ) {
+   //    exit = 1; 
+   //    if ( ef_verbose ) {
+   //       amrex::Print() << " Newton correction sufficiently small: \n";
+   //       amrex::Print() << " Final Newton L2**2 correction norm : " << 0.5*nl_correctionNorm*nl_correctionNorm << "\n";
+   //       amrex::Print() << " Final Newton Linf res norm : " << max_dir << "\n";
+   //    }    
+   // }
 
    if ( newtonIter >= ef_maxNewtonIter && exit == 0 ) {
       exit = 1; 
@@ -401,8 +470,8 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
       auto const& ne_diff  = diffnE.const_array(mfi);
       auto const& ne_adv   = advnE.const_array(mfi);
       auto const& ne_curr  = nE_a.const_array(mfi);
-      // auto const& ne_old   = ef_state_old.const_array(mfi,1);
-      auto const& ne_old   = old_state_NL.const_array(mfi,0);
+      auto const& ne_old   = ef_state_old.const_array(mfi,1);
+      // auto const& ne_old   = old_state_NL.const_array(mfi,0);
       auto const& ne_old_old   = old_old_state_NL.const_array(mfi,0);
       auto const& charge   = bg_charge.const_array(mfi);
       auto const& res_nE   = a_nl_resid.array(mfi,1);
@@ -432,6 +501,17 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
             res_nE(i,j,k) = 0.0;
             res_phiV(i,j,k) = 0.0;
          }
+
+         // Try freezing nE for cut cells
+         if(flag_arr(i,j,k).isSingleValued()){
+            res_nE(i,j,k) = 0.0;
+         }
+
+         // Try removing nE advection for cut cells
+         // if(flag_arr(i,j,k).isSingleValued()){
+         //    res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * ( ne_diff(i,j,k));
+         //    if (do_react) res_nE(i,j,k) += dt_lcl * I_R_nE(i,j,k);
+         // }
 #endif
          // if(i == 4 && k == 4) printf("res_nE(%i) = %.12e, ne_adv = %.12e, ne_diff = %.12e, res_phiV = %.12e, lapphi = %.12e\n", j, res_nE(i,j,k), ne_adv(i,j,k), ne_diff(i,j,k), res_phiV(i,j,k), lapPhiV(i,j,k));
       });  
@@ -474,20 +554,6 @@ void PeleC::compPhiVLap(MultiFab& phi,
     const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
     auto const& flags = ebf->getMultiEBCellFlagFab();
     MLEBABecLap phiV_poisson({geom}, {grids}, {dmap}, info, {ebf});
-
-   // for (MFIter mfi(phi,true); mfi.isValid(); ++mfi)
-   // {
-   //     const Box& bx = mfi.growntilebox();
-   //     const auto& phiV_ar = phi.array(mfi);
-   //     auto flag_arr = flags.const_array(mfi);
-   //     amrex::ParallelFor(bx,
-   //     [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-   //     {
-   //        if(flag_arr(i,j,k).isCovered()){
-   //            phiV_ar(i,j,k) = 0.0;
-   //        }
-   //     });
-   // }
 #else
     MLPoisson phiV_poisson({geom}, {grids}, {dmap}, info);
 #endif
@@ -506,7 +572,7 @@ void PeleC::compPhiVLap(MultiFab& phi,
     }
     MultiFab phiV_borders(PhiVborder, amrex::make_alias, 0, 1);
 
-// Set-up BC's
+   // Set-up BC's
    std::array<LinOpBCType,AMREX_SPACEDIM> mlmg_lobc;
    std::array<LinOpBCType,AMREX_SPACEDIM> mlmg_hibc;
    // ef_set_PoissonBC(mlmg_lobc, mlmg_hibc);
@@ -527,8 +593,8 @@ void PeleC::compPhiVLap(MultiFab& phi,
    phiV_poisson.setLevelBC(0, &phiV_borders);
 
 #ifdef AMREX_USE_EB
-    // Setup solver coefficient: general form is (ascal * acoef - bscal * div bcoef grad ) phi = rhs
-    // For simple Poisson solve: ascal, acoef = 0 and bscal, bcoef = 1
+   // Setup solver coefficient: general form is (ascal * acoef - bscal * div bcoef grad ) phi = rhs
+   // For simple Poisson solve: ascal, acoef = 0 and bscal, bcoef = 1
    MultiFab acoef(grids, dmap, 1, 0, MFInfo(), Factory());
    acoef.setVal(0.0);
    phiV_poisson.setACoeffs(0, acoef);
@@ -570,23 +636,19 @@ void PeleC::compPhiVLap(MultiFab& phi,
    // phiV_poisson.setEBDirichlet(0,phi,beta);
 #endif
 
-// LinearSolver to get divergence
+   // LinearSolver to get divergence
    MLMG solver(phiV_poisson);
    solver.apply({&phiLap},{&phiV_borders});
    // solver.apply({&phiLap},{&phi});
    
-// Need the flux (grad(phi))
+   // Need the flux (grad(phi))
    Array<MultiFab*,AMREX_SPACEDIM> fp{D_DECL(gPhiV[0],gPhiV[1],gPhiV[2])};
    gPhiV[0]->setVal(0.0);
    gPhiV[1]->setVal(0.0);
    gPhiV[2]->setVal(0.0);
 
-   // std::array<MultiFab*,AMREX_SPACEDIM> fp{D_DECL(gradPhiV[0],gradPhiV[1],gradPhiV[2])};
    // solver.getGradSolution({fp});
-
-   // solver.getFluxes({fp},{&phi});
    solver.getFluxes({fp},{&phiV_borders});
-   // solver.getEBFluxes({fp},{&phiV_borders});
 }  
 
 void PeleC::compElecDiffusion(const MultiFab& a_ne,
@@ -885,24 +947,25 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
 #endif
 
          // Computing fluxes
-         // TODO TURN ADVECTION BACK ON!!
-         amrex::ParallelFor(xbx, [u,xstate,xflux,area_x]
-         AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-         {
-            xflux(i,j,k) = u(i,j,k) * xstate(i,j,k) * area_x(i,j,k);
-         });
-         amrex::ParallelFor(ybx, [ne_arr,v,ystate,yflux,area_y]
-         AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-         {
-            yflux(i,j,k) = v(i,j,k) * ystate(i,j,k) * area_y(i,j,k);
-         });
+         if(ef_do_drift == 1){ 
+            amrex::ParallelFor(xbx, [u,xstate,xflux,area_x,ne_arr]
+            AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+                xflux(i,j,k) = u(i,j,k) * xstate(i,j,k) * area_x(i,j,k);
+            });
+            amrex::ParallelFor(ybx, [ne_arr,v,ystate,yflux,area_y,ne_arr]
+            AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+               yflux(i,j,k) = v(i,j,k) * ystate(i,j,k) * area_y(i,j,k);
+            });
 #if ( AMREX_SPACEDIM ==3 )
-         amrex::ParallelFor(zbx, [w,zstate,zflux,area_z]
-         AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-         {
-            zflux(i,j,k) = w(i,j,k) * zstate(i,j,k) * area_z(i,j,k);
-         });
+            amrex::ParallelFor(zbx, [w,zstate,zflux,area_z,ne_arr]
+            AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+               zflux(i,j,k) = w(i,j,k) * zstate(i,j,k) * area_z(i,j,k);
+            });
 #endif
+         }
 
          // Overwrite dirichlet BC fluxes
          // TODO: is the 2nd em ion flux quantity already multiplied with area?
@@ -1066,6 +1129,9 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
             ebflux -= 2.0 * secondary_em_coef * ionFeb(i,j,k); 
             ebflux *= -1.0 * ebg[L].eb_area * full_area;
 
+            // TODO: REMOVE
+            ebflux = 0.0;
+
             // TODO: Flux interpolation to face centroids...
 
             // Update the divergence for cut cells
@@ -1076,6 +1142,9 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                               + (zflux(i,j,k+1) - zflux(i,j,k))
 #endif
                               + ebflux)/ cutvol;
+            
+            // Try removing advective fluxes for cut cells...
+            ne_adv(i,j,k) = ebflux/cutvol;
           }
         });
 #endif
@@ -1367,6 +1436,9 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
    mg_diff->setVerbose(0);
    mg_drift->setVerbose(0);
    mg_Stilda->setVerbose(0);
+   mg_diff->setMaxIter(1000);
+   mg_drift->setMaxIter(1000);
+   mg_Stilda->setMaxIter(1000);
    if ( ef_PC_fixedIter > 0 ) {
       mg_diff->setFixedIter(ef_PC_fixedIter);
       mg_drift->setFixedIter(ef_PC_fixedIter);
@@ -1437,6 +1509,21 @@ void PeleC::ef_applyPrecond (const MultiFab  &v,
    mg_diff->solve({&temp2},{&temp}, S_tol, S_tol_abs);
    temp2.mult(-1.0);
    MultiFab::Add(a_Pne,temp2,0,0,1,0);
+  
+   // Check the norm of the Pv vector  
+   amrex::Real PC_norm;
+   amrex::Real v_norm;
+   ef_normMF(Pv,PC_norm);
+   ef_normMF(v,v_norm);
+   if(PC_norm == 0.0){
+     amrex::Print() << "IGNORING PC DUE TO ZERO NORM!\n";
+     MultiFab::Copy(Pv, v, 0, 0, 2, 2);
+   }
+   if(v_norm == 0.0){
+     amrex::Print() << "INPUT VECTOR NORM IS ZERO!\n";
+     exit(1);
+   }
+  
 }
 
 void PeleC::ef_normMF(const MultiFab &a_vec,

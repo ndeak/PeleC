@@ -156,6 +156,8 @@ tag_plasma_channel(
   char tagval) noexcept
 {
   // Tag in central pin to pin region (hard code for time being)
+  // amrex::Real r = sqrt((x-0.25)*(x-0.25) + (z-0.25)*(z-0.25));
+  // if (r < 0.05 && y > 0.1 && y < 0.4)
   amrex::Real r = sqrt((x-1.0)*(x-1.0) + (z-1.0)*(z-1.0));
   if (r < 0.1 && y > 0.75 && y < 1.0)
   {

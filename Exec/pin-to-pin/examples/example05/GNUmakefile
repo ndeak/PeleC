@@ -5,7 +5,7 @@ PRECISION = DOUBLE
 
 # Profiling
 PROFILE = FALSE
-TINY_PROFILE = TRUE
+TINY_PROFILE = FALSE
 COMM_PROFILE = FALSE
 TRACE_PROFILE = FALSE
 MEM_PROFILE = FALSE
@@ -30,11 +30,11 @@ USE_ARKODE_PP = FALSE
 USE_CVODE_PP = TRUE
 USE_MASA = FALSE
 USE_EB = FALSE
-USE_PLASMA =TRUE
-Eos_dir := Fuego
-Reactions_dir := Fuego
+USE_PLASMA = TRUE
+Eos_Model := Fuego
+Reactor_dir := Fuego/CPU/cvode
 Chemistry_Model := PlasmaAir-temp
-Transport_dir := Simple
+Transport_Model := Simple
 
 # GNU Make
 Bpack := ./Make.package
