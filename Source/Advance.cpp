@@ -143,55 +143,15 @@ PeleC::do_mol_advance(
   // Compute PI sources
   if(ef_do_photoionization){
     solvePI( time, dt, *lprobparm );
-
-    // 2 level
-    // if (level == parent->finestLevel()) {
-    //   auto &SoldLevelfinest = getLevel(parent->finestLevel()).get_PI_data();   
-    //   auto &SoldLevelnexttofinest = getLevel(parent->finestLevel()-1).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest = getLevel(parent->finestLevel()-2).get_PI_data();  
-    //   writeDebugPlotFile({&SoldLevelnextnexttofinest,&SoldLevelnexttofinest,&SoldLevelfinest}, "TestPltThreeLevel",parent->finestLevel()-2,0,4);
-    // }
-
-    // 4 level
-    // if (level == parent->finestLevel()) {
-    //   auto &SoldLevelfinest = getLevel(parent->finestLevel()).get_PI_data();   
-    //   auto &SoldLevelnexttofinest = getLevel(parent->finestLevel()-1).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest = getLevel(parent->finestLevel()-2).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest2 = getLevel(parent->finestLevel()-3).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest3 = getLevel(parent->finestLevel()-4).get_PI_data();  
-    //   writeDebugPlotFile({&SoldLevelnextnexttofinest3, &SoldLevelnextnexttofinest2, &SoldLevelnextnexttofinest,&SoldLevelnexttofinest,&SoldLevelfinest}, "TestPltFiveLevel",parent->finestLevel()-4,0,4);
-    // }
-
-    // 6 level
-    // if (level == parent->finestLevel()) {
-    //   auto &SoldLevelfinest = getLevel(parent->finestLevel()).get_PI_data();   
-    //   auto &SoldLevelnexttofinest = getLevel(parent->finestLevel()-1).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest = getLevel(parent->finestLevel()-2).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest2 = getLevel(parent->finestLevel()-3).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest3 = getLevel(parent->finestLevel()-4).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest4 = getLevel(parent->finestLevel()-5).get_PI_data();  
-    //   auto &SoldLevelnextnexttofinest5 = getLevel(parent->finestLevel()-6).get_PI_data();  
-    //   writeDebugPlotFile({&SoldLevelnextnexttofinest5, &SoldLevelnextnexttofinest4, &SoldLevelnextnexttofinest3, &SoldLevelnextnexttofinest2, &SoldLevelnextnexttofinest,&SoldLevelnexttofinest,&SoldLevelfinest}, "TestPltSevenLevel",parent->finestLevel()-6,0,4);
-    // }
   }
 
 #endif
-  if (level == parent->finestLevel()) {
-     // ------------- Using writeDebugPlotFile examples
-     // Let's write old data of the finest two levels
-     //auto &SoldLevelfinest = getLevel(parent->finestLevel()).get_old_data(State_Type);   
-     //auto &SoldLevelnexttofinest = getLevel(parent->finestLevel()-1).get_old_data(State_Type);  
-     //writeDebugPlotFile({&SoldLevelnexttofinest,&SoldLevelfinest}, "TestPltTwoLevel",parent->finestLevel()-1,PhiV,1);
-
-     // Let's write Sborder of the finest
-     //writeDebugPlotFile({&Sborder},"TestPltSingleLevel",parent->finestLevel(),PhiV,1);
-  }
-  // VisMF::Write(Efield,"GradPhiCC");
 
   // Compute S^{n} = MOLRhs(U^{n})
   if (verbose) {
     amrex::Print() << "... Computing MOL source term at t^{n} " << std::endl;
   }
+
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
   FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
   amrex::Real flux_factor = 0;
@@ -220,8 +180,12 @@ PeleC::do_mol_advance(
      amrex::MultiFab::Copy(old_state_NL, Sborder, PhiV+1,0,1,old_state_NL.nGrow());
      MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
      ef_solve_NL(dt,time,Sborder, molSrc,I_R,forcing_nE);
+
+     // Copy final redistributed forcing into temporary holder...
+     amrex::MultiFab::Copy(tmp_nE_forcing, molSrc, UFX+1,0,1,0);
   }
 #endif
+
 
   // Build other (neither spray nor diffusion) sources at t_old
   for (int n = 0; n < src_list.size(); ++n) {
@@ -260,41 +224,17 @@ PeleC::do_mol_advance(
 
   computeTemp(S_new, 0);
 
-  // // floor negative electron number density values
-  // for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-  //    const amrex::Box& tbox = mfi.tilebox();
-  //    const auto Sfab = S_new.array(mfi);
-  //    amrex::ParallelFor(
-  //      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //        if(Sfab(i,j,k,UFS+E_ID) < 0.0) Sfab(i,j,k,UFS+E_ID) = 1.0e-35;
-  //      });
-  // }
-
-  // Find minimum nonzero volume fraction, and provide location
-  // double min_vf = 1.0;
-  // int min_i, min_j, min_k;
-  // for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-  //    const amrex::Box& tbox = mfi.tilebox();
-  //    const auto vf = vfrac.array(mfi);
-  //    amrex::ParallelFor(
-  //      tbox, [vf, &min_vf, &min_i, &min_j, &min_k] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //        if(vf(i,j,k) < min_vf && vf(i,j,k) > 0.0) {
-  //          min_vf = vf(i,j,k);
-  //          min_i = i; min_j = j; min_k = k;
-  //        }
-  //      });
-  // }
-  // printf("For level %i, minimum volume fraction = %.6e, located at (%i, %i, %i)\n", level, min_vf, min_i, min_j, min_k);  
-
   // Compute S^{n+1} = MOLRhs(U^{n+1,*})
   if (verbose) {
     amrex::Print() << "... Computing MOL source term at t^{n+1} " << std::endl;
   }
+
   FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
   flux_factor = mol_iters > 1 ? 0 : 1;
 #ifdef PELEC_USE_PLASMA
   // TODO: re-evaluate efield based on * quantities
 #endif
+  if(ef_use_NLsolve) amrex::MultiFab::Copy(molSrc, tmp_nE_forcing, 0,UFX+1,1,0);
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
@@ -302,8 +242,13 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve
-     MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
-     ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);
+     // amrex::MultiFab::Copy(old_old_state_NL, old_state_NL, 0,0,1,old_old_state_NL.nGrow());
+     // /amrex::MultiFab::Copy(old_state_NL, Sborder, PhiV+1,0,1,old_state_NL.nGrow());
+     // MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
+     // ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);
+
+     // Copy final redistributed forcing into temporary holder...
+     amrex::MultiFab::Copy(tmp_nE_forcing, molSrc, UFX+1,0,1,0);
   }
 #endif
 
@@ -356,13 +301,26 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Subtract(molSrc, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
-    if (ef_use_NLsolve) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
+    // if (ef_use_NLsolve) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
+    if (ef_use_NLsolve) amrex::MultiFab::Copy(molSrc, tmp_nE_forcing, 0,FirstAux+1,1,0);
 #endif
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
     react_state(time, dt, false, &molSrc);
   }
 #endif
+
+  // floor negative electron number density values after reactive update
+  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& tbox = mfi.growntilebox();
+      const auto Sfab = S_new.array(mfi);
+      amrex::ParallelFor(
+        tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          if(Sfab(i,j,k,UFS+E_ID) < 0.0) Sfab(i,j,k,UFS+E_ID) = 1.0e-35;
+          if(Sfab(i,j,k,UFX+1) < 0.0) Sfab(i,j,k,UFX+1) = 1.0e-10;
+        });
+  }
+
   computeTemp(S_new, 0);
   if(ef_use_NLsolve) S_new.setVal(0.0, UFS+E_ID, 1);
 
