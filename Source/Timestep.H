@@ -59,8 +59,6 @@ pc_estdt_hydro(
 #endif
 #ifdef PELEC_USE_PLASMA
   const amrex::Array4<const amrex::Real>& drift,
-  const amrex::Array4<const amrex::Real>& Kspec,
-  amrex::Real min_dielectric,
 #endif
   AMREX_D_DECL(
     const amrex::Real& dx,
@@ -69,7 +67,7 @@ pc_estdt_hydro(
 {
   amrex::Real dt = std::numeric_limits<amrex::Real>::max();
 
-  amrex::Loop(bx, [=, &dt, &min_dielectric](int i, int j, int k) {
+  amrex::Loop(bx, [=, &dt](int i, int j, int k) {
 #ifdef PELEC_USE_EB
     if (!flags(i, j, k).isCovered()) {
 #endif
@@ -97,9 +95,6 @@ pc_estdt_hydro(
                    , const amrex::Real dt3 = dz / (c + amrex::Math::abs(uz1));
                    dt = amrex::min(dt, dt3);
                    );
-      amrex::Real dielectric_timescale = EFConst::eps0_cgs / (EFConst::elemCharge * Kspec(i,j,k,E_ID) * (u(i,j,k,UFS+E_ID) / EFConst::me_cgs));
-      dt = amrex::min(dt, dielectric_timescale*0.5);
-      min_dielectric = amrex::min(dielectric_timescale*0.5, min_dielectric);
 #else
 
       AMREX_D_TERM(const amrex::Real ux = u(i, j, k, UMX) * rhoInv;

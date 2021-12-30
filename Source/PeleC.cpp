@@ -948,7 +948,6 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 #ifdef PELEC_USE_PLASMA
         spec_drift,
-        KSpec_old,
 #endif
         0,
         [=] AMREX_GPU_HOST_DEVICE(
@@ -959,8 +958,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 #ifdef PELEC_USE_PLASMA
           ,
-          const amrex::Array4<const amrex::Real>& drift_arr,
-          const amrex::Array4<const amrex::Real>& K_arr
+          const amrex::Array4<const amrex::Real>& drift_arr
 #endif
           ) noexcept -> amrex::Real {
           return pc_estdt_hydro(
@@ -970,7 +968,6 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 #ifdef PELEC_USE_PLASMA
             drift_arr,
-            K_arr,
 #endif
             AMREX_D_DECL(dx1, dx2, dx3));
         });
