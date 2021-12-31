@@ -1726,6 +1726,7 @@ PeleC::errorEst(
 #ifdef PELEC_USE_PLASMA
       const auto redEfield_arr = redEfield.array(mfi);
       const auto ne_arr = S_data.array(mfi, UFS + E_ID);
+      const auto o4_arr = S_data.array(mfi, UFS + E_ID + 6);    // Hard coding for now..
 #endif
 
       amrex::FArrayBox S_derData(datbox, 1);
@@ -1934,6 +1935,16 @@ PeleC::errorEst(
           tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             tag_graderror(
               i, j, k, tag_arr, ne_arr, captured_negraderr, tagval);
+          });
+      }
+
+      // Tagging positive ion number density gradient
+      if (level < tagging_parm->max_o4grad_lev) {
+        const amrex::Real captured_o4graderr = tagging_parm->o4graderr;
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_graderror(
+              i, j, k, tag_arr, o4_arr, captured_o4graderr, tagval);
           });
       }
 
