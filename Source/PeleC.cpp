@@ -100,7 +100,7 @@ int PeleC::ef_PC_approx = 1;
 bool PeleC::def_harm_avg_cen2edge  = false;
 amrex::Real PeleC::ef_PoissonTol = 1.0e-7;
 amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
-amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
+amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0)*1.0e3;
 // amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
 // amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
 amrex::Real PeleC::ef_GMRES_reltol = 1.0e-4;
@@ -1078,7 +1078,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     // }
 
     // Determine if this is more restrictive than the maximum timestep limiting
-    if (estdt_hydro < estdt) {
+    if (estdt_hydro < estdt && !ef_use_NLsolve) {
       limiter = "hydro";
       estdt = estdt_hydro;
     }
@@ -1741,6 +1741,7 @@ PeleC::errorEst(
 #ifdef PELEC_USE_PLASMA
       const auto redEfield_arr = redEfield.array(mfi);
       const auto ne_arr = S_data.array(mfi, UFS + E_ID);
+      const auto o4_arr = S_data.array(mfi, UFS + E_ID + 6);
 #endif
 
       amrex::FArrayBox S_derData(datbox, 1);
@@ -1949,6 +1950,16 @@ PeleC::errorEst(
           tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             tag_graderror(
               i, j, k, tag_arr, ne_arr, captured_negraderr, tagval);
+          });
+      }
+
+      // Tagging positive ion number density gradient
+      if (level < tagging_parm->max_o4grad_lev) {
+        const amrex::Real captured_o4graderr = tagging_parm->o4graderr;
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_graderror(
+              i, j, k, tag_arr, o4_arr, captured_o4graderr, tagval);
           });
       }
 

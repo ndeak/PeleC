@@ -45,6 +45,9 @@ struct TaggingParm
   amrex::Real negraderr = 1.0e10;
   int max_negrad_lev = 10;
 
+  amrex::Real o4graderr = 1.0e10;
+  int max_o4grad_lev = 10;
+
   amrex::Real efieldgraderr = 1.0e10;
   int max_efieldgrad_lev = 10;
 
