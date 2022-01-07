@@ -65,6 +65,8 @@ PeleC::plasma_init()
     pp.query("Precond_SchurApprox",ef_PC_approx);
 
     pp.query("pac_mechanism", pac_mechanism);
+    pp.query("resistance", ef_resistance);
+    pp.query("circuit_model", ef_circuit_model);
 
     // get charge per unit mass (C/g) CGS
     Real zk_temp[NUM_SPECIES] = {0.0};
@@ -90,6 +92,7 @@ void PeleC::plasma_define_data() {
 
    // TODO Solve Poisson problem for potential, and fill in E components and redE after creating
    Efield.define(grids, dmap, NUM_E, numGrow(), amrex::MFInfo(), Factory()); Efield.setVal(0.0);
+   old_Efield.define(grids, dmap, NUM_E, numGrow(), amrex::MFInfo(), Factory()); Efield.setVal(0.0);
    redEfield.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); redEfield.setVal(0.0);
    KSpec_old.define(grids,dmap,NUM_SPECIES, numGrow()); KSpec_old.setVal(0.0);
    KSpec_new.define(grids,dmap,NUM_SPECIES, numGrow()); KSpec_new.setVal(0.0);
@@ -100,7 +103,8 @@ void PeleC::plasma_define_data() {
    ionFlx_eb.define(grids,dmap,1,numGrow()); ionFlx_eb.setVal(0.0);      // EB ion fluxes - a bit inefficient to store as full MF
    PI_source.define(grids, dmap, 4, 1, amrex::MFInfo(), Factory()); PI_source.setVal(0.0);
    dielectric_ts.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); dielectric_ts.setVal(1.0);
-
+   disp_current_mf.define(grids, dmap, 1, 0, amrex::MFInfo(), Factory()); disp_current_mf.setVal(0.0);
+   dndx.define(grids,dmap,NUM_E*NUM_SPECIES,numGrow(), amrex::MFInfo(), Factory()); dndx.setVal(0.0);
 
    if (ef_use_NLsolve) {
       nl_state.define(grids,dmap,2,2);
@@ -581,4 +585,39 @@ void PeleC::getCurrVoltage(Real time) {
   // lprobparm->PhiV_bottom = curr_voltage;
   lprobparm->PhiV_top = curr_voltage;
   lprobparm->PhiV_bottom = 0.0;
+}
+
+void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
+                      const amrex::MultiFab &E_curr,
+                      const amrex::MultiFab &E_old,
+                      const amrex::MultiFab &mu_curr,
+                      const amrex::MultiFab &D_curr,
+                      amrex::Real dt_old, amrex::Real resistance){
+
+// Use linear operator to calculate cell-centered species gradients 
+// #ifdef AMREX_USE_EB
+//     const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
+//     MLEBABecLap poissonOP({geom}, {grids}, {dmap}, info, {ebf});
+// #else
+//     MLABecLaplacian poissonOP({geom}, {grids}, {dmap}, info);
+// #endif
+// 
+// 
+// 
+// 
+//   for (amrex::MFIter mfi(disp_current_mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+//       const amrex::Box& tbox = mfi.tilebox();
+//       const auto curr_arr = disp_current_mf.array(mfi);
+//       auto const& E_cc = Efield.array(mfi);
+//       auto const& E_cc_old = old_Efield.array(mfi);
+//       auto const& K_cc = KSpec_old.array(mfi);
+//       auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
+//       amrex::ParallelFor(
+//         tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+// 
+// 
+//         });
+//   }
+// 
+
 }

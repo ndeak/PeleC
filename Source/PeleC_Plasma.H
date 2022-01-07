@@ -30,9 +30,12 @@
   static amrex::Real curr_voltage;                          // Voltage at time t=n (erg/C)
   static amrex::Real dfact;
   static amrex::Real sfact;
+  static bool        pac_mechanism;            // If using PAC mechanism, output maximum reactor-type data in monitor file
+  static amrex::Real ef_resistance;                            // Ohmic resistance (erg-s/C^2)
+  static int         ef_circuit_model;                         // Set to 0 for no circuit model, 1 for simple model
+
   static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;      // Species charge per unit mass (C/g)
   static amrex::GpuArray<int, NUM_SPECIES> zk_num;      // Species charge number 
-  static bool pac_mechanism;            // If using PAC mechanism, output maximum reactor-type data in monitor file
 
   // Efield Poisson solve options
   static amrex::Real ef_PoissonTol;
@@ -62,6 +65,7 @@
 
   // MFs
   amrex::MultiFab     Efield;
+  amrex::MultiFab     old_Efield;
   amrex::MultiFab     redEfield;
   amrex::MultiFab     KSpec_old;     // Need both old and new since adv is at t^n+1/2
   amrex::MultiFab     KSpec_new;
@@ -74,7 +78,8 @@
   amrex::MultiFab** gradPhiV;
   amrex::MultiFab     PI_source;  
   amrex::MultiFab     dielectric_ts;
-
+  amrex::MultiFab     disp_current_mf;
+  amrex::MultiFab     dndx;
 
   // Non-linear solve MFs/data
   // Transport
@@ -115,6 +120,8 @@
   amrex::MultiFab            old_state_NL;
   amrex::MultiFab            old_old_state_NL;
   amrex::MultiFab            tmp_nE_forcing;
+  amrex::Real                disp_current = 0.0;
+  amrex::Real                prev_dt = 1.0;
 
   // Preconditioner data
 #ifdef PELEC_USE_EB
@@ -170,6 +177,13 @@
   void ef_set_neBC(std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &mlmg_lobc,
                    std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &mlmg_hibc);
 
+// Calculate displacement current
+  void ef_dispCurrent(const amrex::MultiFab &state_curr,
+                      const amrex::MultiFab &E_curr,
+                      const amrex::MultiFab &E_old,
+                      const amrex::MultiFab &mu_curr,
+                      const amrex::MultiFab &D_curr,
+                      amrex::Real dt_old, amrex::Real resistance);
 
 // non-linear solve functions
   void ef_solve_NL( const amrex::Real      &dt,
@@ -238,6 +252,7 @@
 
   void ef_applyPrecond(const amrex::MultiFab  &v,
                              amrex::MultiFab  &Pv);
+
 
   amrex::MultiFab& get_PI_data () noexcept { return PI_source; }
 

@@ -118,6 +118,8 @@ amrex::Real PeleC::dfact = 0.0;
 amrex::Real PeleC::sfact = 0.0;
 int PeleC::pulse_num = 0;
 bool PeleC::pac_mechanism = false;
+int PeleC::ef_circuit_model = 0;
+amrex::Real PeleC::ef_resistance = 0.0;
 
 amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
 amrex::GpuArray<int,NUM_SPECIES> PeleC::zk_num;
