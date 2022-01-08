@@ -13,8 +13,8 @@ using namespace amrex;
 
 namespace EFConst
 {
-   amrex::Real eps0 = 8.854187817e-12;                //Free space permittivity (C/(V.m))
-   amrex::Real eps0_cgs = 8.854187817e-12 * 1.0e-9;   //Free space permittivity (C/(erg.cm))
+   amrex::Real eps0 = 8.854187817e-12;                //Free space permittivity (C2/(V.m))
+   amrex::Real eps0_cgs = 8.854187817e-12 * 1.0e-9;   //Free space permittivity (C2/(erg.cm))
    amrex::Real epsr = 1.0;
    amrex::Real elemCharge = 1.60217662e-19;     //Coulomb per charge
    amrex::Real Na = 6.0221409e23;                   //Avogadro's number
@@ -577,8 +577,10 @@ void PeleC::getCurrVoltage(Real time) {
   }
 
   if(ef_constVoltage == 1) curr_voltage = pulse_peak;
+  amrex::Print() << "APPLIED VOLTAGE IS " << curr_voltage/1.0e10 << " kV\n";
 
-  amrex::Print() << "CURRENT APPLIED VOLTAGE IS " << curr_voltage/1.0e10 << " kV\n";
+  if(ef_circuit_model == 1) curr_voltage -= ef_resistance * disp_current;
+  amrex::Print() << "ELECTRODE VOLTAGE IS " << curr_voltage/1.0e10 << " kV\n";
 
   ProbParmDevice* lprobparm = d_prob_parm_device;
   // lprobparm->PhiV_top = 0.0;
@@ -594,30 +596,60 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
                       const amrex::MultiFab &D_curr,
                       amrex::Real dt_old, amrex::Real resistance){
 
-// Use linear operator to calculate cell-centered species gradients 
-// #ifdef AMREX_USE_EB
-//     const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
-//     MLEBABecLap poissonOP({geom}, {grids}, {dmap}, info, {ebf});
-// #else
-//     MLABecLaplacian poissonOP({geom}, {grids}, {dmap}, info);
-// #endif
-// 
-// 
-// 
-// 
-//   for (amrex::MFIter mfi(disp_current_mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-//       const amrex::Box& tbox = mfi.tilebox();
-//       const auto curr_arr = disp_current_mf.array(mfi);
-//       auto const& E_cc = Efield.array(mfi);
-//       auto const& E_cc_old = old_Efield.array(mfi);
-//       auto const& K_cc = KSpec_old.array(mfi);
-//       auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
-//       amrex::ParallelFor(
-//         tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-// 
-// 
-//         });
-//   }
-// 
+  amrex::Real mwt[NUM_SPECIES];
+  auto eos = pele::physics::PhysicsType::eos();
+  eos.molecular_weight(mwt);   // CGS
+  amrex::Real fluxE_x, fluxE_y, fluxE_z;
+  amrex::Real Efield_component, flux_component;
+  amrex::Real dEdt_x, dEdt_y, dEdt_z;
 
+  // TODO: Handling of this for first 1-2 time steps is a bit of a mess due to the fact that
+  //       we don't have a reliable value for dEdt early on.. ideally can come up with
+  //       better/cleaner way to handle this
+
+  if(dt_old != 100.0){    // Skip this process for the first time step...
+    for (amrex::MFIter mfi(disp_current_mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+        const amrex::Box& tbox = mfi.tilebox();
+        const auto curr_arr = disp_current_mf.array(mfi);
+        auto const& S_arr = state_curr.array(mfi);
+        auto const& E_cc = Efield.array(mfi);
+        auto const& E_cc_old = old_Efield.array(mfi);
+        auto const& K_cc = KSpec_old.array(mfi);
+        auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
+        auto const& dndx_cc = dndx.array(mfi);
+        amrex::ParallelFor(
+          tbox, [=,&fluxE_x, &fluxE_y, &fluxE_z, &dEdt_x, &dEdt_y, &dEdt_z, 
+          &flux_component, &Efield_component, &dt_old] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            // Calculate the current due to charged species fluxes
+            flux_component = 0.0;
+            for(int n = 0; n<NUM_SPECIES; n++){
+              if(zk_num[n] != 0){
+                // Flux dot Efield components (g-erg/cm3-C-s)
+                fluxE_x = zk_num[n] * ( (E_cc(i,j,k,0) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMX)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - coe_rhoD(i,j,k,n)*dndx_cc(i,j,k,NUM_E*n + 0) ) * E_cc(i,j,k,0);
+                fluxE_y = zk_num[n] * ( (E_cc(i,j,k,1) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMY)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - coe_rhoD(i,j,k,n)*dndx_cc(i,j,k,NUM_E*n + 1) ) * E_cc(i,j,k,1);
+                fluxE_z = zk_num[n] * ( (E_cc(i,j,k,2) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMZ)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - coe_rhoD(i,j,k,n)*dndx_cc(i,j,k,NUM_E*n + 2) ) * E_cc(i,j,k,2);
+        
+                // Calculate the total flux contribution (erg/cm3-s)
+                flux_component += EFConst::elemCharge * (fluxE_x + fluxE_x + fluxE_x) / mwt[n];
+              }
+            }
+
+            // Calculate the time-varying electric field component (erg/cm3-s)
+            dEdt_x = (E_cc(i,j,k,0) - E_cc_old(i,j,k,0))/dt_old;
+            dEdt_y = (E_cc(i,j,k,1) - E_cc_old(i,j,k,1))/dt_old;
+            dEdt_z = (E_cc(i,j,k,2) - E_cc_old(i,j,k,2))/dt_old;
+            Efield_component = EFConst::eps0_cgs * (dEdt_x * E_cc(i,j,k,0) + dEdt_y * E_cc(i,j,k,1) + dEdt_z * E_cc(i,j,k,2));
+
+            // Calculate the displacement current density (C/cm3-s)
+            curr_arr(i,j,k) = (1.0/curr_voltage) * (flux_component + dEdt_fact*Efield_component);
+          });
+    }
+    dEdt_fact = 1.0;  // Using this to zero out the efield component the first time we calculate displacement current to avoid large gradients causing issues
+  }
+
+  // Perform volume weighted sum (integral) over the whole domain to obtain displacement current (C/s)
+  // Note: finemask is set to true, so that the integral at each level is calculated only with cells that aren't covered by a finer level
+  // By summing the component from each level, we recover the full volume integral
+  if(level == 0) disp_current = 0.0;
+  disp_current += volWgtSumMF(disp_current_mf, 0, false, true);
 }
