@@ -60,87 +60,61 @@ AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void
 getDiffE(int i, int j, int k, 
-         amrex::Real x, amrex::Real y, amrex::Real z,
          int Ecomp, int use_NL,
          const amrex::Real &factor,
-         amrex::Array4<const amrex::Real> const& T,
          amrex::Array4<const amrex::Real> const& rhoY,
-         amrex::Array4<const amrex::Real> const& Ks,
          amrex::Array4<      amrex::Real> const& rhoD,
          amrex::Array4<const amrex::Real> const& EoN,
          const amrex::Real * mwt) noexcept
 {
-  // TODO : MAKE SURE T_E IS BEING PASSED IN...
   // ndeak note - calculates rho*diffusivity in units of (cm2/s)*(g/cm3)
   // factor has units of J/K-C
    using namespace amrex::literals;
 
    amrex::Real Na = 6.0221409e23;  // 1/mol
 
-   if ( use_NL ) {  // If using non-linear solve, don't * rho
-      rhoD(i,j,k,Ecomp) = Ks(i,j,k,Ecomp) * T(i,j,k) * factor;
-      // TODO remove after testing 1D code
-      rhoD(i,j,k,Ecomp) = 846.28133089;
-   } else {
-      amrex::Real rho = 0.0;        // g/cm3
-      for (int n = 0; n < NUM_SPECIES; n++) {
-         rho += rhoY(i,j,k,n);      // g/cm3
-      }
-      // rhoD(i,j,k,Ecomp) = rho * Ks(i,j,k,Ecomp) * T(i,j,k) * factor;
-
-      // // TODO remove after testing 1D code
-      // rhoD(i,j,k,Ecomp) = rho * 846.28133089;
-
-      // Truncate value for low and high reduced electric fields
-      if(EoN(i,j,k,0) < 1.0e-2) rhoD(i,j,k,Ecomp) = 0.1170E+25;     // 1/m-s
-      else if(EoN(i,j,k,0) > 2.0e3) rhoD(i,j,k,Ecomp) = 0.1036E+26;   // 1/m-s
-      else{
-        // Perform JANEV fitting to calculate electron mobility based on E/N
-        double Jfit_coefs[] = {-2.02172418780373,
-                    0.0974868059493971,
-                   0.00706739883513016,
-                  -0.00362581265760427,
-                  7.20264662847402e-05,
-                  0.000192117046111647,
-                  1.01967072551187e-05,
-                 -2.03891006949100e-06,
-                 -1.58208775370330e-07};
-
-        double JfitA = 1.036000000000000e+25;     // Dimensional JANEV coefficient [1/m-s]
-        double Janev_sum = 0.0;                   // Dimensionless JANEV sum
-
-        // Calculate JANEV fit for mu*N
-        for(int n=0; n<9; n++){
-          Janev_sum += Jfit_coefs[n] * pow(log(EoN(i,j,k,0)), n);
-        }
-        rhoD(i,j,k,Ecomp) = JfitA * exp(Janev_sum);     // [1/m-s]
-      }
-      rhoD(i,j,k,Ecomp) *= 1.0e-2;           // Convert to 1/cm-s
-
-      amrex::Real ndens = 0.0;
-      for(int n=0; n<NUM_SPECIES; n++) ndens += rhoY(i,j,k,n) * (1.0/mwt[n]) * Na;
-      rhoD(i,j,k,Ecomp) *= (rho/ndens);       // Convert to (cm2/s)*(g/cm3)
-
-      // Increase diffusivity around cathode region
-      // amrex::Real r = sqrt((x-0.25)*(x-0.25) + (z-0.25)*(z-0.25));
-      // if (r < 0.05 && (y > 0.06 && y < 0.12) )
-      // {
-      //    rhoD(i,j,k,Ecomp) *= 10.0;
-      // }
-
+   amrex::Real rho = 0.0;        // g/cm3
+   for (int n = 0; n < NUM_SPECIES; n++) {
+      rho += rhoY(i,j,k,n);      // g/cm3
    }
+
+   // Truncate value for low and high reduced electric fields
+   if(EoN(i,j,k,0) < 1.0e-2) rhoD(i,j,k,Ecomp) = 0.1170E+25;     // 1/m-s
+   else if(EoN(i,j,k,0) > 2.0e3) rhoD(i,j,k,Ecomp) = 0.1036E+26;   // 1/m-s
+   else{
+     // Perform JANEV fitting to calculate electron mobility based on E/N
+     double Jfit_coefs[] = {-2.02172418780373,
+                 0.0974868059493971,
+                0.00706739883513016,
+               -0.00362581265760427,
+               7.20264662847402e-05,
+               0.000192117046111647,
+               1.01967072551187e-05,
+              -2.03891006949100e-06,
+              -1.58208775370330e-07};
+
+     double JfitA = 1.036000000000000e+25;     // Dimensional JANEV coefficient [1/m-s]
+     double Janev_sum = 0.0;                   // Dimensionless JANEV sum
+
+     // Calculate JANEV fit for mu*N
+     for(int n=0; n<9; n++){
+       Janev_sum += Jfit_coefs[n] * pow(log(EoN(i,j,k,0)), n);
+     }
+     rhoD(i,j,k,Ecomp) = JfitA * exp(Janev_sum);     // [1/m-s]
+   }
+   rhoD(i,j,k,Ecomp) *= 1.0e-2;           // Convert to 1/cm-s
+
+   amrex::Real ndens = 0.0;
+   for(int n=0; n<NUM_SPECIES; n++) ndens += rhoY(i,j,k,n) * (1.0/mwt[n]) * Na;
+   rhoD(i,j,k,Ecomp) *= (1.0/ndens);       // Convert to (cm2/s)
+   if(!use_NL) rhoD(i,j,k,Ecomp) *= rho;   // Convert to (g/cm-s) unless using coupled system
 }
 
 AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void
 getKappaSp(int i, int j, int k,
-           amrex::Real const mwt[NUM_SPECIES],
-           amrex::GpuArray<amrex::Real, NUM_SPECIES> a_zk,
            amrex::GpuArray<int, NUM_SPECIES> a_zk_num,
-           amrex::Array4<const amrex::Real> const& rhoY,
-           amrex::Array4<      amrex::Real> const& rhoD,
-           amrex::Array4<const amrex::Real> const& T,
            amrex::Array4<      amrex::Real> const& Ksp) noexcept
 {
    // TODO : CALCULATE MOBILITIES FROM DIFFUSIVITIES
@@ -150,25 +124,15 @@ getKappaSp(int i, int j, int k,
    // PP_RU_CGS in units of erg/mol-K
    // mobility already takes into account different drift direction of + and - ions due to a_zk
    using namespace amrex::literals;
-   amrex::Real rho = 0.0;
-   amrex::Real PP_RU_CGS = 83144626.1815324;
-   for (int n = 0; n < NUM_SPECIES; n++) {
-      rho += rhoY(i,j,k,n);
-   }
+
    for (int n = 0; n < NUM_SPECIES; n++) {
       if(n != E_ID) Ksp(i,j,k,n) = 0.0;
    }
 
+   // Using constant mobilities for now...
    for (int n = 0; n < NUM_SPECIES; n++) {
       if(n != E_ID && a_zk_num[n] != 0) Ksp(i,j,k,n) = 2.738979530e-7 * amrex::Math::copysign(1.0, a_zk_num[n]);
    }
-   // Ksp(i, j, k, 4) = 2.738979530e-7;
-   // Ksp(i, j, k, 5) = 2.738979530e-7;
-   // Ksp(i, j, k, 6) = 2.738979530e-7;
-   // Ksp(i, j, k, 7) = 2.738979530e-7;
-   // Ksp(i, j, k, 8) = 2.738979530e-7;
-   // Ksp(i, j, k, 9) = -2.738979530e-7;
-
 }
 
 AMREX_GPU_HOST_DEVICE

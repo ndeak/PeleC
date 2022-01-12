@@ -67,6 +67,8 @@ PeleC::plasma_init()
     pp.query("pac_mechanism", pac_mechanism);
     pp.query("resistance", ef_resistance);
     pp.query("circuit_model", ef_circuit_model);
+    pp.query("constEleTransport", ef_constEleTransport);
+    pp.query("eleMobility", ef_eleMobility);
 
     // get charge per unit mass (C/g) CGS
     Real zk_temp[NUM_SPECIES] = {0.0};
@@ -106,6 +108,10 @@ void PeleC::plasma_define_data() {
    disp_current_mf.define(grids, dmap, 1, 0, amrex::MFInfo(), Factory()); disp_current_mf.setVal(0.0);
    dndx.define(grids,dmap,NUM_E*NUM_SPECIES,numGrow(), amrex::MFInfo(), Factory()); dndx.setVal(0.0);
 
+   // Intermediate MFs used in transport coef. calculations for NL system
+   Ke_cc_mf.define(grids,dmap,1,numGrow(), amrex::MFInfo(), Factory()); Ke_cc_mf.setVal(0.0);
+   De_cc_mf.define(grids,dmap,1,numGrow(), amrex::MFInfo(), Factory()); De_cc_mf.setVal(0.0);
+
    if (ef_use_NLsolve) {
       nl_state.define(grids,dmap,2,2);
       nl_resid.define(grids,dmap,2,2);
@@ -144,6 +150,12 @@ void PeleC::plasma_define_data() {
       for (int d = 0; d < AMREX_SPACEDIM; ++d) {
          ionFlx[d]->setVal(0.0);
       }
+   }
+
+   // Calculate a constant electron mobility given N*mu, and assuming atmospheric conditions
+   // Diffusivity is calculating using Einstein relation
+   if (ef_constEleTransport == 1){
+      amrex::Real eleMobility = -1.0*ef_eleMobility * 1.0e-9 / (2.45e19);     // Converting to cm2-C/erg-s, with charge sign
    }
 }
 
@@ -210,12 +222,6 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
 
   const TimeLevel whichTime = which_time(State_Type, time);
 
-  // BL_ASSERT(whichTime == AmrOldTime || whichTime == AmrNewTime);
-
-  // MultiFab& S     = (whichTime == AmrOldTime) ? get_old_data(State_Type) : get_new_data(State_Type);
-  // MultiFab& diff  = (whichTime == AmrOldTime) ? (*diffn_cc) : (*diffnp1_cc);
-  // MultiFab& Kspec = (whichTime == AmrOldTime) ? KSpec_old : KSpec_new;
-
   // Get the cc transport coeffs. These are temporary.
   MultiFab Ke_cc(grids,dmap,1,S.nGrow());
   MultiFab De_cc(grids,dmap,1,S.nGrow());
@@ -230,8 +236,6 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   amrex::Real mwt[NUM_SPECIES];
   auto eos = pele::physics::PhysicsType::eos();
   eos.molecular_weight(mwt);   // CGS
-  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
-  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> problo = geom.ProbLoArray();
 
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -248,19 +252,15 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      auto const& redEfab = redEfield.array(mfi);
      Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
      int useNL   = ef_use_NLsolve;
-     amrex::ParallelFor(gbox, [dx, problo, rhoY, T, factor, Ks, rhoD, Ke, De, useNL, redEfab, mwt]
+     amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rhoD, Ke, De, useNL, redEfab, mwt]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
-        amrex::Real x = problo[0] + (i + 0.5)*dx[0];
-        amrex::Real y = problo[1] + (j + 0.5)*dx[1];
-        amrex::Real z = problo[2] + (k + 0.5)*dx[2];
-
         if (useNL) {
            getKappaE(i,j,k,0,Ke,redEfab,rhoY,mwt);
-           getDiffE(i,j,k,x,y,z,0,useNL,factor,T,rhoY,Ke,De,redEfab,mwt);
+           getDiffE(i,j,k,0,useNL,factor,rhoY,De,redEfab,mwt);
         } else {
            getKappaE(i,j,k,E_ID,Ks,redEfab,rhoY,mwt);
-           getDiffE(i,j,k,x,y,z,E_ID,useNL,factor,T,rhoY,Ks,rhoD,redEfab,mwt);
+           getDiffE(i,j,k,E_ID,useNL,factor,rhoY,rhoD,redEfab,mwt);
         }
      });
      Real mwt[NUM_SPECIES];
@@ -268,7 +268,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      amrex::ParallelFor(gbox, [rhoY, rhoD, T, Ks, mwt]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
-        getKappaSp(i,j,k, mwt, zk, zk_num, rhoY, rhoD, T, Ks);
+        getKappaSp(i,j,k,zk_num, Ks);
      });
   }
   // Copy NL Ke results back into normal array for CFL calculation later
@@ -319,6 +319,78 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
          VisMF::Write(*Ke_ec[1],"KeEcY_Lvl"+std::to_string(level));
       }
   }
+}
+
+// TODO: finish working on version of ef transport calc that can be folded more cleanly into Diffusion.cpp
+void PeleC::ef_calc_transport(amrex::Box const& bx,
+                              amrex::Array4<const amrex::Real> const& rhoY_in,
+                              amrex::Array4<const amrex::Real> const& EoN_in,
+                              amrex::Array4<amrex::Real> const& Ke_out,
+                              amrex::Array4<amrex::Real> const& rhoDe_out,
+                              amrex::Array4<amrex::Real> const& K_out
+) {
+  BL_PROFILE("PeleC::ef_calc_transport()");
+ 
+  // ndeak note - since only MOL is being used for now, it is assumed all data MFs are at time t=n
+
+  if ( ef_verbose ) amrex::Print() << " Compute EF transport prop.\n";
+
+  // ndeak add - get BCs for species (used in center->edge extrap)
+  amrex::Real mwt[NUM_SPECIES];
+  auto eos = pele::physics::PhysicsType::eos();
+  eos.molecular_weight(mwt);   // CGS
+
+  Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
+  int useNL   = ef_use_NLsolve;
+  amrex::ParallelFor(bx, [=]
+  AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+  {
+     getKappaE(i,j,k,E_ID,Ke_out,EoN_in,rhoY_in,mwt);
+     getDiffE(i,j,k,E_ID,useNL,factor,rhoY_in,rhoDe_out,EoN_in,mwt);
+     getKappaSp(i,j,k, zk_num, K_out);
+  });
+
+//   if ( ef_use_NLsolve ) {
+//      // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
+//      // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
+//      // TODO: does cen2edg_cpp need to be modified to take into account EBs?
+//      const Box& domain = geom.Domain();
+//      bool use_harmonic_avg = def_harm_avg_cen2edge ? true : false;
+//      const BCRec& bcrec = get_desc_lst()[State_Type].getBC(nE);
+//  #ifdef _OPENMP
+//  #pragma omp parallel if (Gpu::notInLaunchRegion())
+//  #endif
+//       for (MFIter mfi(De_cc,TilingIfNotGPU()); mfi.isValid();++mfi)
+//       {
+//          for (int dir = 0; dir < AMREX_SPACEDIM; dir++)
+//          {
+//             const Box ebx = mfi.nodaltilebox(dir);
+//             const Box& edomain = amrex::surroundingNodes(domain,dir);
+//             const auto& diff_c  = De_cc.array(mfi);
+//             const auto& diff_ed = De_ec[dir]->array(mfi);
+//             const auto& kappa_c  = Ke_cc.array(mfi);
+//             const auto& kappa_ed = Ke_ec[dir]->array(mfi);
+//             const auto bc_lo = bcrec.lo(dir);
+//             const auto bc_hi = bcrec.hi(dir);
+//             amrex::ParallelFor(ebx, [dir, bc_lo, bc_hi, use_harmonic_avg, diff_c, diff_ed,
+//                                      kappa_c, kappa_ed, edomain]
+//             AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+//             {
+//                int idx[3] = {i,j,k};
+//                bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && idx[dir] <= edomain.smallEnd(dir) );
+//                bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && idx[dir] >= edomain.bigEnd(dir) );
+//                cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, diff_c, diff_ed);
+//                cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, kappa_c, kappa_ed);
+//             });
+//          }
+//       }
+//       if ( ef_debug ) {
+//          VisMF::Write(*De_ec[0],"DeEcX_Lvl"+std::to_string(level));
+//          VisMF::Write(*De_ec[1],"DeEcY_Lvl"+std::to_string(level));
+//          VisMF::Write(*Ke_ec[0],"KeEcX_Lvl"+std::to_string(level));
+//          VisMF::Write(*Ke_ec[1],"KeEcY_Lvl"+std::to_string(level));
+//       }
+//   }
 }
 
 // Setup BC conditions for linear Poisson solve on PhiV. Directly copied from the diffusion one ...
@@ -594,62 +666,81 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
                       const amrex::MultiFab &E_old,
                       const amrex::MultiFab &mu_curr,
                       const amrex::MultiFab &D_curr,
-                      amrex::Real dt_old, amrex::Real resistance){
+                      amrex::Real dt_old){
 
   amrex::Real mwt[NUM_SPECIES];
   auto eos = pele::physics::PhysicsType::eos();
   eos.molecular_weight(mwt);   // CGS
   amrex::Real fluxE_x, fluxE_y, fluxE_z;
-  amrex::Real Efield_component, flux_component;
+  amrex::Real Efield_component; 
+  amrex::Real flux_component;
   amrex::Real dEdt_x, dEdt_y, dEdt_z;
 
   // TODO: Handling of this for first 1-2 time steps is a bit of a mess due to the fact that
   //       we don't have a reliable value for dEdt early on.. ideally can come up with
   //       better/cleaner way to handle this
 
-  if(dt_old != 100.0){    // Skip this process for the first time step...
-    for (amrex::MFIter mfi(disp_current_mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-        const amrex::Box& tbox = mfi.tilebox();
-        const auto curr_arr = disp_current_mf.array(mfi);
-        auto const& S_arr = state_curr.array(mfi);
-        auto const& E_cc = Efield.array(mfi);
-        auto const& E_cc_old = old_Efield.array(mfi);
-        auto const& K_cc = KSpec_old.array(mfi);
-        auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
-        auto const& dndx_cc = dndx.array(mfi);
-        amrex::ParallelFor(
-          tbox, [=,&fluxE_x, &fluxE_y, &fluxE_z, &dEdt_x, &dEdt_y, &dEdt_z, 
-          &flux_component, &Efield_component, &dt_old] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            // Calculate the current due to charged species fluxes
-            flux_component = 0.0;
-            for(int n = 0; n<NUM_SPECIES; n++){
-              if(zk_num[n] != 0){
-                // Flux dot Efield components (g-erg/cm3-C-s)
-                fluxE_x = zk_num[n] * ( (E_cc(i,j,k,0) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMX)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - coe_rhoD(i,j,k,n)*dndx_cc(i,j,k,NUM_E*n + 0) ) * E_cc(i,j,k,0);
-                fluxE_y = zk_num[n] * ( (E_cc(i,j,k,1) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMY)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - coe_rhoD(i,j,k,n)*dndx_cc(i,j,k,NUM_E*n + 1) ) * E_cc(i,j,k,1);
-                fluxE_z = zk_num[n] * ( (E_cc(i,j,k,2) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMZ)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - coe_rhoD(i,j,k,n)*dndx_cc(i,j,k,NUM_E*n + 2) ) * E_cc(i,j,k,2);
-        
-                // Calculate the total flux contribution (erg/cm3-s)
-                flux_component += EFConst::elemCharge * (fluxE_x + fluxE_x + fluxE_x) / mwt[n];
-              }
+  for (amrex::MFIter mfi(disp_current_mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& tbox = mfi.tilebox();
+      const auto curr_arr = disp_current_mf.array(mfi);
+      auto const& S_arr = state_curr.array(mfi);
+      auto const& E_cc = Efield.array(mfi);
+      auto const& E_cc_old = old_Efield.array(mfi);
+      auto const& K_cc = KSpec_old.array(mfi);
+      auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
+      auto const& dndx_cc = dndx.array(mfi);
+      amrex::ParallelFor(
+        tbox, [=,&fluxE_x, &fluxE_y, &fluxE_z, &dEdt_x, &dEdt_y, &dEdt_z, 
+        &flux_component, &Efield_component, &dt_old] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          // Calculate the current due to charged species fluxes
+          flux_component = 0.0;
+          for(int n = 0; n<NUM_SPECIES; n++){
+            if(zk_num[n] != 0){
+              // Flux dot Efield components (g-erg/cm3-C-s)
+              fluxE_x = zk_num[n] * ( (E_cc(i,j,k,0) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMX)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndx_cc(i,j,k,NUM_E*n + 0) ) * E_cc(i,j,k,0);
+              fluxE_y = zk_num[n] * ( (E_cc(i,j,k,1) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMY)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndx_cc(i,j,k,NUM_E*n + 1) ) * E_cc(i,j,k,1);
+              fluxE_z = zk_num[n] * ( (E_cc(i,j,k,2) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMZ)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndx_cc(i,j,k,NUM_E*n + 2) ) * E_cc(i,j,k,2);
+      
+              // Calculate the total flux contribution (erg/cm3-s)
+              flux_component += EFConst::elemCharge * (fluxE_x + fluxE_x + fluxE_x) * ( EFConst::Na / mwt[n]);
             }
+          }
 
-            // Calculate the time-varying electric field component (erg/cm3-s)
-            dEdt_x = (E_cc(i,j,k,0) - E_cc_old(i,j,k,0))/dt_old;
-            dEdt_y = (E_cc(i,j,k,1) - E_cc_old(i,j,k,1))/dt_old;
-            dEdt_z = (E_cc(i,j,k,2) - E_cc_old(i,j,k,2))/dt_old;
-            Efield_component = EFConst::eps0_cgs * (dEdt_x * E_cc(i,j,k,0) + dEdt_y * E_cc(i,j,k,1) + dEdt_z * E_cc(i,j,k,2));
+          // Calculate the time-varying electric field component (erg/cm3-s)
+          dEdt_x = (E_cc(i,j,k,0) - E_cc_old(i,j,k,0))/dt_old;
+          dEdt_y = (E_cc(i,j,k,1) - E_cc_old(i,j,k,1))/dt_old;
+          dEdt_z = (E_cc(i,j,k,2) - E_cc_old(i,j,k,2))/dt_old;
+          Efield_component = EFConst::eps0_cgs * (dEdt_x * E_cc(i,j,k,0) + dEdt_y * E_cc(i,j,k,1) + dEdt_z * E_cc(i,j,k,2));
 
-            // Calculate the displacement current density (C/cm3-s)
-            curr_arr(i,j,k) = (1.0/curr_voltage) * (flux_component + dEdt_fact*Efield_component);
-          });
-    }
-    dEdt_fact = 1.0;  // Using this to zero out the efield component the first time we calculate displacement current to avoid large gradients causing issues
+          // Calculate the displacement current density (C/cm3-s)
+          // curr_arr(i,j,k) = (1.0/curr_voltage) * (flux_component + dEdt_fact*Efield_component);
+          curr_arr(i,j,k) = (1.0/curr_voltage) * (flux_component);
+        });
+        dEdt_fact = 1.0;  // Using this to zero out the efield component the first time we calculate displacement current to avoid large gradients causing issues
   }
 
   // Perform volume weighted sum (integral) over the whole domain to obtain displacement current (C/s)
   // Note: finemask is set to true, so that the integral at each level is calculated only with cells that aren't covered by a finer level
   // By summing the component from each level, we recover the full volume integral
-  if(level == 0) disp_current = 0.0;
-  disp_current += volWgtSumMF(disp_current_mf, 0, false, true);
+  disp_current = volWgtSumMF(disp_current_mf, 0, false, true);
+
+  // If we are at the finest level, we need to calculate displacement current as the sum from each previous level
+  if(level == parent->finestLevel()){
+    int lidx = 0;
+    while(lidx < parent->finestLevel()) {
+      auto& crselev = getLevel(lidx);
+      disp_current += crselev.getDispCurrent();
+      lidx++;
+    }
+
+    // Now need to set the correct displace current at each coarse level
+    lidx = 0;
+    while(lidx < parent->finestLevel()) {
+      auto& crselev = getLevel(lidx);
+      crselev.setDispCurrent(disp_current);
+      lidx++;
+    }
+  }
+
+  amrex::Print() << "AT LEVEL " << level << " DISP CURRENT IS " << disp_current << "\n";
 }

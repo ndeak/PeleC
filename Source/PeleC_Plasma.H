@@ -33,6 +33,8 @@
   static bool        pac_mechanism;            // If using PAC mechanism, output maximum reactor-type data in monitor file
   static amrex::Real ef_resistance;                            // Ohmic resistance (erg-s/C^2)
   static int         ef_circuit_model;                         // Set to 0 for no circuit model, 1 for simple model
+  static int         ef_constEleTransport;                   // Use constant electron mobility (and diffusivity, via Einsten relation)
+  static amrex::Real ef_eleMobility;                         // (Normalized) constant electron mobility mu*N (1/V-m-s)  
 
   static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;      // Species charge per unit mass (C/g)
   static amrex::GpuArray<int, NUM_SPECIES> zk_num;      // Species charge number 
@@ -80,6 +82,8 @@
   amrex::MultiFab     dielectric_ts;
   amrex::MultiFab     disp_current_mf;
   amrex::MultiFab     dndx;
+  amrex::MultiFab     Ke_cc_mf;
+  amrex::MultiFab     De_cc_mf;
 
   // Non-linear solve MFs/data
   // Transport
@@ -121,7 +125,8 @@
   amrex::MultiFab            old_old_state_NL;
   amrex::MultiFab            tmp_nE_forcing;
   amrex::Real                disp_current = 0.0;
-  amrex::Real                prev_dt = 1.0;
+  amrex::Real                prev_dt = 100.0;
+  amrex::Real                dEdt_fact = 0.0;
 
   // Preconditioner data
 #ifdef PELEC_USE_EB
@@ -161,6 +166,14 @@
 
   // Transport coefficients
   void ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time);
+
+  // Version of ef transport that fits inside Diffusion.cpp loop
+  void ef_calc_transport(amrex::Box const& bx,
+                         amrex::Array4<const amrex::Real> const& rhoY_in,
+                         amrex::Array4<const amrex::Real> const& EoN_in,
+                         amrex::Array4<amrex::Real> const& Ke_out,
+                         amrex::Array4<amrex::Real> const& rhoDe_out,
+                         amrex::Array4<amrex::Real> const& K_out) ;
   
   // Boundary conditions
   void setBCPhiV ( std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_lobc,
@@ -183,7 +196,7 @@
                       const amrex::MultiFab &E_old,
                       const amrex::MultiFab &mu_curr,
                       const amrex::MultiFab &D_curr,
-                      amrex::Real dt_old, amrex::Real resistance);
+                      amrex::Real dt_old);
 
 // non-linear solve functions
   void ef_solve_NL( const amrex::Real      &dt,
@@ -255,5 +268,8 @@
 
 
   amrex::MultiFab& get_PI_data () noexcept { return PI_source; }
+
+  amrex::Real getDispCurrent () noexcept {return disp_current; }
+  void setDispCurrent (amrex::Real current_in) noexcept {disp_current = current_in; }
 
 #endif

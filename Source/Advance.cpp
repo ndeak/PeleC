@@ -321,12 +321,13 @@ PeleC::do_mol_advance(
         });
   }
 
+
   // Calculate the displacement current for the next time step
-  if(ef_circuit_model != 0) ef_dispCurrent(S_new, Efield, old_Efield, KSpec_old, coeffs_old, prev_dt, ef_resistance);
+  if(ef_circuit_model != 0) ef_dispCurrent(S_new, Efield, old_Efield, KSpec_old, coeffs_old, prev_dt);
 
   // Copy current Efield to old_Efield MF
   if(ef_circuit_model != 0){ 
-    amrex::MultiFab::Copy(old_Efield, Efield, 0,0,1,Efield.nGrow());
+    amrex::MultiFab::Copy(old_Efield, Efield, 0,0,3,Efield.nGrow());
     prev_dt = dt;
   }
 
