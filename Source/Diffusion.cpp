@@ -316,7 +316,6 @@ PeleC::getMOLSrcTerm(
       auto const& K_cc = KSpec_old.array(mfi);
       auto const& E_cc = Efield.array(mfi);
       auto const& drift_cc = spec_drift.array(mfi);
-      // auto const& dndx_cc = dndx.array(mfi);
       auto const& eon = redEfield.array(mfi);
       auto const& ionFlux_eb_arr = ionFlx_eb.array(mfi);
       std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge_arr = {AMREX_D_DECL(Efield_edge[0]->array(mfi), Efield_edge[1]->array(mfi), Efield_edge[2]->array(mfi))} ;
@@ -350,26 +349,6 @@ PeleC::getMOLSrcTerm(
         typ, Ncut, d_sv_eb_bndry_geom, flags.array(mfi)
 #endif
       );
-
-// #ifdef PELEC_USE_PLASMA
-//       // Back out cell-centered drhoY/dx derivatives using flx info
-//       for(int n = 0; n<NUM_SPECIES; n++){
-//         auto const& vol = volume.array(mfi);
-//         amrex::ParallelFor(
-//           vbox, NVAR,
-//           [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
-//             amrex::Real temp1 = (area_arr[0](i,j,k) != 0.0) ? flx[0](i,j,k,UFS+n)/area_arr[0](i,j,k):0.0;
-//             amrex::Real temp2 = (area_arr[0](i+1,j,k) != 0.0) ? flx[0](i+1,j,k,UFS+n)/area_arr[0](i+1,j,k):0.0;
-//             amrex::Real temp3 = (area_arr[1](i,j,k) != 0.0) ? flx[1](i,j,k,UFS+n)/area_arr[1](i,j,k):0.0;
-//             amrex::Real temp4 = (area_arr[1](i,j+1,k) != 0.0) ? flx[1](i,j+1,k,UFS+n)/area_arr[1](i,j+1,k):0.0;
-//             amrex::Real temp5 = (area_arr[2](i,j,k) != 0.0) ? flx[2](i,j,k,UFS+n)/area_arr[2](i,j,k):0.0;
-//             amrex::Real temp6 = (area_arr[2](i,j,k+1) != 0.0) ? flx[2](i,j,k+1,UFS+n)/area_arr[2](i,j,k+1):0.0;
-//             dndx_cc(i,j,k,NUM_E*n + 0) = 0.5 * (temp1 + temp2);
-//             dndx_cc(i,j,k,NUM_E*n + 1) = 0.5 * (temp3 + temp4);
-//             dndx_cc(i,j,k,NUM_E*n + 2) = 0.5 * (temp5 + temp6);
-//         });
-//       }
-// #endif
 
       // Compute flux divergence (1/Vol).Div(F.A)
       {

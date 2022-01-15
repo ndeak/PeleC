@@ -65,10 +65,10 @@ PeleC::plasma_init()
     pp.query("Precond_SchurApprox",ef_PC_approx);
 
     pp.query("pac_mechanism", pac_mechanism);
-    pp.query("resistance", ef_resistance);
     pp.query("circuit_model", ef_circuit_model);
     pp.query("constEleTransport", ef_constEleTransport);
     pp.query("eleMobility", ef_eleMobility);
+    pp.query("eleDiffusivity", ef_eleDiffusivity);
 
     // get charge per unit mass (C/g) CGS
     Real zk_temp[NUM_SPECIES] = {0.0};
@@ -106,7 +106,6 @@ void PeleC::plasma_define_data() {
    PI_source.define(grids, dmap, 4, 1, amrex::MFInfo(), Factory()); PI_source.setVal(0.0);
    dielectric_ts.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); dielectric_ts.setVal(1.0);
    disp_current_mf.define(grids, dmap, 1, 0, amrex::MFInfo(), Factory()); disp_current_mf.setVal(0.0);
-   dndx.define(grids,dmap,NUM_E*NUM_SPECIES,numGrow(), amrex::MFInfo(), Factory()); dndx.setVal(0.0);
 
    // Intermediate MFs used in transport coef. calculations for NL system
    Ke_cc_mf.define(grids,dmap,1,numGrow(), amrex::MFInfo(), Factory()); Ke_cc_mf.setVal(0.0);
@@ -134,6 +133,17 @@ void PeleC::plasma_define_data() {
       // Allocate the linear residuals array
       lin_residuals = new Real[ef_GMRES_size*ef_GMRES_maxRst]{0.0};
 
+      // Allocate time series arrays for circuit modeling
+      if(ef_circuit_model == 1){
+        int max_step;
+        amrex::ParmParse pp;
+        pp.query("max_step", max_step);
+
+        time_ts = new Real[max_step]{0.0};
+        dispCurr_ts = new Real[max_step]{0.0};
+        eleVoltage_ts = new Real[max_step]{0.0};
+      }
+
       // Transport coefficients
       diff_e.define(this);
       De_ec = diff_e.get();
@@ -152,11 +162,6 @@ void PeleC::plasma_define_data() {
       }
    }
 
-   // Calculate a constant electron mobility given N*mu, and assuming atmospheric conditions
-   // Diffusivity is calculating using Einstein relation
-   if (ef_constEleTransport == 1){
-      amrex::Real eleMobility = -1.0*ef_eleMobility * 1.0e-9 / (2.45e19);     // Converting to cm2-C/erg-s, with charge sign
-   }
 }
 
 void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
@@ -226,16 +231,24 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   MultiFab Ke_cc(grids,dmap,1,S.nGrow());
   MultiFab De_cc(grids,dmap,1,S.nGrow());
 
-  // Fillpatch the state 
-  // ndeak note - not needed since S with boundary cells is provided as input
-  // FillPatchIterator fpi(*this,S,Ke_cc.nGrow(),time,State_Type,UFS,NUM_SPECIES+3);
-  // MultiFab& S_cc = fpi.get_mf();
-
   // ndeak add - get BCs for species (used in center->edge extrap)
   const amrex::BCRec& bcspec = get_desc_lst()[State_Type].getBC(UFS);
   amrex::Real mwt[NUM_SPECIES];
   auto eos = pele::physics::PhysicsType::eos();
   eos.molecular_weight(mwt);   // CGS
+
+  // Calculate a constant electron mobility given N*mu, and assuming atmospheric conditions
+  // Handling of De is the same
+  // N*mu and N*De supplied should be consistent with a given E/N value
+  // TODO: this is performed each time step since xport coefs would be overwritten otherwise, but
+  // this can be done more efficiently in the future. 
+  // Note: rhoDe needs to be recalculated for each cell anyways since rho may differ across the domain
+  amrex::Real eleMobility;
+  amrex::Real eleDiffusivity; 
+  if (ef_constEleTransport == 1){
+     eleMobility = -1.0*ef_eleMobility * 1.0e-9 / (2.45e19);     // Converting to cm2-C/erg-s, with charge sign
+     eleDiffusivity = ef_eleDiffusivity * 1.0e-2 / (2.45e19); 
+  }
 
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -243,6 +256,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   for (MFIter mfi(S, TilingIfNotGPU()); mfi.isValid(); ++mfi)
   {
      const amrex::Box& gbox = mfi.growntilebox();
+     auto const& rho_ar = S.array(mfi,0);
      auto const& rhoY = S.array(mfi,UFS);
      auto const& T    = Q_ext.array(mfi,QTEMP);
      auto const& rhoD = coeffs_old.array(mfi,dComp_rhoD);
@@ -252,15 +266,27 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      auto const& redEfab = redEfield.array(mfi);
      Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
      int useNL   = ef_use_NLsolve;
-     amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rhoD, Ke, De, useNL, redEfab, mwt]
+     amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rho_ar, rhoD, Ke, De, useNL, redEfab, mwt, eleMobility, eleDiffusivity]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
-        if (useNL) {
-           getKappaE(i,j,k,0,Ke,redEfab,rhoY,mwt);
-           getDiffE(i,j,k,0,useNL,factor,rhoY,De,redEfab,mwt);
-        } else {
-           getKappaE(i,j,k,E_ID,Ks,redEfab,rhoY,mwt);
-           getDiffE(i,j,k,E_ID,useNL,factor,rhoY,rhoD,redEfab,mwt);
+        if(ef_constEleTransport == 1){
+          if (useNL){
+            Ke(i,j,k) = eleMobility;
+            De(i,j,k) = eleDiffusivity;
+          }
+          else{
+            Ks(i,j,k,E_ID) = eleMobility;
+            rhoD(i,j,k,E_ID) = eleDiffusivity * rho_ar(i,j,k);
+          }
+        }
+        else{
+          if (useNL) {
+             getKappaE(i,j,k,0,Ke,redEfab,rhoY,mwt);
+             getDiffE(i,j,k,0,useNL,factor,rhoY,De,redEfab,mwt);
+          } else {
+             getKappaE(i,j,k,E_ID,Ks,redEfab,rhoY,mwt);
+             getDiffE(i,j,k,E_ID,useNL,factor,rhoY,rhoD,redEfab,mwt);
+          }
         }
      });
      Real mwt[NUM_SPECIES];
@@ -651,30 +677,33 @@ void PeleC::getCurrVoltage(Real time) {
   if(ef_constVoltage == 1) curr_voltage = pulse_peak;
   amrex::Print() << "APPLIED VOLTAGE IS " << curr_voltage/1.0e10 << " kV\n";
 
-  if(ef_circuit_model == 1) curr_voltage -= ef_resistance * disp_current;
-  amrex::Print() << "ELECTRODE VOLTAGE IS " << curr_voltage/1.0e10 << " kV\n";
-
   ProbParmDevice* lprobparm = d_prob_parm_device;
-  // lprobparm->PhiV_top = 0.0;
-  // lprobparm->PhiV_bottom = curr_voltage;
   lprobparm->PhiV_top = curr_voltage;
   lprobparm->PhiV_bottom = 0.0;
 }
 
+void PeleC::ef_electrodeVoltage(const amrex::MultiFab &state_curr){
+    
+  // Calculate the flux component of the displacement current 
+  ef_dispCurrent(state_curr, KSpec_old, Efield, coeffs_old);
+
+  
+
+}
+
 void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
-                      const amrex::MultiFab &E_curr,
-                      const amrex::MultiFab &E_old,
                       const amrex::MultiFab &mu_curr,
-                      const amrex::MultiFab &D_curr,
-                      amrex::Real dt_old){
+                      const amrex::MultiFab &E_curr,
+                      const amrex::MultiFab &D_curr){
 
   amrex::Real mwt[NUM_SPECIES];
   auto eos = pele::physics::PhysicsType::eos();
   eos.molecular_weight(mwt);   // CGS
   amrex::Real fluxE_x, fluxE_y, fluxE_z;
-  amrex::Real Efield_component; 
   amrex::Real flux_component;
-  amrex::Real dEdt_x, dEdt_y, dEdt_z;
+  amrex::Real dndx, dndy, dndz;
+  const Real* dx = geom.CellSize();
+
 
   // TODO: Handling of this for first 1-2 time steps is a bit of a mess due to the fact that
   //       we don't have a reliable value for dEdt early on.. ideally can come up with
@@ -684,39 +713,41 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
       const amrex::Box& tbox = mfi.tilebox();
       const auto curr_arr = disp_current_mf.array(mfi);
       auto const& S_arr = state_curr.array(mfi);
-      auto const& E_cc = Efield.array(mfi);
-      auto const& E_cc_old = old_Efield.array(mfi);
+      auto const& E_cc = E_curr.array(mfi);
       auto const& K_cc = KSpec_old.array(mfi);
       auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
-      auto const& dndx_cc = dndx.array(mfi);
       amrex::ParallelFor(
-        tbox, [=,&fluxE_x, &fluxE_y, &fluxE_z, &dEdt_x, &dEdt_y, &dEdt_z, 
-        &flux_component, &Efield_component, &dt_old] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        tbox, [=,&fluxE_x, &fluxE_y, &fluxE_z, &dndx, &dndy, &dndz, &flux_component] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
           // Calculate the current due to charged species fluxes
           flux_component = 0.0;
           for(int n = 0; n<NUM_SPECIES; n++){
             if(zk_num[n] != 0){
+              // Use the AMReX Hydro slope utilities to get cell-centered limited gradients 
+              // TODO  We are ignoring EB for now, can be improved if necessary...
+              dndx = amrex_calc_xslope(i,j,k,UFS+n,2,S_arr);
+              dndx *= (0.0/dx[0]);
+              dndy = amrex_calc_yslope(i,j,k,UFS+n,2,S_arr);
+              dndy *= (0.0/dx[1]);
+              dndz = amrex_calc_zslope(i,j,k,UFS+n,2,S_arr);
+              dndz *= (0.0/dx[2]);
+
+
               // Flux dot Efield components (g-erg/cm3-C-s)
-              fluxE_x = zk_num[n] * ( (E_cc(i,j,k,0) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMX)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndx_cc(i,j,k,NUM_E*n + 0) ) * E_cc(i,j,k,0);
-              fluxE_y = zk_num[n] * ( (E_cc(i,j,k,1) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMY)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndx_cc(i,j,k,NUM_E*n + 1) ) * E_cc(i,j,k,1);
-              fluxE_z = zk_num[n] * ( (E_cc(i,j,k,2) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMZ)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndx_cc(i,j,k,NUM_E*n + 2) ) * E_cc(i,j,k,2);
+              fluxE_x = zk_num[n] * ( (E_cc(i,j,k,0) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMX)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) 
+                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndx ) * E_cc(i,j,k,0);
+              fluxE_y = zk_num[n] * ( (E_cc(i,j,k,1) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMY)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) 
+                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndy ) * E_cc(i,j,k,1);
+              fluxE_z = zk_num[n] * ( (E_cc(i,j,k,2) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMZ)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) 
+                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndz ) * E_cc(i,j,k,2);
       
               // Calculate the total flux contribution (erg/cm3-s)
               flux_component += EFConst::elemCharge * (fluxE_x + fluxE_x + fluxE_x) * ( EFConst::Na / mwt[n]);
             }
           }
 
-          // Calculate the time-varying electric field component (erg/cm3-s)
-          dEdt_x = (E_cc(i,j,k,0) - E_cc_old(i,j,k,0))/dt_old;
-          dEdt_y = (E_cc(i,j,k,1) - E_cc_old(i,j,k,1))/dt_old;
-          dEdt_z = (E_cc(i,j,k,2) - E_cc_old(i,j,k,2))/dt_old;
-          Efield_component = EFConst::eps0_cgs * (dEdt_x * E_cc(i,j,k,0) + dEdt_y * E_cc(i,j,k,1) + dEdt_z * E_cc(i,j,k,2));
-
-          // Calculate the displacement current density (C/cm3-s)
-          // curr_arr(i,j,k) = (1.0/curr_voltage) * (flux_component + dEdt_fact*Efield_component);
-          curr_arr(i,j,k) = (1.0/curr_voltage) * (flux_component);
+          // Calculate the displacement current density (erg/cm3-s)
+          curr_arr(i,j,k) = flux_component;
         });
-        dEdt_fact = 1.0;  // Using this to zero out the efield component the first time we calculate displacement current to avoid large gradients causing issues
   }
 
   // Perform volume weighted sum (integral) over the whole domain to obtain displacement current (C/s)

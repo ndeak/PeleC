@@ -155,9 +155,9 @@ PeleC::volWgtSumMF(
 
   sum = amrex::MultiFab::Dot(vol, 0, volume, 0, 1, 0, local);
 
-  if (!local) {
-    amrex::ParallelDescriptor::ReduceRealSum(sum);
-  }
+  // if (!local) {
+  //   amrex::ParallelDescriptor::ReduceRealSum(sum);
+  // }
 
   return sum;
 }
