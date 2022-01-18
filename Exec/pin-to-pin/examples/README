@@ -1,0 +1,21 @@
+Example 01: "A2" test case (NO electric field, uniform initial conditions, with boundary lossses and diffusion, drift, and reaction), performed without EB, and a single AMR level
+
+Example 02: "A2" test case performed with EB, and a single AMR level
+
+Example 05: "B2" test case (Constant uniform electric field of 100 Td, uniform initial conditions, with boundary lossses and diffusion, drift, and reaction), performed without EB, and a single AMR level
+
+Example 06: "A2" test case using the coupled system, no EB, and a single AMR level
+
+Example 07: "A2" test case using the coupled system, with EB, and a single AMR level
+
+Example 08: "B2" test case using the coupled system, performed without EB, and a single AMR level
+
+Example 09: "B2" test case using the coupled system, performed with EB, and a single AMR level
+
+Example 10: "A2" test case, performed without EB, and a 2 AMR levels
+
+Example 11: "A2" test case, performed with EB, and a 2 AMR levels (volfrac refinement)
+
+Example 12: "A2" test case using the coupled system, performed with EB, and a 2 AMR levels (volfrac refinement)
+
+Example 13: "B2" test case using the coupled system, performed with EB, and a multiple AMR levels (volfrac refinement)
