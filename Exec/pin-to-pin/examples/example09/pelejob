@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -n 48
+#SBATCH -o myjob.%j.out
+#SBATCH -J PeleCPlasma
+#SBATCH -p skx-dev
+#SBATCH -A TG-CTS180002
+#SBATCH -t 02:00:00
+
+module load gcc
+
+module list
+pwd
+date
+
+#ibrun -n 32 ./PeleC3d.gnu.MPI.ex inputs.3d
+mpirun -n 48 ./PeleC3d.gnu.MPI.ex inputs.3d

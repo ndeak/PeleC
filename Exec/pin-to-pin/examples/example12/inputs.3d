@@ -1,0 +1,122 @@
+# ------------------  INPUTS TO MAIN PROGRAM  -------------------
+max_step = 20000
+stop_time = 100.0
+
+# PROBLEM SIZE & GEOMETRY
+#geometry.is_periodic =  0  0  0
+geometry.is_periodic =  1  0  1
+geometry.coord_sys   =  0       # 0 => cart
+geometry.prob_lo     =  0    0    0 
+#geometry.prob_hi     =  0.125  2.0  0.125    # EB test case 1
+#amr.n_cell           =  8 128 8
+#geometry.prob_hi     =  0.0625  2.0  0.0625    # EB test case 1
+#amr.n_cell           =  8 256 8
+geometry.prob_hi     =  0.0625  2.0  0.0625    # EB test case 1
+amr.n_cell           =  8 256 8
+#geometry.prob_hi     =  0.0078125  1.0  0.0078125    # EB test case 1
+#amr.n_cell           =  8 1024 8
+
+# >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
+# Interior, UserBC, Symmetry, SlipWall, NoSlipWall
+# >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
+
+pelec.lo_bc       =  "Interior" "SlipWall" "Interior"
+pelec.hi_bc       =  "Interior" "SlipWall" "Interior"
+
+# Problem setup
+pelec.eb_boundary_T = 300.
+pelec.eb_isothermal = 1
+pelec.chem_integrator = 2
+ode.implicit_solve = 1
+#ode.iverbose = 4
+ode.analytical_jacobian = 0
+cvode.solve_type = "dense"
+pelec.redistribution_type = "StateRedist"
+#pelec.redistribution_type = "FluxRedist"
+#pelec.redistribution_type = "NoRedist"
+#cvode.solve_type = "GMRES"
+
+# Plasma variables
+pelec.ion_bc_type = 0             # ion BC type (0 -> weak efield BCs, 1 -> strong efield BCs)
+pelec.zero_bc_flux = 0             # Set to 1 to ignore electron and ion fluxes at the electrode boundaries
+pelec.secondary_em_coef = 0.05    # secondary electron emission coefficient
+pelec.pulse_freq = 1000.0e3            # pulse frequency (Hz)
+pelec.pulse_fwhm = 10.0e-9             # pulse FWHM (s)
+pelec.pulse_peak = 00000.0e7          # peak potential of the driven electrode (erg/C)
+pelec.pulse_timing = 0.0          # timing of the first pulse peak (s)
+pelec.pulse_num = 1              # number of pulses
+pelec.pulse_dt = 1.0e-12           # dt around each pulse (s)
+ef.use_nonLinearSolve = 1       
+ef.Poisson_tol = 1.0e-12
+ef.noSpaceCharge = 1              # Solve Poisson problem without space charge effects
+
+# WHICH PHYSICS
+pelec.do_hydro = 1
+pelec.do_mol = 1
+pelec.do_react = 1
+pelec.diffuse_temp = 1
+pelec.diffuse_vel  = 1
+pelec.diffuse_spec = 1
+pelec.diffuse_enth = 1
+
+# TIME STEP CONTROL
+pelec.dt_cutoff      = 5.e-20  # level 0 timestep below which we halt
+pelec.cfl            = 0.3     # cfl number for hyperbolic system
+pelec.init_shrink    = 1.0    # scale back initial timestep
+pelec.change_max     = 1.05     # maximum increase in dt over successive steps
+pelec.fixed_dt = 2.0e-10
+
+# DIAGNOSTICS & VERBOSITY
+pelec.sum_interval   = 1       # timesteps between computing mass
+pelec.v              = 1       # verbosity in PeleC cpp files
+amr.v                = 1       # verbosity in Amr.cpp
+ef.Poisson_verbose      = 0
+#amr.grid_log         = grdlog  # name of grid logging file
+
+# REFINEMENT / REGRIDDING
+amr.max_level       = 1       # maximum level number allowed
+amr.ref_ratio       = 2 2 2 2 # refinement ratio
+amr.regrid_int      = 2       # how often to regrid
+amr.blocking_factor = 8       # block factor in grid generation
+amr.max_grid_size   = 64 
+amr.subcycling_mode = None
+
+# TAGGING
+tagging.max_vfracerr_lev = 10
+
+# CHECKPOINT FILES
+amr.checkpoint_files_output = 0
+amr.check_file      = chk      # root name of checkpoint file
+amr.check_int       = 1000       # number of timesteps between checkpoints
+
+# PLOTFILES
+amr.plot_files_output = 1
+amr.plot_file       = plt
+amr.plot_int        = 5
+#amr.derive_plot_vars=pressure x_velocity y_velocity z_velocity vfrac
+amr.derive_plot_vars=ALL
+pelec.plot_massfrac = true
+pelec.monitor_file = true
+
+
+# EB TEST CASE 1 (PLATE TO PLATE, ALIGNED W X-Z PLANE)
+eb2.use_eb2 = 1
+eb2.geom_type = boxes
+boxes.num_boxes = 2
+boxes.box_0_lo = -1.0 -1.0 -1.0
+boxes.box_0_hi = 2.0 0.433 2.0
+boxes.box_1_lo = -1.0 1.433 -1.0
+boxes.box_1_hi = 2.0 3.0 2.0
+ebd.boundary_grad_stencil_type = 0
+
+prob.p = 1013250.0
+prob.rho = 0.0011719
+prob.vx_in =  0.0
+prob.vy_in =  0.0
+prob.Re_L = 1.0
+prob.Pr = 0.7
+
+#fabarray.mfiter_tile_size = 1024 1024 1024
+amrex.fpe_trap_invalid = 1
+amrex.fpe_trap_zero = 1
+amrex.fpe_trap_overflow = 1
