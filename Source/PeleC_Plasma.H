@@ -137,7 +137,6 @@
   amrex::MultiFab            gasN_cc;
   amrex::MultiFab            ionFlx_eb;
   amrex::MultiFab            old_state_NL;
-  amrex::MultiFab            old_old_state_NL;
   amrex::MultiFab            tmp_nE_forcing;
   amrex::Real                disp_current = 0.0;
   amrex::Real                level_capacitance;     // Individual capacitance component of a given level

@@ -204,7 +204,6 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve
-     amrex::MultiFab::Copy(old_old_state_NL, old_state_NL, 0,0,1,old_old_state_NL.nGrow());
      amrex::MultiFab::Copy(old_state_NL, Sborder, PhiV+1,0,1,old_state_NL.nGrow());
      MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
      ef_solve_NL(dt,time,Sborder, molSrc,I_R,forcing_nE);
@@ -270,7 +269,6 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve
-     // amrex::MultiFab::Copy(old_old_state_NL, old_state_NL, 0,0,1,old_old_state_NL.nGrow());
      // /amrex::MultiFab::Copy(old_state_NL, Sborder, PhiV+1,0,1,old_state_NL.nGrow());
      // MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
      // ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);

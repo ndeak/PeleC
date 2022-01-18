@@ -130,7 +130,6 @@ void PeleC::plasma_define_data() {
       ef_state_old.define(grids,dmap,2,2);
       gasN_cc.define(grids,dmap,1,1);
       old_state_NL.define(grids,dmap,1,2,MFInfo(),Factory()); old_state_NL.setVal(0.0);
-      old_old_state_NL.define(grids,dmap,1,2,MFInfo(),Factory()); old_old_state_NL.setVal(0.0);
       tmp_nE_forcing.define(grids,dmap,1,2,MFInfo(),Factory()); tmp_nE_forcing.setVal(0.0);
 
       // Valgrind complained about unitialized values here

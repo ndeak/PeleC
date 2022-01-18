@@ -472,7 +472,6 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
       auto const& ne_curr  = nE_a.const_array(mfi);
       auto const& ne_old   = ef_state_old.const_array(mfi,1);
       // auto const& ne_old   = old_state_NL.const_array(mfi,0);
-      auto const& ne_old_old   = old_old_state_NL.const_array(mfi,0);
       auto const& charge   = bg_charge.const_array(mfi);
       auto const& res_nE   = a_nl_resid.array(mfi,1);
       auto const& res_phiV = a_nl_resid.array(mfi,0);
@@ -480,7 +479,7 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
       auto flag_arr = flags.const_array(mfi);
 #endif
       Real scalLap         = EFConst::eps0_cgs * EFConst::epsr / EFConst::elemCharge;
-      amrex::ParallelFor(bx, [ne_curr,ne_old,ne_old_old,lapPhiV,I_R_nE,ne_diff,ne_adv,charge,res_nE,res_phiV,
+      amrex::ParallelFor(bx, [ne_curr,ne_old,lapPhiV,I_R_nE,ne_diff,ne_adv,charge,res_nE,res_phiV,
                               dt_lcl,scalLap,do_react
 #ifdef PELEC_USE_EB
                               , flag_arr
@@ -491,8 +490,6 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
          // TODO: REMOVE FACTOR
          res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) );
          if (do_react) res_nE(i,j,k) += dt_lcl * I_R_nE(i,j,k);
-         // res_nE(i,j,k) = -(1.0/3.0)*ne_old_old(i,j,k) + (4.0/3.0)*ne_old(i,j,k) - ne_curr(i,j,k) + (2.0/3.0)*dt_lcl * ( ne_diff(i,j,k) + ne_adv(i,j,k) );
-         // if (do_react) res_nE(i,j,k) += (2.0/3.0)*dt_lcl * I_R_nE(i,j,k);
          res_phiV(i,j,k) = lapPhiV(i,j,k) * scalLap;
          if(ef_noSpaceCharge == 0) res_phiV(i,j,k) += -ne_curr(i,j,k) + charge(i,j,k);
          // res_phiV(i,j,k) = 0.0;
