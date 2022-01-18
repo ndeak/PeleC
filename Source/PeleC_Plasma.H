@@ -31,13 +31,28 @@
   static amrex::Real dfact;
   static amrex::Real sfact;
   static bool        pac_mechanism;            // If using PAC mechanism, output maximum reactor-type data in monitor file
-  static int         ef_circuit_model;                         // Set to 0 for no circuit model, 1 for simple model
+  
+  // Transport options
   static int         ef_constEleTransport;                   // Use constant electron mobility (and diffusivity, via Einsten relation)
   static amrex::Real ef_eleMobility;                         // (Normalized) constant electron mobility mu*N (1/V-m-s)  
   static amrex::Real ef_eleDiffusivity;                      // (Normalized) constant electron diffusivity De*N (1/m-s)  
 
+  // Circuit model options
+  static int         ef_circuit_model;                         // Set to 0 for no circuit model, 1 for simple model
+  static amrex::Real ef_circuit_time_delay;                           // Time taken for signal to cross transmission line (s)
+  static amrex::Real ef_circuit_impedance;                           // Characteristic impedance Z_0, (erg-s/C^2)
+  static amrex::Real ef_circuit_upstream_resistance;                  // upstream resistance (erg-s/C^2)
+  static amrex::Real ef_circuit_capacitance;                  // Circuit capacitance (C^2/erg, should be calculated ahead of time) 
+
   static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;      // Species charge per unit mass (C/g)
   static amrex::GpuArray<int, NUM_SPECIES> zk_num;      // Species charge number 
+  static amrex::GpuArray<amrex::Real, 20000>   time_ts;
+  static amrex::GpuArray<amrex::Real, 20000>   sourceVoltage_ts;
+  static amrex::GpuArray<amrex::Real, 20000>   eleVoltage_ts;
+  static amrex::GpuArray<amrex::Real, 20000>   incidentWave_ts;
+  static amrex::GpuArray<amrex::Real, 20000>   reflectedWave_ts;
+  static amrex::GpuArray<amrex::Real, 20000>   sourceCurrent_ts;
+  static amrex::GpuArray<amrex::Real, 20000>   eleCurrent_ts;
 
   // Efield Poisson solve options
   static amrex::Real ef_PoissonTol;
@@ -67,6 +82,7 @@
 
   // MFs
   amrex::MultiFab     Efield;
+  amrex::MultiFab     Efield_L_p2;                // "Laplacian" electric field dotted with itself (used for calculating capacitance)
   amrex::MultiFab     old_Efield;
   amrex::MultiFab     redEfield;
   amrex::MultiFab     KSpec_old;     // Need both old and new since adv is at t^n+1/2
@@ -124,9 +140,7 @@
   amrex::MultiFab            old_old_state_NL;
   amrex::MultiFab            tmp_nE_forcing;
   amrex::Real                disp_current = 0.0;
-  amrex::Real*               time_ts;
-  amrex::Real*               dispCurr_ts;
-  amrex::Real*               eleVoltage_ts;
+  amrex::Real                level_capacitance;     // Individual capacitance component of a given level
 
   // Preconditioner data
 #ifdef PELEC_USE_EB
@@ -151,8 +165,9 @@
   // Build MFs/FluxBoxes ...
   void plasma_define_data();
 
-  // Get voltage at a given time
-  void getCurrVoltage(amrex::Real time);
+  // Set/get voltage at a given time
+  void setCurrVoltage(amrex::Real time);
+  amrex::Real getCurrVoltage(amrex::Real time);
 
   // Electric potential Poisson solve
   void solveEF (amrex::Real time,
@@ -192,12 +207,22 @@
 
 // Circuit model functions
 
-  void ef_electrodeVoltage(const amrex::MultiFab &state_curr);
+  void ef_circuitModel(amrex::Real time, amrex::Real dt);
 
   void ef_dispCurrent(const amrex::MultiFab &state_curr,
                       const amrex::MultiFab &mu_curr,
                       const amrex::MultiFab &E_curr,
                       const amrex::MultiFab &D_curr);
+  
+  void ef_waveVoltageSources(amrex::Real time);
+  
+  void ef_voltagesCurrents(amrex::Real time, amrex::Real dt);
+
+  void gapCapacitance(amrex::Real time);
+
+  void circuitFileSetup();
+
+  void writeCircuitFile(amrex::Real time);
 
 // non-linear solve functions
   void ef_solve_NL( const amrex::Real      &dt,
@@ -272,5 +297,21 @@
 
   amrex::Real getDispCurrent () noexcept {return disp_current; }
   void setDispCurrent (amrex::Real current_in) noexcept {disp_current = current_in; }
+
+  amrex::Real getGapCapacitance () noexcept {return level_capacitance; }
+  void setGapCapacitance (amrex::Real capacitance_in) noexcept {level_capacitance = capacitance_in; }
+
+  // This value is for setting the circuit values calculated at the finest level at coarser levels
+  void setCircuitValues(int step_num, amrex::Real timeval,
+                        amrex::Real sourceVolt, amrex::Real eleVolt, 
+                        amrex::Real sourceCurr, amrex::Real eleCurr, 
+                        amrex::Real incWave, amrex::Real refWave)
+                        noexcept {time_ts[step_num] = timeval; 
+                                  sourceVoltage_ts[step_num] = sourceVolt;
+                                  eleVoltage_ts[step_num + 1] = eleVolt;
+                                  sourceCurrent_ts[step_num] = sourceCurr;
+                                  eleCurrent_ts[step_num] = eleCurr;
+                                  incidentWave_ts[step_num] = incWave;
+                                  reflectedWave_ts[step_num] = refWave;}     
 
 #endif

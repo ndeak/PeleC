@@ -118,13 +118,26 @@ amrex::Real PeleC::dfact = 0.0;
 amrex::Real PeleC::sfact = 0.0;
 int PeleC::pulse_num = 0;
 bool PeleC::pac_mechanism = false;
-int PeleC::ef_circuit_model = 0;
 int PeleC::ef_constEleTransport = 0;
 amrex::Real PeleC::ef_eleMobility = 0.0;
 amrex::Real PeleC::ef_eleDiffusivity = 0.0;
 
+int PeleC::ef_circuit_model = 0;
+amrex::Real PeleC::ef_circuit_time_delay = 25.0e-9;
+amrex::Real PeleC::ef_circuit_impedance = 50.0e7;
+amrex::Real PeleC::ef_circuit_upstream_resistance = 10.0e7;
+amrex::Real PeleC::ef_circuit_capacitance = 30.0e-19;
+
 amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
 amrex::GpuArray<int,NUM_SPECIES> PeleC::zk_num;
+
+amrex::GpuArray<amrex::Real,20000> PeleC::time_ts;
+amrex::GpuArray<amrex::Real,20000> PeleC::sourceVoltage_ts;
+amrex::GpuArray<amrex::Real,20000> PeleC::eleVoltage_ts;
+amrex::GpuArray<amrex::Real,20000> PeleC::sourceCurrent_ts;
+amrex::GpuArray<amrex::Real,20000> PeleC::eleCurrent_ts;
+amrex::GpuArray<amrex::Real,20000> PeleC::incidentWave_ts;
+amrex::GpuArray<amrex::Real,20000> PeleC::reflectedWave_ts;
 #endif
 
 #include "pelec_defaults.H"
@@ -769,29 +782,13 @@ PeleC::initData()
   // Compute initial PhiV
   amrex::Real cur_time = state[State_Type].curTime();
   const ProbParmDevice* lprobparm = d_prob_parm_device;
-  getCurrVoltage(0.0);
+  setCurrVoltage(0.0);
   solveEF( cur_time, 0.0, *lprobparm );
-  // for (amrex::MFIter mfi(redEfield, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-  //    const amrex::Box& tbox = mfi.tilebox();
-  //    const auto Efab = Efield.array(mfi);
-  //    const auto redEfab = redEfield.array(mfi);
-  //    const auto Sfab = S_new.array(mfi);
-  //    amrex::ParallelFor(
-  //      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //        amrex::Real ndens = 0.0;
-  //        for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
-  //        redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
-  //      });
-  // }
-
 
   if(ef_do_photoionization){
     solvePI( cur_time, 0.0, *lprobparm );
   }
-  // if ( ef_debug) {
-  //    amrex::MultiFab phiV_a(S_new,amrex::make_alias,PhiV,1);
-  //    amrex::VisMF::Write(phiV_a,"InitialPhiV");
-  // }
+
 #endif
 
   // computeTemp(S_new,0);
@@ -1444,6 +1441,11 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
   if(NL_convergence_file){
     int nlevs = parent->maxLevel() + 1;
     for(int i=0; i<nlevs; i++) NLConvergenceFileSetup(i);
+  }
+
+  // Set up circuit file
+  if(ef_circuit_model){
+    circuitFileSetup();
   }
 }
 

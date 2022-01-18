@@ -65,10 +65,15 @@ PeleC::plasma_init()
     pp.query("Precond_SchurApprox",ef_PC_approx);
 
     pp.query("pac_mechanism", pac_mechanism);
-    pp.query("circuit_model", ef_circuit_model);
     pp.query("constEleTransport", ef_constEleTransport);
     pp.query("eleMobility", ef_eleMobility);
     pp.query("eleDiffusivity", ef_eleDiffusivity);
+
+    pp.query("circuit_model", ef_circuit_model);
+    pp.query("circuit_time_delay", ef_circuit_time_delay);
+    pp.query("circuit_impedance", ef_circuit_impedance);
+    pp.query("circuit_upstream_resistance", ef_circuit_upstream_resistance);
+    pp.query("circuit_capacitance", ef_circuit_capacitance);
 
     // get charge per unit mass (C/g) CGS
     Real zk_temp[NUM_SPECIES] = {0.0};
@@ -80,6 +85,12 @@ PeleC::plasma_init()
        zk[k] = zk_temp[k];
        zk_num[k] = zk_num_temp[k];
     }
+
+   // Allocate time series arrays for circuit modeling
+   if(ef_circuit_model){
+     // Assuming electrode voltage at time t=0 is 0
+     eleVoltage_ts[0] = 0.0;
+   }
 }
 
 void PeleC::plasma_define_data() {
@@ -94,6 +105,7 @@ void PeleC::plasma_define_data() {
 
    // TODO Solve Poisson problem for potential, and fill in E components and redE after creating
    Efield.define(grids, dmap, NUM_E, numGrow(), amrex::MFInfo(), Factory()); Efield.setVal(0.0);
+   Efield_L_p2.define(grids, dmap, NUM_E, numGrow(), amrex::MFInfo(), Factory()); Efield_L_p2.setVal(0.0);
    old_Efield.define(grids, dmap, NUM_E, numGrow(), amrex::MFInfo(), Factory()); Efield.setVal(0.0);
    redEfield.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); redEfield.setVal(0.0);
    KSpec_old.define(grids,dmap,NUM_SPECIES, numGrow()); KSpec_old.setVal(0.0);
@@ -133,17 +145,6 @@ void PeleC::plasma_define_data() {
       // Allocate the linear residuals array
       lin_residuals = new Real[ef_GMRES_size*ef_GMRES_maxRst]{0.0};
 
-      // Allocate time series arrays for circuit modeling
-      if(ef_circuit_model == 1){
-        int max_step;
-        amrex::ParmParse pp;
-        pp.query("max_step", max_step);
-
-        time_ts = new Real[max_step]{0.0};
-        dispCurr_ts = new Real[max_step]{0.0};
-        eleVoltage_ts = new Real[max_step]{0.0};
-      }
-
       // Transport coefficients
       diff_e.define(this);
       De_ec = diff_e.get();
@@ -161,6 +162,7 @@ void PeleC::plasma_define_data() {
          ionFlx[d]->setVal(0.0);
       }
    }
+
 
 }
 
@@ -627,8 +629,8 @@ void PeleC::setBCPI(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
    }
 }
 
-// Get the voltage at a given time
-void PeleC::getCurrVoltage(Real time) {
+// Set the voltage at a given time
+void PeleC::setCurrVoltage(Real time) {
   amrex::Real pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0)));     // Pulse sigma
   amrex::Real pulse_time_tmp;
 
@@ -682,13 +684,100 @@ void PeleC::getCurrVoltage(Real time) {
   lprobparm->PhiV_bottom = 0.0;
 }
 
-void PeleC::ef_electrodeVoltage(const amrex::MultiFab &state_curr){
+// Return the current applied voltage only
+amrex::Real PeleC::getCurrVoltage(Real time) {
+  amrex::Real pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0)));     // Pulse sigma
+  amrex::Real pulse_time_tmp;
+
+  curr_voltage = 0.0;
+  if(ef_triangle_pulse == 1){
+    // Triangular pulse assumes a rise time equal to the pulse fwhm
+    for(int i=0; i<pulse_num; i++){
+      pulse_time_tmp = pulse_timing  + (i)*(1.0/pulse_freq);
+      curr_voltage += (amrex::Math::abs(time - pulse_time_tmp) < pulse_fwhm) ? (1.0 - amrex::Math::abs(time - pulse_time_tmp)/pulse_fwhm)*pulse_peak :0.0;
+    }
+  }
+  else if(ef_trapezoidal_pulse == 1){
+    for(int i=0; i<pulse_num; i++){
+      pulse_time_tmp = pulse_timing  + (i)*(1.0/pulse_freq);
     
-  // Calculate the flux component of the displacement current 
-  ef_dispCurrent(state_curr, KSpec_old, Efield, coeffs_old);
+      if(pulse_time_tmp - time > pulse_fwhm/2.0 && pulse_time_tmp - time < pulse_fwhm){
+        curr_voltage += (1.0 - amrex::Math::abs( (pulse_time_tmp - (pulse_fwhm/2.0) - time) / (pulse_fwhm/2.0))) * pulse_peak;
+      }
+      else if(time - pulse_time_tmp > pulse_fwhm/2.0 && time - pulse_time_tmp < pulse_fwhm){
+        curr_voltage += (1.0 - amrex::Math::abs( (pulse_time_tmp + (pulse_fwhm/2.0) - time) / (pulse_fwhm/2.0))) * pulse_peak;
+      }
+      else if( amrex::Math::abs(pulse_time_tmp - time) < pulse_fwhm/2.0){
+        curr_voltage += pulse_peak;
+      }
+      else{
+        curr_voltage += 0.0;
+      }
+    }
+  }
+  else if(ef_sigmoid_pulse == 1){
+    amrex::Real pulse_delta = 3.0e-9;
+    amrex::Real pulse_tr = pulse_fwhm/2.0;
+    amrex::Real pulse_lambda = 8.0 / pulse_tr;
+    amrex::Real pulse_plateau = 12.0e-9;
+    amrex::Real pulse_t1 = time - pulse_delta;
+    amrex::Real pulse_t2 = time - pulse_delta - pulse_plateau - pulse_tr; 
+    curr_voltage = pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
+  }
+  else{
+    for(int i=0; i<pulse_num; i++){
+      pulse_time_tmp = pulse_timing  + (i)*(1.0/pulse_freq);
+      curr_voltage += pulse_peak * exp(-0.5 * pow( (time - pulse_time_tmp) / pulse_sigma, 2) );
+    }
+  }
 
-  
+  if(ef_constVoltage == 1) curr_voltage = pulse_peak;
+  amrex::Print() << "APPLIED VOLTAGE IS " << curr_voltage/1.0e10 << " kV\n";
 
+  return curr_voltage;
+}
+
+// Note: this function should only be called on the finest level
+void PeleC::ef_circuitModel(amrex::Real time, amrex::Real dt){
+   
+  // Calculate the wave voltage source
+  ef_waveVoltageSources(time);
+
+  // Calculate voltages and currents (at source and gap)
+  ef_voltagesCurrents(time, dt);
+
+  // Propagate results down to coarser levels
+  int lidx = 0;
+  int step_num = parent->levelSteps(0);
+  while(lidx < parent->finestLevel()) {
+    auto& crselev = getLevel(lidx);
+    crselev.setCircuitValues(step_num, time_ts[step_num], sourceVoltage_ts[step_num], 
+                             eleVoltage_ts[step_num + 1], sourceCurrent_ts[step_num], 
+                             eleCurrent_ts[step_num], incidentWave_ts[step_num], 
+                             reflectedWave_ts[step_num]);
+    lidx++;
+  }
+}
+
+void PeleC::ef_waveVoltageSources(amrex::Real time){
+
+  // Get the current step number
+  int step_num = parent->levelSteps(0);
+
+  // Fill in the time array
+  time_ts[step_num] = time;
+
+  // Prior to the time delay, there are no wave voltage sources
+  if(time < ef_circuit_time_delay){
+    incidentWave_ts[step_num] = 0.0;
+    reflectedWave_ts[step_num] = 0.0;
+  }
+  else{     // Otherwise, pull in closest data at (or just after) time - tau
+    int idx = 0;
+    while(time_ts[idx] < time - ef_circuit_time_delay) idx++;
+    incidentWave_ts[step_num] = 2.0 * eleVoltage_ts[idx] - reflectedWave_ts[idx];
+    reflectedWave_ts[step_num] = 2.0 * sourceVoltage_ts[idx] - incidentWave_ts[idx];
+  }
 }
 
 void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
@@ -704,11 +793,6 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
   amrex::Real dndx, dndy, dndz;
   const Real* dx = geom.CellSize();
 
-
-  // TODO: Handling of this for first 1-2 time steps is a bit of a mess due to the fact that
-  //       we don't have a reliable value for dEdt early on.. ideally can come up with
-  //       better/cleaner way to handle this
-
   for (amrex::MFIter mfi(disp_current_mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& tbox = mfi.tilebox();
       const auto curr_arr = disp_current_mf.array(mfi);
@@ -723,13 +807,13 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
           for(int n = 0; n<NUM_SPECIES; n++){
             if(zk_num[n] != 0){
               // Use the AMReX Hydro slope utilities to get cell-centered limited gradients 
-              // TODO  We are ignoring EB for now, can be improved if necessary...
+              // TODO  We are ignoring EB for now, can be improved if necessary... (see AMReX-Hydro/Slopes/hydro_eb_slopes_3D_K.H)
               dndx = amrex_calc_xslope(i,j,k,UFS+n,2,S_arr);
-              dndx *= (0.0/dx[0]);
+              dndx *= (1.0/dx[0]);
               dndy = amrex_calc_yslope(i,j,k,UFS+n,2,S_arr);
-              dndy *= (0.0/dx[1]);
+              dndy *= (1.0/dx[1]);
               dndz = amrex_calc_zslope(i,j,k,UFS+n,2,S_arr);
-              dndz *= (0.0/dx[2]);
+              dndz *= (1.0/dx[2]);
 
 
               // Flux dot Efield components (g-erg/cm3-C-s)
@@ -750,7 +834,7 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
         });
   }
 
-  // Perform volume weighted sum (integral) over the whole domain to obtain displacement current (C/s)
+  // Perform volume weighted sum (integral) over the whole domain to obtain displacement current (erg/s)
   // Note: finemask is set to true, so that the integral at each level is calculated only with cells that aren't covered by a finer level
   // By summing the component from each level, we recover the full volume integral
   disp_current = volWgtSumMF(disp_current_mf, 0, false, true);
@@ -775,3 +859,25 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
 
   amrex::Print() << "AT LEVEL " << level << " DISP CURRENT IS " << disp_current << "\n";
 }
+
+void PeleC::ef_voltagesCurrents(amrex::Real time, amrex::Real dt){
+
+  // Get the current step number
+  int step_num = parent->levelSteps(0);
+
+  // Calculate the gap current I_e^n at the current time
+  eleCurrent_ts[step_num] = (eleVoltage_ts[step_num] - reflectedWave_ts[step_num]) / ef_circuit_impedance;
+
+  // Calculate electrode voltage to be used at next time step V_e^n+1
+  // eleVoltage_ts[step_num + 1] = (eleVoltage_ts[step_num] == 0) ? eleVoltage_ts[step_num] + (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num]):eleVoltage_ts[step_num] + (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num] - disp_current / eleVoltage_ts[step_num]); 
+  eleVoltage_ts[step_num + 1] = (eleVoltage_ts[step_num] == 0) ? eleVoltage_ts[step_num] - (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num]):eleVoltage_ts[step_num] - (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num] - disp_current / eleVoltage_ts[step_num]); 
+
+  // Calculate source current I_s^n
+  // amrex::Real applied_voltage = (time < 2.0*ef_circuit_time_delay) ? getCurrVoltage(time): -1.0*incidentWave_ts[step_num];
+  amrex::Real applied_voltage = getCurrVoltage(time);
+  sourceCurrent_ts[step_num] = (1.0 / (1.0 + ef_circuit_upstream_resistance / ef_circuit_impedance)) * (applied_voltage - incidentWave_ts[step_num]) / ef_circuit_impedance;
+
+  // Evaluate the source voltage V_s^n
+  sourceVoltage_ts[step_num] = applied_voltage - sourceCurrent_ts[step_num] * ef_circuit_upstream_resistance; 
+}
+

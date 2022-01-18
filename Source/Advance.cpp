@@ -98,8 +98,36 @@ PeleC::do_mol_advance(
 
 
 #ifdef PELEC_USE_PLASMA
-  // Get the driven voltage
-  getCurrVoltage(time);
+  int step_num = parent->levelSteps(0);
+  
+  // Since there are several regridding and re-initialization steps during setup,
+  // gap capacitance is not calculated until we begin the first time step
+  // Note: we load in capacitance for cicuit file upon restart
+  // if(ef_circuit_model != 0 && step_num == 0 && level == 0) {
+  //   int lidx = 0;
+  //   while(lidx <= parent->finestLevel()) {
+  //     auto& crselev = getLevel(lidx);
+  //     crselev.gapCapacitance(0.0);
+  //     lidx++;
+  //   }
+  // }
+
+  // Calculate the flux component of the displacement current (needs to be called at each level)
+  if(ef_circuit_model != 0) ef_dispCurrent(S_old, KSpec_old, Efield, coeffs_old);
+
+  // Explicit calculation of the electrode voltage via transmission line and Sato equations
+  // Note: we are only ready to calculate everything at the finest level (otherwise we dont have complete displacement current)
+  if(ef_circuit_model != 0 && level == parent->finestLevel()) ef_circuitModel(time, dt);
+
+  // If we are using the circuit model, set current voltage to V_e^n 
+  if(ef_circuit_model != 0){
+    ProbParmDevice* lprobparm = d_prob_parm_device;
+    lprobparm->PhiV_top = eleVoltage_ts[step_num];
+    lprobparm->PhiV_bottom = 0.0;
+  }
+  else{   // Otherwise just use driven voltage directly
+    setCurrVoltage(time);
+  }
 
   // Compute PhiV
   const ProbParmDevice* lprobparm = d_prob_parm_device;
@@ -322,9 +350,6 @@ PeleC::do_mol_advance(
   }
 
 
-  // Calculate the displacement current for the next time step
-  if(ef_circuit_model != 0) ef_electrodeVoltage(S_new);
-
   computeTemp(S_new, 0);
   if(ef_use_NLsolve) S_new.setVal(0.0, UFS+E_ID, 1);
 
@@ -370,6 +395,9 @@ PeleC::do_mol_advance(
   if(monitor_file){
     writeMonitorFile(S_new, mwt, dt, time, level);
   }
+
+  // Only write down circuit data at finest level
+  if(ef_circuit_model && level == parent->finestLevel()) writeCircuitFile(time);
 
   return dt;
 }

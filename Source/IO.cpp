@@ -1248,6 +1248,23 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
   }
 }
 
+void PeleC::writeCircuitFile(amrex::Real time){
+
+  // File only needs to be created on one level since data should be the same across all levels
+  // Should be called at finest level only
+
+  int step_num = parent->levelSteps(0);
+
+  if (amrex::ParallelDescriptor::IOProcessor()) {
+    std::string circuitFileName = "circuit.dat";
+
+    amrex::Real flux_current = (eleVoltage_ts[step_num] == 0) ? 0.0:disp_current / eleVoltage_ts[step_num];
+    std::ofstream CircuitFile;
+    CircuitFile.open(circuitFileName.c_str(), std::ios::out | std::ios::app);
+    CircuitFile << step_num << "\t" << time  << "\t" << sourceVoltage_ts[step_num]*1.0e-10 << "\t" << eleVoltage_ts[step_num]*1.0e-10 << "\t" << sourceCurrent_ts[step_num] << "\t" << eleCurrent_ts[step_num] << "\t" << incidentWave_ts[step_num]*1.0e-10  << "\t" << reflectedWave_ts[step_num]*1.0e-10  << "\t" << flux_current << "\t" << ef_circuit_capacitance*1.0e19 << std::endl;
+    CircuitFile.close();
+  }
+}
 
 void PeleC::monitorFileSetup(int i){
 
@@ -1280,5 +1297,16 @@ void PeleC::NLConvergenceFileSetup(int i){
     MonitorFile.open(monitorFileName.c_str(), std::ios::out);
     MonitorFile << "(1)step_num \t (2)time[s] \t (3)NL_iter \t (4)NL_ne_l2_resid \t (5)NL_phiV_l2_resid \t (6)lin_iter \t (7)lin_resid" << std::endl;
     MonitorFile.close();
+  }
+}
+
+void PeleC::circuitFileSetup(){
+
+  if (amrex::ParallelDescriptor::IOProcessor()) {
+    std::string circuitFileName = "circuit.dat";
+    std::ofstream CircuitFile;
+    CircuitFile.open(circuitFileName.c_str(), std::ios::out);
+    CircuitFile << "(1)step_num \t (2)time[s] \t (3)sourceVoltage(kV) \t (4)electronVoltage(kV) \t (5)sourceCurrent(C/s) \t (6)electronCurrent(C/s) \t (7)incidentWave(kV) \t (8)reflectedWave(kV) \t (9)flux_current(C/s) \t (10)gapCapacitance(pF)" << std::endl;
+    CircuitFile.close();
   }
 }
