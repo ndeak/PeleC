@@ -1118,7 +1118,7 @@ initialize_EB2(
 
       auto gshop = amrex::EB2::makeShop(allbox_IF);
       // amrex::EB2::Build(gshop, geom, max_level, max_level);
-      amrex::EB2::Build(gshop, geom, max_level+2, max_level+30);
+      amrex::EB2::Build(gshop, geom, max_level+3, max_level+30);
       // amrex::EB2::Build(gshop, geom, max_level+3, max_level+30);
   }
   else if (geom_type == "sandia_pins")

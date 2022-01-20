@@ -101,7 +101,7 @@ GMRESSolver::solve(MultiFab& a_sol,
                    const MultiFab& a_rhs,
                    amrex::Real a_abs_tol,
                    amrex::Real a_rel_tol,
-                   amrex::Real* lin_residuals)
+                   amrex::GpuArray<amrex::Real, 10000> lin_residuals)
 {
    BL_PROFILE("GMRESSolver::solve()");
 
@@ -157,7 +157,7 @@ GMRESSolver::prepareForSolve()
 }
 
 void
-GMRESSolver::one_restart(MultiFab& a_x, const MultiFab& a_rhs, amrex::Real* lin_residuals)
+GMRESSolver::one_restart(MultiFab& a_x, const MultiFab& a_rhs, amrex::GpuArray<amrex::Real, 10000> lin_residuals)
 {
    computeResidual(a_x,a_rhs,res);
 

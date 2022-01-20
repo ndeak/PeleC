@@ -54,6 +54,8 @@
   static amrex::GpuArray<amrex::Real, 20000>   sourceCurrent_ts;
   static amrex::GpuArray<amrex::Real, 20000>   eleCurrent_ts;
 
+  static amrex::GpuArray<amrex::Real, 10000>   lin_residuals;
+
   // Efield Poisson solve options
   static amrex::Real ef_PoissonTol;
   static int         ef_PoissonMaxOrder;
@@ -120,7 +122,6 @@
   // Temporary holders
   int                        PCLinOp_needUpdate; // Flag to update the preconditioner linear operators
   int                        PCMLMG_needUpdate;  // Flag to update the preconditioner MLMGs
-  amrex::Real*               lin_residuals;
   amrex::Real                nl_dt;
   amrex::Real                nl_stateNorm;
   amrex::Real                nl_residNorm;
@@ -136,7 +137,6 @@
   amrex::MultiFab*           elec_Ueff;
   amrex::MultiFab            gasN_cc;
   amrex::MultiFab            ionFlx_eb;
-  amrex::MultiFab            old_state_NL;
   amrex::MultiFab            tmp_nE_forcing;
   amrex::Real                disp_current = 0.0;
   amrex::Real                level_capacitance;     // Individual capacitance component of a given level

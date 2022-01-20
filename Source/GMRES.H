@@ -48,13 +48,13 @@ class GMRESSolver
                const amrex::MultiFab& rhs,
                amrex::Real a_abs_tol,
                amrex::Real a_rel_tol,
-               amrex::Real* lin_residuals);
+               amrex::GpuArray<amrex::Real, 10000> lin_residuals);
 
    private:
 
      void one_restart(amrex::MultiFab& a_x,
                       const amrex::MultiFab& a_rhs,
-                      amrex::Real* lin_residuals);
+                      amrex::GpuArray<amrex::Real, 10000> lin_residuals);
 
      void one_iter(const int iter, amrex::Real &resNorm);
 

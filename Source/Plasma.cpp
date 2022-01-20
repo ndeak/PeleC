@@ -129,7 +129,6 @@ void PeleC::plasma_define_data() {
       bg_charge.define(grids,dmap,1,1);
       ef_state_old.define(grids,dmap,2,2);
       gasN_cc.define(grids,dmap,1,1);
-      old_state_NL.define(grids,dmap,1,2,MFInfo(),Factory()); old_state_NL.setVal(0.0);
       tmp_nE_forcing.define(grids,dmap,1,2,MFInfo(),Factory()); tmp_nE_forcing.setVal(0.0);
 
       // Valgrind complained about unitialized values here
@@ -140,9 +139,6 @@ void PeleC::plasma_define_data() {
          const BoxArray& edgeba = getEdgeBoxArray(d);
          elec_Ueff[d].define(edgeba, dmap, 1, 1,MFInfo(),Factory());
       }
-
-      // Allocate the linear residuals array
-      lin_residuals = new Real[ef_GMRES_size*ef_GMRES_maxRst]{0.0};
 
       // Transport coefficients
       diff_e.define(this);

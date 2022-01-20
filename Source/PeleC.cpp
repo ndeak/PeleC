@@ -100,7 +100,7 @@ int PeleC::ef_PC_approx = 1;
 bool PeleC::def_harm_avg_cen2edge  = false;
 amrex::Real PeleC::ef_PoissonTol = 1.0e-7;
 amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
-amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0)*1.0e3;
+amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
 // amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
 // amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
 amrex::Real PeleC::ef_GMRES_reltol = 1.0e-4;
@@ -138,6 +138,8 @@ amrex::GpuArray<amrex::Real,20000> PeleC::sourceCurrent_ts;
 amrex::GpuArray<amrex::Real,20000> PeleC::eleCurrent_ts;
 amrex::GpuArray<amrex::Real,20000> PeleC::incidentWave_ts;
 amrex::GpuArray<amrex::Real,20000> PeleC::reflectedWave_ts;
+
+amrex::GpuArray<amrex::Real,10000> PeleC::lin_residuals;
 #endif
 
 #include "pelec_defaults.H"

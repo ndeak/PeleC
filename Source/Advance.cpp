@@ -204,15 +204,10 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve
-     amrex::MultiFab::Copy(old_state_NL, Sborder, PhiV+1,0,1,old_state_NL.nGrow());
      MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
      ef_solve_NL(dt,time,Sborder, molSrc,I_R,forcing_nE);
-
-     // Copy final redistributed forcing into temporary holder...
-     amrex::MultiFab::Copy(tmp_nE_forcing, molSrc, UFX+1,0,1,0);
   }
 #endif
-
 
   // Build other (neither spray nor diffusion) sources at t_old
   for (int n = 0; n < src_list.size(); ++n) {
@@ -261,7 +256,7 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   // TODO: re-evaluate efield based on * quantities
 #endif
-  if(ef_use_NLsolve) amrex::MultiFab::Copy(molSrc, tmp_nE_forcing, 0,UFX+1,1,0);
+  // if(ef_use_NLsolve) amrex::MultiFab::Copy(molSrc, tmp_nE_forcing, 0,UFX+1,1,0);
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
@@ -269,12 +264,8 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve
-     // /amrex::MultiFab::Copy(old_state_NL, Sborder, PhiV+1,0,1,old_state_NL.nGrow());
-     // MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
-     // ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);
-
-     // Copy final redistributed forcing into temporary holder...
-     amrex::MultiFab::Copy(tmp_nE_forcing, molSrc, UFX+1,0,1,0);
+     MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
+     ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);
   }
 #endif
 
@@ -327,8 +318,8 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Subtract(molSrc, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
-    // if (ef_use_NLsolve) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
-    if (ef_use_NLsolve) amrex::MultiFab::Copy(molSrc, tmp_nE_forcing, 0,FirstAux+1,1,0);
+    if (ef_use_NLsolve) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
+    // if (ef_use_NLsolve) amrex::MultiFab::Copy(molSrc, tmp_nE_forcing, 0,FirstAux+1,1,0);
 #endif
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
