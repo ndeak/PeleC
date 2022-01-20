@@ -76,6 +76,7 @@
   static amrex::Real ef_GMRES_reltol;          // Relarive tolerance of the GMRES solve
   static int         ef_GMRES_maxRst;          // Maximum number of GMRES restart
   static int         ef_GMRES_verbose;         // GMRES verbosity
+  static int         ef_time_order;            // Order of temporal discretization in coupled system (1 or 2)
 
   // Schur preconditioner options
   static amrex::Real ef_PC_MG_Tol;             // Preconditioner linear solver tolerance
@@ -134,6 +135,7 @@
   amrex::MultiFab            ef_state_old;
   amrex::MultiFab            nl_state;
   amrex::MultiFab            nl_resid;
+  amrex::MultiFab            nl_F_old;        // F(U^n) (used for the nE component in the coupled system trapezoidal time integration)
   amrex::MultiFab*           elec_Ueff;
   amrex::MultiFab            gasN_cc;
   amrex::MultiFab            ionFlx_eb;
@@ -250,7 +252,8 @@
                      const amrex::MultiFab    &a_nl_state,
                            amrex::MultiFab    &a_nl_resid,
                            int                update_res_scaling = 0,
-                           int                update_precond = 0);
+                           int                update_precond = 0,
+                           int                evalF = 0);
 
   void ef_calcGradPhiV(const amrex::Real&       a_time,
                              amrex::MultiFab    &a_phiv,

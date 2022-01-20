@@ -59,6 +59,7 @@ PeleC::plasma_init()
     pp.query("GMRES_rel_tol",ef_GMRES_reltol);
     pp.query("GMRES_max_restart",ef_GMRES_maxRst);
     pp.query("GMRES_verbose",ef_GMRES_verbose);
+    pp.query("JFNK_time_order", ef_time_order);
 
     pp.query("Precond_MG_tol",ef_PC_MG_Tol);
     pp.query("Precond_fixedIter",ef_PC_fixedIter);
@@ -126,6 +127,7 @@ void PeleC::plasma_define_data() {
    if (ef_use_NLsolve) {
       nl_state.define(grids,dmap,2,2);
       nl_resid.define(grids,dmap,2,2);
+      nl_F_old.define(grids,dmap,2,2);
       bg_charge.define(grids,dmap,1,1);
       ef_state_old.define(grids,dmap,2,2);
       gasN_cc.define(grids,dmap,1,1);

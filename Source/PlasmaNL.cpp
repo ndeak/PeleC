@@ -139,6 +139,7 @@ void PeleC::ef_solve_NL(const Real     &dt,
    ef_normMF(nl_state,nl_stateNorm);
 
    // Initial NL residual: update residual scaling and preconditioner
+   if(ef_time_order > 1) ef_nlResidual( nl_dt, nl_state, nl_F_old, false, false, true );  // Save F(U^n) residual for trapezoidal time integration
    ef_nlResidual( nl_dt, nl_state, nl_resid, true, true );
    nl_resid.mult(-1.0,0,2,2);
    ef_normMF(nl_resid,nl_residNorm);
@@ -377,7 +378,8 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
                           const MultiFab  &a_nl_state,
                                 MultiFab  &a_nl_resid,
                                 int       update_res_scaling,
-                                int       update_precond){
+                                int       update_precond,
+                                int       evalF){
    BL_PROFILE("PC_EF::ef_nlResidual()");
 
    // Get the unscaled non-linear state
@@ -431,6 +433,7 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
       auto const& ne_diff  = diffnE.const_array(mfi);
       auto const& ne_adv   = advnE.const_array(mfi);
       auto const& ne_curr  = nE_a.const_array(mfi);
+      auto const& ne_F_old  = nl_F_old.array(mfi,1);
       auto const& ne_old   = ef_state_old.const_array(mfi,1);
       auto const& charge   = bg_charge.const_array(mfi);
       auto const& res_nE   = a_nl_resid.array(mfi,1);
@@ -440,18 +443,28 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
 #endif
       Real scalLap         = EFConst::eps0_cgs * EFConst::epsr / EFConst::elemCharge;
       amrex::ParallelFor(bx, [ne_curr,ne_old,lapPhiV,I_R_nE,ne_diff,ne_adv,charge,res_nE,res_phiV,
-                              dt_lcl,scalLap,do_react
+                              dt_lcl,scalLap,do_react,evalF, ne_F_old
 #ifdef PELEC_USE_EB
                               , flag_arr
 #endif
                                                       ]
       AMREX_GPU_DEVICE (int i, int j, int k) noexcept
       {    
-         // TODO: REMOVE FACTOR
-         res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * (ne_diff(i,j,k) + ne_adv(i,j,k) );
-         if (do_react) res_nE(i,j,k) += dt_lcl * I_R_nE(i,j,k);
-         res_phiV(i,j,k) = lapPhiV(i,j,k) * scalLap;
-         if(ef_noSpaceCharge == 0) res_phiV(i,j,k) += (-ne_curr(i,j,k) + charge(i,j,k));
+         if( evalF ){
+            // F(phi) not used in trapezoidal scheme (I_R not included since it is constant for a given NL solve)
+            res_nE(i,j,k) = dt_lcl * (ne_diff(i,j,k) + ne_adv(i,j,k) );
+         }
+         else{
+            if(ef_time_order > 1) {
+              res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + (dt_lcl/2.0) * ((ne_diff(i,j,k) + ne_adv(i,j,k)) + ne_F_old(i,j,k));
+            }
+            else{
+              res_nE(i,j,k) = ne_old(i,j,k) - ne_curr(i,j,k) + dt_lcl * (ne_diff(i,j,k) + ne_adv(i,j,k) );
+            }
+            if (do_react) res_nE(i,j,k) += dt_lcl * I_R_nE(i,j,k);
+            res_phiV(i,j,k) = lapPhiV(i,j,k) * scalLap;
+            if(ef_noSpaceCharge == 0) res_phiV(i,j,k) += (-ne_curr(i,j,k) + charge(i,j,k));
+         }
          // res_phiV(i,j,k) = 0.0;
          // res_nE(i,j,k) = 1.0e-15;
 #ifdef PELEC_USE_EB
@@ -484,8 +497,11 @@ void PeleC::ef_nlResidual(const Real      &dt_lcl,
       }
    }
 
-   a_nl_resid.mult(1.0/FnE_scale,1,1,1);
-   a_nl_resid.mult(1.0/FphiV_scale,0,1,1);
+   // Don't scale residual if we are just getting F(U^n) for trapezoidal time integration
+   if( evalF == 0){
+      a_nl_resid.mult(1.0/FnE_scale,1,1,1);
+      a_nl_resid.mult(1.0/FphiV_scale,0,1,1);
+   }
 
    // Update the preconditioner
    if ( update_precond ) {
@@ -838,11 +854,17 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && ( idx[0] >= edomain.bigEnd(0) ) );
                if (order == 1) {
                   xstate(i,j,k) = ef_edge_state_extdir(i,j,k,0,on_lo,on_hi,ne_arr,u);
-               } else if (order == 2) {
-                  bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
-                  bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
-                  xstate(i,j,k) = ef_edge_state_2ndO_extdir(i,j,k,0,on_lo,on_hi,extdir_or_ho_lo, extdir_or_ho_hi, 
-                                                            domain.smallEnd(0), domain.bigEnd(0), ne_arr,u);
+               } 
+               // else if (order == 2) {
+               //    bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
+               //    bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
+               //    xstate(i,j,k) = ef_edge_state_2ndO_extdir(i,j,k,0,on_lo,on_hi,extdir_or_ho_lo, extdir_or_ho_hi, 
+               //                                              domain.smallEnd(0), domain.bigEnd(0), ne_arr,u);
+               // }
+               else if (order == 2){
+                  // Try using AMReX-Hydro slope utilities instead
+                  
+    
                }
             });
          }

@@ -85,6 +85,7 @@ int PeleC::ef_GMRES_verbose = 0;
 int PeleC::ef_PoissonVerbose = 0;
 int PeleC::ef_PoissonMaxOrder = 2;
 int PeleC::ef_PoissonMaxIter = 100;
+int PeleC::ef_time_order = 1;
 int PeleC::ef_noSpaceCharge = 0;
 int PeleC::ef_constVoltage = 0;
 int PeleC::ef_do_drift = 1;
