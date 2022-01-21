@@ -1,3 +1,4 @@
 export AMREX_HOME=$WORK/amrex-combustion/amrex
 export PELE_PHYSICS_HOME=$WORK/forked_PelePhysics/PelePhysics
+export AMREX_HYDRO_HOME=$WORK/AMReX-Hydro
 module load gcc
