@@ -87,6 +87,7 @@ int PeleC::ef_PoissonMaxOrder = 2;
 int PeleC::ef_PoissonMaxIter = 100;
 int PeleC::ef_time_order = 1;
 int PeleC::ef_noSpaceCharge = 0;
+int PeleC::ef_star_update = 0;
 int PeleC::ef_constVoltage = 0;
 int PeleC::ef_do_drift = 1;
 int PeleC::ef_do_photoionization = 0;

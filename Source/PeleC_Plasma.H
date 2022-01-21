@@ -65,6 +65,7 @@
   static int         ef_constVoltage;         // Apply a constant voltage (no time variance)
   static int         ef_do_drift;             // Include drift processes for charged species
   static int         ef_do_photoionization;   // Include photoionization
+  static int         ef_star_update;         // Do update after just first start state (=1), and second star state (=2), neither (=0)
 
   // Non-linear solve options and variables
   static int         ef_use_PETSC_direct;      // Flag to trigger using PETSC direct solve

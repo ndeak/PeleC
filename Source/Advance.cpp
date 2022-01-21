@@ -112,6 +112,8 @@ PeleC::do_mol_advance(
   //   }
   // }
 
+  if(ef_circuit_model != 0 && ef_star_update > 0) amrex::Abort("Efield star-state update not currently compatible with circuit model");
+
   // Calculate the flux component of the displacement current (needs to be called at each level)
   if(ef_circuit_model != 0) ef_dispCurrent(S_old, KSpec_old, Efield, coeffs_old);
 
@@ -132,20 +134,6 @@ PeleC::do_mol_advance(
   // Compute PhiV
   const ProbParmDevice* lprobparm = d_prob_parm_device;
   solveEF( time, dt, *lprobparm );
-
-  // Print the potential to verify BCs
-  // for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-  //   const amrex::Box& tbox = mfi.tilebox();
-  //   int ng = Sborder.nGrow();
-  //   const amrex::Box gbox = amrex::grow(tbox, ng);
-  //   std::array<amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> E_edge_arr = {AMREX_D_DECL(Efield_edge[0]->array(mfi), Efield_edge[1]->array(mfi), Efield_edge[2]->array(mfi))} ;
-  //   for(int d=0; d<AMREX_SPACEDIM; d++){
-  //     amrex::ParallelFor(
-  //       tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //         printf("edge efield(%i, %i, %i, %i) = %.6e\n", i, j, k, d, E_edge_arr[d](i, j, k, 0));
-  //       });
-  //   }
-  // }
 
   amrex::Real mwt[NUM_SPECIES];
   auto eos = pele::physics::PhysicsType::eos();
@@ -251,6 +239,31 @@ PeleC::do_mol_advance(
     amrex::Print() << "... Computing MOL source term at t^{n+1} " << std::endl;
   }
 
+#ifdef PELEC_USE_PLASMA
+  if(ef_star_update >= 1){
+    setCurrVoltage(time+dt);
+
+    // Compute PhiV
+    solveEF( time+dt, dt, *lprobparm );
+
+    // Calculate the reduced electric field strength
+    FillPatch(*this, Sborder, ng, time, State_Type, 0, NVAR);
+    for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+       const amrex::Box& tbox = mfi.tilebox();
+       const amrex::Box gbox = amrex::grow(tbox, ng);
+       const auto Efab = Efield.array(mfi);
+       const auto redEfab = redEfield.array(mfi);
+       const auto Sfab = Sborder.array(mfi);
+       amrex::ParallelFor(
+         gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+           amrex::Real ndens = 0.0;
+           for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
+           redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
+         });
+    }
+  }
+#endif
+
   FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
   flux_factor = mol_iters > 1 ? 0 : 1;
 #ifdef PELEC_USE_PLASMA
@@ -299,6 +312,31 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
     if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
+#endif
+
+#ifdef PELEC_USE_PLASMA
+  if(ef_star_update >= 2){
+    setCurrVoltage(time+dt);
+
+    // Compute PhiV
+    solveEF( time+dt, dt, *lprobparm );
+
+    // Calculate the reduced electric field strength
+    FillPatch(*this, Sborder, ng, time, State_Type, 0, NVAR);
+    for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+       const amrex::Box& tbox = mfi.tilebox();
+       const amrex::Box gbox = amrex::grow(tbox, ng);
+       const auto Efab = Efield.array(mfi);
+       const auto redEfab = redEfield.array(mfi);
+       const auto Sfab = Sborder.array(mfi);
+       amrex::ParallelFor(
+         gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+           amrex::Real ndens = 0.0;
+           for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
+           redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
+         });
+    }
+  }
 #endif
 
     // // floor negative electron number density values after 2nd MOL update

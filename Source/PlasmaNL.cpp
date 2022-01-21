@@ -699,7 +699,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
    // TODO: Need to incorporate bulk velocity into function...
    // TODO: Assuming that appropriate values are already fill-patch'd... need to verify this is the case
    // FIXME: 2nd order not working - arrays need to be resized (expanded)
-   int order = 1;
+   int order = 2;
    // Get the face effective velocity
    // effVel = Umac - \mu_e * gradPhiVcurr
    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
@@ -846,7 +846,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
             const auto bc_lo = bcrec.lo(0);
             const auto bc_hi = bcrec.hi(0);
 
-            amrex::ParallelFor(xbx, [ne_arr,u,xstate,bc_lo,bc_hi,edomain,domain,order]
+            amrex::ParallelFor(xbx, [xbx,ne_arr,u,xstate,bc_lo,bc_hi,edomain,domain,order]
             AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
                int idx[3] = {i,j,k};
@@ -855,16 +855,11 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                if (order == 1) {
                   xstate(i,j,k) = ef_edge_state_extdir(i,j,k,0,on_lo,on_hi,ne_arr,u);
                } 
-               // else if (order == 2) {
-               //    bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
-               //    bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
-               //    xstate(i,j,k) = ef_edge_state_2ndO_extdir(i,j,k,0,on_lo,on_hi,extdir_or_ho_lo, extdir_or_ho_hi, 
-               //                                              domain.smallEnd(0), domain.bigEnd(0), ne_arr,u);
-               // }
-               else if (order == 2){
-                  // Try using AMReX-Hydro slope utilities instead
-                  
-    
+               else if (order == 2) {
+                  bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
+                  bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
+                  xstate(i,j,k) = ef_edge_state_2ndO_extdir(i,j,k,0,on_lo,on_hi,extdir_or_ho_lo, extdir_or_ho_hi, 
+                                                            domain.smallEnd(0), domain.bigEnd(0), ne_arr, u, xbx);
                }
             });
          }
@@ -875,7 +870,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
             const auto bc_lo = bcrec.lo(1);
             const auto bc_hi = bcrec.hi(1);
 
-            amrex::ParallelFor(ybx, [ne_arr,v,ystate,bc_lo,bc_hi,edomain,domain,order]
+            amrex::ParallelFor(ybx, [ybx,ne_arr,v,ystate,bc_lo,bc_hi,edomain,domain,order]
             AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
                int idx[3] = {i,j,k};
@@ -887,7 +882,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                   bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
                   bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
                   ystate(i,j,k) = ef_edge_state_2ndO_extdir(i,j,k,1,on_lo,on_hi,extdir_or_ho_lo, extdir_or_ho_hi,
-                                                            domain.smallEnd(1), domain.bigEnd(1),ne_arr,v);
+                                                            domain.smallEnd(1), domain.bigEnd(1),ne_arr,v,ybx);
                }
             });
          }
@@ -899,7 +894,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
             const auto bc_lo = bcrec.lo(2);
             const auto bc_hi = bcrec.hi(2);
 
-            amrex::ParallelFor(zbx, [ne_arr,w,zstate,bc_lo,bc_hi,edomain,domain,order]
+            amrex::ParallelFor(zbx, [zbx,ne_arr,w,zstate,bc_lo,bc_hi,edomain,domain,order]
             AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
                int idx[3] = {i,j,k};
@@ -911,7 +906,7 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                   bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
                   bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
                   zstate(i,j,k) = ef_edge_state_2ndO_extdir(i,j,k,2,on_lo,on_hi,extdir_or_ho_lo, extdir_or_ho_hi,
-                                                            domain.smallEnd(2), domain.bigEnd(2),ne_arr,w);
+                                                            domain.smallEnd(2), domain.bigEnd(2),ne_arr,w,zbx);
                }
             });
          }

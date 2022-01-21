@@ -50,6 +50,7 @@ PeleC::plasma_init()
     pp.query("sigmoid_pulse",ef_sigmoid_pulse);
     pp.query("do_drift",ef_do_drift);
     pp.query("do_photoionization", ef_do_photoionization);
+    pp.query("star_update", ef_star_update);
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);
@@ -805,6 +806,7 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
             if(zk_num[n] != 0){
               // Use the AMReX Hydro slope utilities to get cell-centered limited gradients 
               // TODO  We are ignoring EB for now, can be improved if necessary... (see AMReX-Hydro/Slopes/hydro_eb_slopes_3D_K.H)
+              // FIXME: indexing out around the edges when calling x/y/zslope functions
               dndx = amrex_calc_xslope(i,j,k,UFS+n,2,S_arr);
               dndx *= (1.0/dx[0]);
               dndy = amrex_calc_yslope(i,j,k,UFS+n,2,S_arr);
