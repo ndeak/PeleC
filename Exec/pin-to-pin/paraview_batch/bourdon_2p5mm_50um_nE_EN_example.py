@@ -1,3 +1,6 @@
+# Example paraview batch script that creates an image of electron number density and
+# reduced electric field, side by side. See NOTE locations for usage options
+
 # trace generated using paraview version 5.8.1
 #
 # To ensure correct image size when batch processing, please search 
@@ -9,6 +12,7 @@ from paraview.simple import *
 paraview.simple._DisableFirstRenderCameraReset()
 
 # create a new 'AMReX/BoxLib Grid Reader'
+# NOTE: Set your plotfile here
 plt03000 = AMReXBoxLibGridReader(FileNames=['/scratch1/04361/ndeak/pelec_data-6lev-0p27cfl-343K-1p3bar-parabolicPinsFP-50um-2p5mm-trapPulse-15kVanode-10nst-10fwhm-1e3init-SRD1old-scaling-Egradtag100-kossyiUpd-zeroCathBC/plt03000'])
 plt03000.EnableCaching = 0
 plt03000.Level = 1
@@ -16,13 +20,16 @@ plt03000.PointArrayStatus = []
 plt03000.CellArrayStatus = []
 
 # Properties modified on plt03000
+# NOTE: Control number of AMR levels loaded
 plt03000.Level = 7
+# NOTE: PeleC variables to be loaded in
 plt03000.CellArrayStatus = ['Efieldx', 'Efieldy', 'Efieldz', 'n(E)', 'vfrac']
 
 # get active view
 renderView1 = GetActiveViewOrCreate('RenderView')
 # uncomment following to set a specific view size
-renderView1.ViewSize = [1280, 1024]
+# NOTE: Set paraview domain resolution (horizontal x vertical, should match resolution for images generated at end)
+renderView1.ViewSize = [2048, 1792]
 
 # get layout
 layout1 = GetLayout()
@@ -693,7 +700,8 @@ slice1.HyperTreeGridSlicer.Offset = 0.0
 Hide3DWidgets(proxy=slice1.SliceType)
 
 # Properties modified on slice1.SliceType
-slice1.SliceType.Origin = [0.5, 0.875, 0.999]
+# NOTE: Change E/N the slice original and normal direction here
+slice1.SliceType.Origin = [0.5, 0.875, 1.0]
 slice1.SliceType.Normal = [0.0, 0.0, 1.0]
 
 # show data in view
@@ -1330,6 +1338,7 @@ renderView1.Update()
 eNTdPWF = GetOpacityTransferFunction('ENTd')
 
 # Apply a preset using its name. Note this may not work as expected when presets have duplicate names.
+# NOTE: Change E/N color palette here
 eNTdLUT.ApplyPreset('X Ray', True)
 
 # get color legend/bar for eNTdLUT in view renderView1
@@ -1343,7 +1352,7 @@ eNTdLUTColorBar.LabelColor = [0.0, 0.0, 0.0]
 reflect1 = Reflect(Input=calculator1)
 reflect1.Plane = 'X Min'
 reflect1.Center = 0.0
-reflect1.CopyInput = 1
+reflect1.CopyInput = 0
 reflect1.FlipAllInputArrays = 1
 
 # Properties modified on reflect1
@@ -2326,7 +2335,12 @@ nE1cm3PWF = GetOpacityTransferFunction('nE1cm3')
 nE1cm3LUT.MapControlPointsToLogSpace()
 
 # Properties modified on nE1cm3LUT
+# NOTE: Use log scale for n(E)
 nE1cm3LUT.UseLogScale = 1
+
+# Apply a preset using its name. Note this may not work as expected when presets have duplicate names.
+# NOTE: Change n(E) color palette here
+# nE1cm3LUT.ApplyPreset('X Ray', True)
 
 # get color legend/bar for nE1cm3LUT in view renderView1
 nE1cm3LUTColorBar = GetScalarBar(nE1cm3LUT, renderView1)
@@ -2339,18 +2353,22 @@ nE1cm3LUTColorBar.LabelColor = [0.0, 0.0, 0.0]
 SetActiveSource(reflect1)
 
 # Rescale transfer function
+# NOTE: Set color scale min/max values for E/N
 eNTdLUT.RescaleTransferFunction(0.0, 1200.0)
 
 # Rescale transfer function
+# NOTE: Set color scale min/max values for E/N
 eNTdPWF.RescaleTransferFunction(0.0, 1200.0)
 
 # set active source
 SetActiveSource(calculator2)
 
 # Rescale transfer function
+# NOTE: Set color scale min/max values for n(E)
 nE1cm3LUT.RescaleTransferFunction(100000000.0, 1e+15)
 
 # Rescale transfer function
+# NOTE: Set color scale min/max values for n(E)
 nE1cm3PWF.RescaleTransferFunction(100000000.0, 1e+15)
 
 # change scalar bar placement
@@ -2373,6 +2391,7 @@ renderView1.ResetCamera()
 renderView1.OrientationAxesVisibility = 0
 
 # change scalar bar placement
+# NOTE: move color bar around 
 eNTdLUTColorBar.Position = [0.12440758293838874, 0.25555555555555554]
 eNTdLUTColorBar.ScalarBarLength = 0.33000000000000007
 
@@ -2381,7 +2400,6 @@ eNTdLUTColorBar.Position = [0.113744075829384, 0.2185185185185185]
 eNTdLUTColorBar.ScalarBarLength = 0.3300000000000001
 
 # change scalar bar placement
-# eNTdLUTColorBar.Position = [0.12085308056872049, 0.21666666666666662]
 eNTdLUTColorBar.Position = [0.08, 0.21666666666666662]
 
 # current camera placement for renderView1
@@ -2390,10 +2408,12 @@ renderView1.CameraFocalPoint = [1.0, 0.875, 0.9995000064373016]
 renderView1.CameraParallelScale = 1.3287683206614924
 
 # save screenshot
-SaveScreenshot('/home1/04361/ndeak/bourdon_2p5mm_50um_nE_EN_colorscale.png', renderView1, ImageResolution=[1280, 1024],
+# NOTE: Set file name/location here, make sure resolution matches one at top
+SaveScreenshot('/home1/04361/ndeak/bourdon_2p5mm_50um_nE_EN_colorscale.png', renderView1, ImageResolution=[2048, 1792],
     FontScaling='Scale fonts proportionally',
     OverrideColorPalette='',
     StereoMode='No change',
+    # NOTE gray background = 0, transparent = 1
     TransparentBackground=1, 
     # PNG options
     CompressionLevel='5')
@@ -2405,16 +2425,28 @@ nE1cm3LUTColorBar.Position = [0.7808056872037915, 0.6907407407407407]
 eNTdLUTColorBar.Position = [0.7393364928909953, 0.14259259259259255]
 
 # current camera placement for renderView1
-renderView1.CameraPosition = [1.0, 0.875, 6.133466558764061]
-renderView1.CameraFocalPoint = [1.0739709821253483, 0.875, 1.3246191287031719]
-renderView1.CameraViewAngle = 5.438388625592417
+# renderView1.CameraPosition = [1.0, 0.875, 6.133466558764061]
+# renderView1.CameraFocalPoint = [1.0739709821253483, 0.875, 1.3246191287031719]
+# renderView1.CameraViewAngle = 5.438388625592417
+# renderView1.CameraParallelScale = 1.3287683206614924
+
+# current camera placement for renderView1
+# NOTE: Set x and y center coordinates for image (Position and Focal point should match?)
+# NOTE: z parameter for Position should be sightly greater than FocalPoint, or image wont appear
+renderView1.CameraPosition = [1.0, 0.875, 1.01]
+renderView1.CameraFocalPoint = [1.0, 0.875, 1.0]
+# NOTE: controls zoom (lower value -> more zoomed in, seems to range from 0->180)
+renderView1.CameraViewAngle = 174.0
+# NOTE: does not seem to change image at all...
 renderView1.CameraParallelScale = 1.3287683206614924
 
 # save screenshot
-SaveScreenshot('/home1/04361/ndeak/bourdon_2p5mm_50um_nE_EN_03000.png', renderView1, ImageResolution=[1280, 1024],
+# NOTE: Set file name/location here, make sure resolution matches one at top
+SaveScreenshot('/home1/04361/ndeak/bourdon_2p5mm_50um_nE_EN_03000.png', renderView1, ImageResolution=[2048, 1792],
     FontScaling='Scale fonts proportionally',
     OverrideColorPalette='',
     StereoMode='No change',
+    # NOTE gray background = 0, transparent = 1
     TransparentBackground=0, 
     # PNG options
     CompressionLevel='5')
