@@ -7,8 +7,8 @@ function extractStatus=pelecCreateMovie(linedir, moviedir, ndens, tip1, tip2)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Adding matlab pathways
-addpath('/work2/04361/ndeak/stampede2/matlab/'); rfmlpath;
-addpath('/work2/04361/ndeak/stampede2/plasmalib/matlab/');
+addpath('/home/ndeak/matlab/'); rfmlpath;
+%addpath('/work2/04361/ndeak/stampede2/plasmalib/matlab/');
 
 % Check to make sure that the extracted data folder actually exists.  Warn user if it doesn't.
 if ~isfolder(linedir)
@@ -33,15 +33,42 @@ vil.FrameRate = 1;
 vic = VideoWriter(MovieNameCathode);
 vic.FrameRate = 1;
 
-% Loop over each extracted data file
+% Create arrays for holding time series data
 filePattern = fullfile(linedir, '*.dat'); 
 plotFiles = dir(filePattern);
 headLocation = zeros(length(plotFiles), 2);
 maxETS = zeros(length(plotFiles), 2);
 maxENTS = zeros(length(plotFiles), 2);
-sheathLength = zeros(length(plotFiles), 2);
+sheathLocation = zeros(length(plotFiles), 2);
 voltageDrop = zeros(length(plotFiles), 2);
+
+% Holders for single point metrics
+% Tracking 3 metrics for ignition time to see if there is noticeable difference
+ign_peak_EN_value = 0.0;
+ign_zero_slope_time = 0.0;
+ign_max_EN_time = 0.0;
+ign_head_displacement_time = 0.0;
+
+% Calculate connection time as max gradient of EN_peak
+conn_max_slope_time = 0.0;
+conn_max_slope_value = 0.0;
+prev_time = 0.0;
+dt = 0.0;
+
+% Use the head location at connection time for avg propagation speed
+conn_head_loc = 0.0;
+avg_streamer_speed = 0.0;
+
+% Tracking two metrics for channel electron number density/charge (calculated at connection time)
+channel_nE_avg = 0.0;
+channel_chrg_avg = 0.0;
+
+channel_nE_fixed_loc = 0.0;
+channel_chrg_fixed_loc = 0.0;
+
 open(vi);
+
+% Loop over each extracted data file
 for k = 1 : length(plotFiles)
     baseFileName = plotFiles(k).name;
     fullFileName = fullfile(plotFiles(k).folder, baseFileName);
@@ -136,12 +163,49 @@ for k = 1 : length(plotFiles)
         maxETSval = ENData(i) * 1.0e-17 * ndens * 1.0e-3;   % Convert Td -> V-cm2 -> V/cm -> kV/cm
       end
     end    
-    headLocation(k,1) = currTime*tref;
-    headLocation(k,2) = 10.0*abs(tip2 - maxLoc);
-    maxETS(k,1) = currTime*tref;
+    headLocation(k,1) = currTime*tref;			% s -> ns
+    headLocation(k,2) = 10.0*abs(tip2 - maxLoc);	% cm -> mm
+    maxETS(k,1) = currTime*tref;			% s -> ns
     maxETS(k,2) = maxETSval;
-    maxENTS(k,1) = currTime*tref;
+    maxENTS(k,1) = currTime*tref;			% s ->ns
     maxENTS(k,2) = maxEN;
+
+    if (maxEN >= ign_peak_EN_value)
+      ign_peak_EN_value = maxEN;	
+      % Can use peak EN time as ignition time
+      ign_max_EN_time = currTime*tref;    % ns
+    end
+  
+    if (maxEN < ign_peak_EN_value && ign_zero_slope_time == 0.0)
+      % Decrease in peak EN found, could signal streamer ignition
+      ign_zero_slope_time = currTime*tref;    % ns
+    end
+
+    % Or use streamer head location to signal ignition instead
+    if( headLocation(k,2) >= 10.0*abs(tip2-tip1)*0.02 && ign_head_displacement_time == 0.0 )
+      ign_head_displacement_time = currTime*tref;   % ns
+    end
+
+    % Streamer connection time determined from peak streamer head gradient
+    dt = currTime*tref - prev_time;
+    if( k > 1 && abs((headLocation(k,2) -headLocation(k-1,2))/dt) >= conn_max_slope_value )
+      conn_max_slope_value = abs((headLocation(k,2) -headLocation(k-1,2))/dt);
+      conn_max_slope_time = currTime * tref;    % ns
+      conn_head_loc = headLocation(k,2);
+
+      % Calculate the average streamer head speed
+      avg_streamer_speed = 1.0e8 * headLocation(k,2) / (conn_max_slope_time - ign_max_EN_time);   % cm/s
+
+      % Also calculate average electron number density and charge 
+      channel_nE_avg = trapz(lineData(:,1), abs(lineData(:,2))) / (tip2-tip1);      % 1/cm3
+      channel_chrg_avg = trapz(lineData(:,1), charge) / (tip2-tip1);        % C/cm3
+
+      % And the electron number density + charge density at a set point (say gap/4 dist away from anode)
+      fixed_location = tip2 - abs(tip2-tip1)*0.2;
+      [diff_value fixed_idx] = min(abs(lineData(:,1) - fixed_location));
+      channel_nE_fixed_loc = lineData(fixed_idx,2);
+      channel_chrg_fixed_loc = charge(fixed_idx);
+    end
 
     % Find the length of the cathode sheath defined as the first point, starting from 
     % the cathode, where the electron number density surpasses half the postive ion density
@@ -157,6 +221,8 @@ for k = 1 : length(plotFiles)
     end
     sheathLocation(k,1) = currTime*tref;
     voltageDrop(k,1) = currTime*tref;
+
+    prev_time = currTime*tref;
 end
 close(vi);
 
@@ -213,6 +279,11 @@ saveas(gcf, plotName)
 CathVoltName = strcat(moviedir, "cathode_sheath_voltage.dat");
 T = table(sheathLocation(:,1), sheathLocation(:,2), voltageDrop(:,2), 'VariableNames', { 't(ns)', 'sheath_length(mm)', 'voltage_drop(kV)'} );
 writetable(T, CathVoltName,'Delimiter','\t');
+
+% Output single point metrics
+singleMetrics = strcat(moviedir, "single_point_metrics.dat");
+metrics = table(ign_zero_slope_time, ign_max_EN_time, ign_head_displacement_time, conn_max_slope_time, avg_streamer_speed, channel_nE_avg, channel_chrg_avg, channel_nE_fixed_loc, channel_chrg_fixed_loc, 'VariableNames', { 'tig_zero_grad(ns)', 'tig_max_EN(ns)', 'tig_head_disp(ns)', 'tconn(ns)', 's_avg(cm/s)', 'nE_avg(1/cm3)', 'chrg_avg(C/cm3)', 'nE_fixed(1/cm3)', 'chrg_fixed(C/cm3)'});
+writetable(metrics, singleMetrics,'Delimiter','\t');
 
 % Plot linear scale if needed
 open(vil);
