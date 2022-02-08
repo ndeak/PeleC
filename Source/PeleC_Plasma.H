@@ -26,6 +26,9 @@
   static int         ef_triangle_pulse;                     // Use a triangular pulse with pulse_fwhm rise time?
   static int         ef_trapezoidal_pulse;                  // Use a trapezoidal pulse with pulse_fwhm/2.0 rise time, and pulse_fwhm plateau?
   static int         ef_sigmoid_pulse;                      // Use a sigmoid pulse with pulse_fwhm/2.0 rise time, and pulse_fwhm plateau?
+  static amrex::Real ef_pulse_delay;                        // Delay time for sigmoid pulse profile (s)
+  static amrex::Real ef_pulse_rise;                         // Rise time for the sigmoid pulse profile (s)
+  static amrex::Real ef_pulse_plateau;                       // Plateau time for the sigmoid pulse profile (s)
   static amrex::Real pulse_sigma;     
   static amrex::Real curr_voltage;                          // Voltage at time t=n (erg/C)
   static amrex::Real dfact;
@@ -37,6 +40,9 @@
   static amrex::Real ef_eleMobility;                         // (Normalized) constant electron mobility mu*N (1/V-m-s)  
   static amrex::Real ef_eleDiffusivity;                      // (Normalized) constant electron diffusivity De*N (1/m-s)  
 
+  // Plotting options
+  static bool plot_numdens;                                   // Plot number densities?
+  
   // Circuit model options
   static int         ef_circuit_model;                         // Set to 0 for no circuit model, 1 for simple model
   static amrex::Real ef_circuit_time_delay;                           // Time taken for signal to cross transmission line (s)

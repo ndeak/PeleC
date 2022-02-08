@@ -48,6 +48,9 @@ PeleC::plasma_init()
     pp.query("triangle_pulse",ef_triangle_pulse);
     pp.query("trapezoidal_pulse",ef_trapezoidal_pulse);
     pp.query("sigmoid_pulse",ef_sigmoid_pulse);
+    pp.query("pulse_delay",ef_pulse_delay);
+    pp.query("pulse_rise",ef_pulse_rise);
+    pp.query("pulse_plateau",ef_pulse_plateau);
     pp.query("do_drift",ef_do_drift);
     pp.query("do_photoionization", ef_do_photoionization);
     pp.query("star_update", ef_star_update);
@@ -70,6 +73,8 @@ PeleC::plasma_init()
     pp.query("constEleTransport", ef_constEleTransport);
     pp.query("eleMobility", ef_eleMobility);
     pp.query("eleDiffusivity", ef_eleDiffusivity);
+
+    pp.query("plot_numdens", plot_numdens);
 
     pp.query("circuit_model", ef_circuit_model);
     pp.query("circuit_time_delay", ef_circuit_time_delay);
@@ -714,12 +719,9 @@ amrex::Real PeleC::getCurrVoltage(Real time) {
     }
   }
   else if(ef_sigmoid_pulse == 1){
-    amrex::Real pulse_delta = 3.0e-9;
-    amrex::Real pulse_tr = pulse_fwhm/2.0;
-    amrex::Real pulse_lambda = 8.0 / pulse_tr;
-    amrex::Real pulse_plateau = 12.0e-9;
-    amrex::Real pulse_t1 = time - pulse_delta;
-    amrex::Real pulse_t2 = time - pulse_delta - pulse_plateau - pulse_tr; 
+    amrex::Real pulse_lambda = 8.0 / ef_pulse_rise;
+    amrex::Real pulse_t1 = time - ef_pulse_delay;
+    amrex::Real pulse_t2 = time - ef_pulse_delay - ef_pulse_plateau - ef_pulse_rise; 
     curr_voltage = pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
   }
   else{

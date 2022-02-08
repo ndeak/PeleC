@@ -405,6 +405,14 @@ PeleC::setPlotVariables()
     amrex::Amr::deleteDerivePlotVar("massfrac");
   }
 
+#ifdef PELEC_USE_PLASMA
+  if (plot_numdens) {
+    amrex::Amr::addDerivePlotVar("numdens");
+  } else {
+    amrex::Amr::deleteDerivePlotVar("numdens");
+  }
+#endif
+
   bool plot_moleFrac = false;
   pp.query("plot_molefrac", plot_moleFrac);
   if (plot_moleFrac) {

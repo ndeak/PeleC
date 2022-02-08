@@ -98,6 +98,9 @@ int PeleC::ef_do_photoionization = 0;
 int PeleC::ef_triangle_pulse = 0;
 int PeleC::ef_trapezoidal_pulse = 0;
 int PeleC::ef_sigmoid_pulse = 0;
+amrex::Real PeleC::ef_pulse_delay = 3.0e-9;
+amrex::Real PeleC::ef_pulse_rise = 5.0e-9;
+amrex::Real PeleC::ef_pulse_plateau = 12.0e-9;
 int PeleC::ion_bc_type = 0;
 int PeleC::zero_bc_flux = 0;
 int PeleC::zero_bc_grad = 0;
@@ -127,6 +130,8 @@ bool PeleC::pac_mechanism = false;
 int PeleC::ef_constEleTransport = 0;
 amrex::Real PeleC::ef_eleMobility = 0.0;
 amrex::Real PeleC::ef_eleDiffusivity = 0.0;
+
+bool PeleC::plot_numdens = true;
 
 int PeleC::ef_circuit_model = 0;
 amrex::Real PeleC::ef_circuit_time_delay = 25.0e-9;
