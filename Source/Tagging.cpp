@@ -53,6 +53,8 @@ PeleC::read_tagging_params()
   pp.query("max_efieldgrad_lev", tagging_parm->max_efieldgrad_lev);
 
   pp.query("plasma_channel_lev", tagging_parm->plasma_channel_lev);
+  pp.query("plasma_channel_top", tagging_parm->plasma_channel_top);
+  pp.query("plasma_channel_bottom", tagging_parm->plasma_channel_bottom);
   pp.query("pin_tip_lev", tagging_parm->pin_tip_lev);
 #endif
 }

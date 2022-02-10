@@ -2005,8 +2005,10 @@ PeleC::errorEst(
             amrex::Real x = problo[0] + (i + 0.5)*dx[0];
             amrex::Real y = problo[1] + (j + 0.5)*dx[1];
             amrex::Real z = problo[2] + (k + 0.5)*dx[2];
+            amrex::Real pchannel_top = tagging_parm->plasma_channel_top;
+            amrex::Real pchannel_bottom = tagging_parm->plasma_channel_bottom;
             tag_plasma_channel(
-              i, j, k, x, y, z, tag_arr, tagval);
+              i, j, k, x, y, z, pchannel_top, pchannel_bottom, tag_arr, tagval);
           });
       }
 

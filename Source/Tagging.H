@@ -52,6 +52,8 @@ struct TaggingParm
   int max_efieldgrad_lev = 10;
 
   int plasma_channel_lev = 0;
+  amrex::Real plasma_channel_top = 0.0;
+  amrex::Real plasma_channel_bottom = 0.0;
 
   int pin_tip_lev = 0;
 #endif
@@ -155,12 +157,14 @@ tag_plasma_channel(
   amrex::Real x,
   amrex::Real y,
   amrex::Real z, 
+  amrex::Real channel_top,
+  amrex::Real channel_bottom,
   amrex::Array4<char> const& tag,
   char tagval) noexcept
 {
-  // Tag in central pin to pin region (hard code for time being)
+  // Tag in central pin to pin region (FIXME: hard code radius for time being...)
   amrex::Real r = sqrt((x-1.0)*(x-1.0) + (z-1.0)*(z-1.0));
-  if (r < 0.1 && y > 0.75 && y < 1.0)
+  if (r < 0.1 && y > channel_bottom && y < channel_top)
   {
     tag(i, j, k) = tagval;
   }
