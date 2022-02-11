@@ -141,7 +141,7 @@ PeleC::do_mol_advance(
   int ng = Sborder.nGrow();
 
   // Calculate the reduced electric field strength
-  FillPatch(*this, Sborder, ng, time, State_Type, 0, NVAR);
+  FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
   for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
      const amrex::Box& tbox = mfi.tilebox();
      const amrex::Box gbox = amrex::grow(tbox, ng);
@@ -160,7 +160,6 @@ PeleC::do_mol_advance(
   if(ef_do_photoionization){
     solvePI( time, dt, *lprobparm );
   }
-
 #endif
 
   // Compute S^{n} = MOLRhs(U^{n})
@@ -169,7 +168,9 @@ PeleC::do_mol_advance(
   }
 
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
+#ifndef PELEC_USE_PLASMA
   FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
+#endif
   amrex::Real flux_factor = 0;
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
@@ -247,7 +248,7 @@ PeleC::do_mol_advance(
     solveEF( time+dt, dt, *lprobparm );
 
     // Calculate the reduced electric field strength
-    FillPatch(*this, Sborder, ng, time, State_Type, 0, NVAR);
+    FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
     for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
        const amrex::Box& tbox = mfi.tilebox();
        const amrex::Box gbox = amrex::grow(tbox, ng);
@@ -264,12 +265,10 @@ PeleC::do_mol_advance(
   }
 #endif
 
+#ifndef PELEC_USE_PLASMA
   FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
-  flux_factor = mol_iters > 1 ? 0 : 1;
-#ifdef PELEC_USE_PLASMA
-  // TODO: re-evaluate efield based on * quantities
 #endif
-  // if(ef_use_NLsolve) amrex::MultiFab::Copy(molSrc, tmp_nE_forcing, 0,UFX+1,1,0);
+  flux_factor = mol_iters > 1 ? 0 : 1;
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
@@ -321,8 +320,10 @@ PeleC::do_mol_advance(
     // Compute PhiV
     solveEF( time+dt, dt, *lprobparm );
 
+  // Need FillPatch'd Sborders array with U^** data for E/N update and in coupled system
+  
+    FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
     // Calculate the reduced electric field strength
-    FillPatch(*this, Sborder, ng, time, State_Type, 0, NVAR);
     for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
        const amrex::Box& tbox = mfi.tilebox();
        const amrex::Box gbox = amrex::grow(tbox, ng);
@@ -339,16 +340,6 @@ PeleC::do_mol_advance(
   }
 #endif
 
-    // // floor negative electron number density values after 2nd MOL update
-    // for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-    //    const amrex::Box& tbox = mfi.tilebox();
-    //    const auto Sfab = S_new.array(mfi);
-    //    amrex::ParallelFor(
-    //      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    //        if(Sfab(i,j,k,UFS+E_ID) < 0.0) Sfab(i,j,k,UFS+E_ID) = 1.0e-35;
-    //      });
-    // }
-
     // F_{AD} = (1/dt)(U^{n+1,**} - U^n) - I_R = 0.5*(S^{n}+S^{n+1}(which is a
     // guess!))
     amrex::MultiFab::LinComb(
@@ -357,7 +348,6 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
     if (ef_use_NLsolve) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
-    // if (ef_use_NLsolve) amrex::MultiFab::Copy(molSrc, tmp_nE_forcing, 0,FirstAux+1,1,0);
 #endif
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)

@@ -84,6 +84,8 @@
   static int         ef_GMRES_maxRst;          // Maximum number of GMRES restart
   static int         ef_GMRES_verbose;         // GMRES verbosity
   static int         ef_time_order;            // Order of temporal discretization in coupled system (1 or 2)
+  static int         ef_space_order;           // Order of spatial discretization for the advective operator in coupled system (1 or 2)
+  static int         ef_pred_charge;           // Use ion MOLSrc and I_R to predict charge at time n+1 in the coupled system
 
   // Schur preconditioner options
   static amrex::Real ef_PC_MG_Tol;             // Preconditioner linear solver tolerance
@@ -143,6 +145,7 @@
   amrex::MultiFab            nl_state;
   amrex::MultiFab            nl_resid;
   amrex::MultiFab            nl_F_old;        // F(U^n) (used for the nE component in the coupled system trapezoidal time integration)
+  amrex::MultiFab            nl_nE_2ndo_slopes;
   amrex::MultiFab*           elec_Ueff;
   amrex::MultiFab            gasN_cc;
   amrex::MultiFab            ionFlx_eb;
