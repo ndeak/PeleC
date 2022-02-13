@@ -265,9 +265,7 @@ PeleC::do_mol_advance(
   }
 #endif
 
-#ifndef PELEC_USE_PLASMA
   FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
-#endif
   flux_factor = mol_iters > 1 ? 0 : 1;
   if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
