@@ -806,7 +806,13 @@ void PeleC::compElecAdvection(MultiFab &a_ne,
                int idx[3] = {i,j,k};
                bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
                bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
-               slope_ar(i,j,k) = amrex_calc_xslope_extdir(i,j,k,0,order,ne_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir));
+               if(dir == 0){
+                  slope_ar(i,j,k) = amrex_calc_xslope_extdir(i,j,k,0,order,ne_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir));
+               } else if (dir == 1){
+                  slope_ar(i,j,k) = amrex_calc_yslope_extdir(i,j,k,0,order,ne_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir));
+               } else{
+                  slope_ar(i,j,k) = amrex_calc_zslope_extdir(i,j,k,0,order,ne_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir));
+               } 
             });
          }
       }
