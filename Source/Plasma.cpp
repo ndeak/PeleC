@@ -667,12 +667,9 @@ void PeleC::setCurrVoltage(Real time) {
     }
   }
   else if(ef_sigmoid_pulse == 1){
-    amrex::Real pulse_delta = 3.0e-9;
-    amrex::Real pulse_tr = pulse_fwhm/2.0;
-    amrex::Real pulse_lambda = 8.0 / pulse_tr;
-    amrex::Real pulse_plateau = 12.0e-9;
-    amrex::Real pulse_t1 = time - pulse_delta;
-    amrex::Real pulse_t2 = time - pulse_delta - pulse_plateau - pulse_tr; 
+    amrex::Real pulse_lambda = 8.0 / ef_pulse_rise;
+    amrex::Real pulse_t1 = time - ef_pulse_delay;
+    amrex::Real pulse_t2 = time - ef_pulse_delay - ef_pulse_plateau - ef_pulse_rise;
     curr_voltage = pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
   }
   else{
