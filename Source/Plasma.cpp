@@ -83,6 +83,7 @@ PeleC::plasma_init()
     pp.query("circuit_impedance", ef_circuit_impedance);
     pp.query("circuit_upstream_resistance", ef_circuit_upstream_resistance);
     pp.query("circuit_capacitance", ef_circuit_capacitance);
+    pp.query("circuit_load_data", ef_circuit_load_data);
 
     // get charge per unit mass (C/g) CGS
     Real zk_temp[NUM_SPECIES] = {0.0};
@@ -97,8 +98,8 @@ PeleC::plasma_init()
 
    // Allocate time series arrays for circuit modeling
    if(ef_circuit_model){
-     // Assuming electrode voltage at time t=0 is 0
-     eleVoltage_ts[0] = 0.0;
+      // Assuming electrode voltage at time t=0 is 0
+      eleVoltage_ts[0] = 0.0;
    }
 }
 
@@ -126,26 +127,30 @@ void PeleC::plasma_define_data() {
    ionFlx_eb.define(grids,dmap,1,numGrow()); ionFlx_eb.setVal(0.0);      // EB ion fluxes - a bit inefficient to store as full MF
    PI_source.define(grids, dmap, 4, 1, amrex::MFInfo(), Factory()); PI_source.setVal(0.0);
    dielectric_ts.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); dielectric_ts.setVal(1.0);
-   disp_current_mf.define(grids, dmap, 1, 0, amrex::MFInfo(), Factory()); disp_current_mf.setVal(0.0);
+   disp_current_mf.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); disp_current_mf.setVal(0.0);
 
    // Intermediate MFs used in transport coef. calculations for NL system
    Ke_cc_mf.define(grids,dmap,1,numGrow(), amrex::MFInfo(), Factory()); Ke_cc_mf.setVal(0.0);
    De_cc_mf.define(grids,dmap,1,numGrow(), amrex::MFInfo(), Factory()); De_cc_mf.setVal(0.0);
 
+   if(ef_circuit_model) {
+      spec_2ndo_gradients.define(grids,dmap,3*NUM_SPECIES,2); spec_2ndo_gradients.setVal(0.0);
+   }
+
    if (ef_use_NLsolve) {
       nl_state.define(grids,dmap,2,2);
       nl_resid.define(grids,dmap,2,2);
       nl_F_old.define(grids,dmap,2,2);
-      nl_nE_2ndo_slopes.define(grids, dmap, 3, 2); nl_nE_2ndo_slopes.setVal(0.0);
       bg_charge.define(grids,dmap,1,1);
       ef_state_old.define(grids,dmap,2,2);
       gasN_cc.define(grids,dmap,1,1);
       tmp_nE_forcing.define(grids,dmap,1,2,MFInfo(),Factory()); tmp_nE_forcing.setVal(0.0);
+      nl_nE_2ndo_slopes.define(grids, dmap, 3, 2); nl_nE_2ndo_slopes.setVal(0.0);
 
-      // Valgrind complained about unitialized values here
-      // if (elec_Ueff != 0) delete [] elec_Ueff;
+      // FIXME: Valgrind complained about unitialized values here, but turning off leads to leak
+//       if (elec_Ueff != 0) delete [] elec_Ueff;
 
-      elec_Ueff = new MultiFab[AMREX_SPACEDIM];
+      // elec_Ueff = new MultiFab[AMREX_SPACEDIM];
       for (int d = 0; d < AMREX_SPACEDIM; ++d) {
          const BoxArray& edgeba = getEdgeBoxArray(d);
          elec_Ueff[d].define(edgeba, dmap, 1, 1,MFInfo(),Factory());
@@ -168,8 +173,6 @@ void PeleC::plasma_define_data() {
          ionFlx[d]->setVal(0.0);
       }
    }
-
-
 }
 
 void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
@@ -667,12 +670,9 @@ void PeleC::setCurrVoltage(Real time) {
     }
   }
   else if(ef_sigmoid_pulse == 1){
-    amrex::Real pulse_delta = 3.0e-9;
-    amrex::Real pulse_tr = pulse_fwhm/2.0;
-    amrex::Real pulse_lambda = 8.0 / pulse_tr;
-    amrex::Real pulse_plateau = 12.0e-9;
-    amrex::Real pulse_t1 = time - pulse_delta;
-    amrex::Real pulse_t2 = time - pulse_delta - pulse_plateau - pulse_tr; 
+    amrex::Real pulse_lambda = 8.0 / ef_pulse_rise;
+    amrex::Real pulse_t1 = time - ef_pulse_delay;
+    amrex::Real pulse_t2 = time - ef_pulse_delay - ef_pulse_plateau - ef_pulse_rise;
     curr_voltage = pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
   }
   else{
@@ -750,11 +750,12 @@ void PeleC::ef_circuitModel(amrex::Real time, amrex::Real dt){
   ef_voltagesCurrents(time, dt);
 
   // Propagate results down to coarser levels
+  // Is this needed?
   int lidx = 0;
-  int step_num = parent->levelSteps(0);
+  int step_num = parent->levelSteps(0) + ef_circuit_load_num - 1;
   while(lidx < parent->finestLevel()) {
     auto& crselev = getLevel(lidx);
-    crselev.setCircuitValues(step_num, time_ts[step_num], sourceVoltage_ts[step_num], 
+    crselev.setCircuitValues(step_num+1, time_ts[step_num], sourceVoltage_ts[step_num], 
                              eleVoltage_ts[step_num + 1], sourceCurrent_ts[step_num], 
                              eleCurrent_ts[step_num], incidentWave_ts[step_num], 
                              reflectedWave_ts[step_num]);
@@ -765,7 +766,7 @@ void PeleC::ef_circuitModel(amrex::Real time, amrex::Real dt){
 void PeleC::ef_waveVoltageSources(amrex::Real time){
 
   // Get the current step number
-  int step_num = parent->levelSteps(0);
+  int step_num = parent->levelSteps(0) + ef_circuit_load_num - 1;
 
   // Fill in the time array
   time_ts[step_num] = time;
@@ -793,8 +794,43 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
   eos.molecular_weight(mwt);   // CGS
   amrex::Real fluxE_x, fluxE_y, fluxE_z;
   amrex::Real flux_component;
-  amrex::Real dndx, dndy, dndz;
   const Real* dx = geom.CellSize();
+  const Box& domain = geom.Domain();
+  const BCRec& bcrec = get_desc_lst()[State_Type].getBC(PhiV);
+
+  // First, loop over all interior cells + 1 ghost cell to fill second order derivative values
+  // Assuming that state array passed in has already been FillPatch'd
+  for (int dir = 0; dir < AMREX_SPACEDIM; dir++)
+  {
+     const auto bc_lo = bcrec.lo(dir);
+     const auto bc_hi = bcrec.hi(dir);
+#ifdef _OPENMP
+#pragma omp parallel if (Gpu::notInLaunchRegion())
+#endif
+     for (MFIter mfi(spec_2ndo_gradients,TilingIfNotGPU()); mfi.isValid(); ++mfi)
+     {
+        const Box& ebx = mfi.tilebox();
+        const Box& gbx = mfi.growntilebox(1);
+        const auto spec_ar = state_curr.const_array(mfi,UFS);
+        const auto grad_ar = spec_2ndo_gradients.array(mfi,dir);
+        amrex::ParallelFor(ebx,
+        [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
+        {
+           int idx[3] = {i,j,k};
+           bool extdir_or_ho_lo = ( bc_lo == amrex::BCType::ext_dir ) || ( bc_lo == amrex::BCType::hoextrap );
+           bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
+           for(int n = 0; n < NUM_SPECIES; n++){
+              if(dir == 0){
+                grad_ar(i,j,k,3*n) = amrex_calc_xslope_extdir(i,j,k,n,2,spec_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir)) / dx[dir];
+              } else if (dir == 1){
+                grad_ar(i,j,k,3*n) = amrex_calc_yslope_extdir(i,j,k,n,2,spec_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir)) / dx[dir];
+              } else {
+                grad_ar(i,j,k,3*n) = amrex_calc_zslope_extdir(i,j,k,n,2,spec_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir)) / dx[dir];
+              }
+           }
+        });
+     }
+  }
 
   for (amrex::MFIter mfi(disp_current_mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& tbox = mfi.tilebox();
@@ -802,31 +838,21 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
       auto const& S_arr = state_curr.array(mfi);
       auto const& E_cc = E_curr.array(mfi);
       auto const& K_cc = KSpec_old.array(mfi);
+      auto const& grad_ar = spec_2ndo_gradients.array(mfi);
       auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
       amrex::ParallelFor(
-        tbox, [=,&fluxE_x, &fluxE_y, &fluxE_z, &dndx, &dndy, &dndz, &flux_component] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        tbox, [=,&fluxE_x, &fluxE_y, &fluxE_z, &flux_component] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
           // Calculate the current due to charged species fluxes
           flux_component = 0.0;
           for(int n = 0; n<NUM_SPECIES; n++){
             if(zk_num[n] != 0){
-              // Use the AMReX Hydro slope utilities to get cell-centered limited gradients 
-              // TODO  We are ignoring EB for now, can be improved if necessary... (see AMReX-Hydro/Slopes/hydro_eb_slopes_3D_K.H)
-              // FIXME: indexing out around the edges when calling x/y/zslope functions
-              dndx = amrex_calc_xslope(i,j,k,UFS+n,2,S_arr);
-              dndx *= (1.0/dx[0]);
-              dndy = amrex_calc_yslope(i,j,k,UFS+n,2,S_arr);
-              dndy *= (1.0/dx[1]);
-              dndz = amrex_calc_zslope(i,j,k,UFS+n,2,S_arr);
-              dndz *= (1.0/dx[2]);
-
-
               // Flux dot Efield components (g-erg/cm3-C-s)
               fluxE_x = zk_num[n] * ( (E_cc(i,j,k,0) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMX)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) 
-                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndx ) * E_cc(i,j,k,0);
+                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*grad_ar(i,j,k,3*n + 0) ) * E_cc(i,j,k,0);
               fluxE_y = zk_num[n] * ( (E_cc(i,j,k,1) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMY)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) 
-                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndy ) * E_cc(i,j,k,1);
+                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*grad_ar(i,j,k,3*n + 1) ) * E_cc(i,j,k,1);
               fluxE_z = zk_num[n] * ( (E_cc(i,j,k,2) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMZ)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) 
-                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*dndz ) * E_cc(i,j,k,2);
+                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*grad_ar(i,j,k,3*n+2) ) * E_cc(i,j,k,2);
       
               // Calculate the total flux contribution (erg/cm3-s)
               flux_component += EFConst::elemCharge * (fluxE_x + fluxE_x + fluxE_x) * ( EFConst::Na / mwt[n]);
@@ -867,13 +893,12 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
 void PeleC::ef_voltagesCurrents(amrex::Real time, amrex::Real dt){
 
   // Get the current step number
-  int step_num = parent->levelSteps(0);
+  int step_num = parent->levelSteps(0) + ef_circuit_load_num - 1;
 
   // Calculate the gap current I_e^n at the current time
   eleCurrent_ts[step_num] = (eleVoltage_ts[step_num] - reflectedWave_ts[step_num]) / ef_circuit_impedance;
 
   // Calculate electrode voltage to be used at next time step V_e^n+1
-  // eleVoltage_ts[step_num + 1] = (eleVoltage_ts[step_num] == 0) ? eleVoltage_ts[step_num] + (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num]):eleVoltage_ts[step_num] + (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num] - disp_current / eleVoltage_ts[step_num]); 
   eleVoltage_ts[step_num + 1] = (eleVoltage_ts[step_num] == 0) ? eleVoltage_ts[step_num] - (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num]):eleVoltage_ts[step_num] - (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num] - disp_current / eleVoltage_ts[step_num]); 
 
   // Calculate source current I_s^n
@@ -885,3 +910,108 @@ void PeleC::ef_voltagesCurrents(amrex::Real time, amrex::Real dt){
   sourceVoltage_ts[step_num] = applied_voltage - sourceCurrent_ts[step_num] * ef_circuit_upstream_resistance; 
 }
 
+void PeleC::ef_loadCircuitData (amrex::Real time){
+
+  // NOTE: function assumes that circuit.dat contains correct set of data
+  // Time provided should either be the specified start time (if not restarting), or the cumulative restart time
+  // Function is only called once, on level 0. Circuit data arrays at high levels still need to be filled in
+  // FIXME: exit conditions somehow being met when restarting from checkpoint, although no error message given...
+  
+  amrex::Print() << "Beginning circuit.dat file loading process!\n";
+
+  // Check that start time > 0 (or that we are restarting)
+  if(time == 0.0){
+    amrex::Print() << "WARNING: Start time should be greater than zero when loading in circuit data!\n";
+    // exit(1);
+  }  
+
+  // Load file and check to make sure circuit.dat exists and has at least one valid line
+  std::string circuit_file = "circuit.dat";
+  std::ifstream circuitfile(circuit_file.c_str());
+  if(!circuitfile.good()) {
+    amrex::Print() << "INPUT ERROR : unable to open circuit.dat file!\n";
+    exit(1);
+  }
+
+  // Get the number of lines in the file
+  int circuit_len = std::count(std::istreambuf_iterator<char>(circuitfile), std::istreambuf_iterator<char>(), '\n') - 1;  // Assumes 1 line for header file
+  // Quick checks on file length
+  if(circuit_len < 1){
+    amrex::Print() << "WARNING: circuit.dat file must have at least 1 entries!\n";
+    // exit(1);
+  }
+
+  // If we are restarting from checkpoint, make sure file has at least as many entries as prev. time steps taken
+  // if( parent->levelSteps(0) - 1 > circuit_len ){
+  //   amrex::Print() << "WARNING: circuit file has fewer entries than previous time steps taken!\n";
+  //   // exit(1); 
+  // }
+  
+  // Load in data line by line until file time >= strt_time
+  amrex::Real tstep, ttime, tsvol, tevol, tevoln, tscur, tecur, tiwave, trwave, tfluxcur, tgapcap;
+  std::ifstream Loadfile(circuit_file.c_str());
+  std::string line;
+  std::getline(Loadfile, line);   // Pull off header file
+  for(int i=0; i<circuit_len; i++){
+    std::getline(Loadfile, line);   // Get data row
+    std::istringstream iss(line);
+    iss >> tstep >> ttime >> tsvol >> tevol >> tevoln >> tscur >> tecur >> tiwave >> trwave >> tfluxcur >> tgapcap;
+
+    // Make sure first line step number is 1
+    if(i == 0 && tstep != 1){
+      amrex::Print() << "WARNING: first circuit file line should correspond with time step 1!\n";
+      // exit(1); 
+    }
+
+    if(amrex::Math::abs(ttime - time) <= 1.0e-20) {
+      tstep--;
+      break;
+    }
+
+    time_ts[tstep - 1] = ttime;
+    sourceVoltage_ts[tstep - 1] = tsvol * 1.0e10;  
+    eleVoltage_ts[tstep - 1] = tevol * 1.0e10;  
+    eleVoltage_ts[tstep] = tevoln * 1.0e10;  
+    sourceCurrent_ts[tstep - 1] = tscur;  
+    eleCurrent_ts[tstep - 1] = tecur;  
+    incidentWave_ts[tstep - 1] = tiwave * 1.0e10;
+    reflectedWave_ts[tstep - 1] = trwave * 1.0e10;   
+    disp_current = tfluxcur;
+  }
+
+
+  // ef_circuit_load_num used to ensure correct indexing, in event that simulation is started from nonzero start time
+  ef_circuit_load_num = tstep - parent->levelSteps(0);
+
+  if( ef_circuit_load_num < 0){
+    amrex::Print() << "WARNING: circuit load number should not be negative, but value is " << ef_circuit_load_num << "!\n";
+    // exit(1);
+  }
+
+  if( tstep < 1){
+    amrex::Print() << "WARNING: No lines were loaded in from circuit file!!\n";
+    // exit(1);
+  }
+
+  // Output final file time loaded in along with simulation start time
+  amrex::Print() << "FINISHED: Loading in circuit file data, at level " << level << "\n";
+  amrex::Print() << "   latest file time = " << time_ts[tstep - 1] << ", current time = " << time << "\n";
+
+  amrex::Print() << "Loaded " << tstep << " lines, circuit load number is " << ef_circuit_load_num << "\n"; 
+
+  // Rewrite circuit file with only data loaded in
+  amrex::Print() << "Rewriting circuit file!\n";
+  circuitFileSetup();
+  for(int i=0; i<tstep; i++ ) writeCircuitFile(time_ts[i], i);
+
+  amrex::Print() << "NEXT INDEX WRITTEN SHOULD BE " << tstep << "\n";
+
+  // Write to circuit data arrays at higher levels
+  // TODO: needed? or are these arrays already shared?
+  // int lidx = 1;
+  // while(lidx <= parent->finestLevel()) {
+  //   auto& crselev = getLevel(lidx);
+  //   
+  //   lidx++;
+  // }
+}

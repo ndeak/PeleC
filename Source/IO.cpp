@@ -1240,7 +1240,7 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
     amrex::Real max_Edrift = amrex::max(max_Edrift_x, max_Edrift_y, max_Edrift_z);
     amrex::Real Ddtodx2 = (max_De/min_rho) * dt / (dx[0] * dx[0]);
     amrex::Real CFL = max_Edrift * dt / dx[0];
-    amrex::Real min_edrift = 0.3 * dx[0] / max_Edrift;
+    amrex::Real min_edrift = (max_Edrift == 0.0) ? 1.0:0.3 * dx[0] / max_Edrift;
     amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
 
     if (amrex::ParallelDescriptor::IOProcessor()) {
@@ -1257,12 +1257,10 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
   }
 }
 
-void PeleC::writeCircuitFile(amrex::Real time){
+void PeleC::writeCircuitFile(amrex::Real time, int step_num){
 
   // File only needs to be created on one level since data should be the same across all levels
   // Should be called at finest level only
-
-  int step_num = parent->levelSteps(0);
 
   if (amrex::ParallelDescriptor::IOProcessor()) {
     std::string circuitFileName = "circuit.dat";
@@ -1270,7 +1268,7 @@ void PeleC::writeCircuitFile(amrex::Real time){
     amrex::Real flux_current = (eleVoltage_ts[step_num] == 0) ? 0.0:disp_current / eleVoltage_ts[step_num];
     std::ofstream CircuitFile;
     CircuitFile.open(circuitFileName.c_str(), std::ios::out | std::ios::app);
-    CircuitFile << step_num << "\t" << time  << "\t" << sourceVoltage_ts[step_num]*1.0e-10 << "\t" << eleVoltage_ts[step_num]*1.0e-10 << "\t" << sourceCurrent_ts[step_num] << "\t" << eleCurrent_ts[step_num] << "\t" << incidentWave_ts[step_num]*1.0e-10  << "\t" << reflectedWave_ts[step_num]*1.0e-10  << "\t" << flux_current << "\t" << ef_circuit_capacitance*1.0e19 << std::endl;
+    CircuitFile << step_num+1 << "\t" << time  << "\t" << sourceVoltage_ts[step_num]*1.0e-10 << "\t" << eleVoltage_ts[step_num]*1.0e-10 << "\t" << eleVoltage_ts[step_num+1]*1.0e-10  <<  "\t" << sourceCurrent_ts[step_num] << "\t" << eleCurrent_ts[step_num] << "\t" << incidentWave_ts[step_num]*1.0e-10  << "\t" << reflectedWave_ts[step_num]*1.0e-10  << "\t" << flux_current << "\t" << ef_circuit_capacitance*1.0e19 << std::endl;
     CircuitFile.close();
   }
 }
@@ -1315,7 +1313,7 @@ void PeleC::circuitFileSetup(){
     std::string circuitFileName = "circuit.dat";
     std::ofstream CircuitFile;
     CircuitFile.open(circuitFileName.c_str(), std::ios::out);
-    CircuitFile << "(1)step_num \t (2)time[s] \t (3)sourceVoltage(kV) \t (4)electronVoltage(kV) \t (5)sourceCurrent(C/s) \t (6)electronCurrent(C/s) \t (7)incidentWave(kV) \t (8)reflectedWave(kV) \t (9)flux_current(C/s) \t (10)gapCapacitance(pF)" << std::endl;
+    CircuitFile << "(1)step_num \t (2)time[s] \t (3)sourceVoltage(kV) \t (4)electronVoltage(kV) \t (5)electronVoltage_next(kV) \t (6)sourceCurrent(C/s) \t (7)electronCurrent(C/s) \t (8)incidentWave(kV) \t (9)reflectedWave(kV) \t (10)flux_current(C/s) \t (11)gapCapacitance(pF)" << std::endl;
     CircuitFile.close();
   }
 }

@@ -98,8 +98,9 @@ PeleC::do_mol_advance(
 
 
 #ifdef PELEC_USE_PLASMA
-  int step_num = parent->levelSteps(0);
-  
+  int step_num = parent->levelSteps(0) + ef_circuit_load_num;
+  if(level > 0) step_num--;
+
   // Since there are several regridding and re-initialization steps during setup,
   // gap capacitance is not calculated until we begin the first time step
   // Note: we load in capacitance for cicuit file upon restart
@@ -115,10 +116,14 @@ PeleC::do_mol_advance(
   if(ef_circuit_model != 0 && ef_star_update > 0) amrex::Abort("Efield star-state update not currently compatible with circuit model");
 
   // Calculate the flux component of the displacement current (needs to be called at each level)
-  if(ef_circuit_model != 0) ef_dispCurrent(S_old, KSpec_old, Efield, coeffs_old);
+  if(ef_circuit_model != 0) {
+    FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
+    ef_dispCurrent(Sborder, KSpec_old, Efield, coeffs_old);
+  }
 
   // Explicit calculation of the electrode voltage via transmission line and Sato equations
-  // Note: we are only ready to calculate everything at the finest level (otherwise we dont have complete displacement current)
+  // NOTE: we are only ready to calculate everything at the finest level (otherwise we dont have complete displacement current)
+  // NOTE: assumes finest grid level always present
   if(ef_circuit_model != 0 && level == parent->finestLevel()) ef_circuitModel(time, dt);
 
   // If we are using the circuit model, set current voltage to V_e^n 
@@ -412,7 +417,7 @@ PeleC::do_mol_advance(
   }
 
   // Only write down circuit data at finest level
-  if(ef_circuit_model && level == parent->finestLevel()) writeCircuitFile(time);
+  if(ef_circuit_model && level == parent->finestLevel()) writeCircuitFile(time, step_num);
 
   return dt;
 }

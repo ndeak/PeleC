@@ -111,7 +111,8 @@ int PeleC::ef_PC_approx = 1;
 bool PeleC::def_harm_avg_cen2edge  = false;
 amrex::Real PeleC::ef_PoissonTol = 1.0e-7;
 amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
-amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
+// amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
+amrex::Real PeleC::ef_newtonTol = 1.0e-6;
 // amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
 // amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
 amrex::Real PeleC::ef_GMRES_reltol = 1.0e-4;
@@ -140,6 +141,8 @@ amrex::Real PeleC::ef_circuit_time_delay = 25.0e-9;
 amrex::Real PeleC::ef_circuit_impedance = 50.0e7;
 amrex::Real PeleC::ef_circuit_upstream_resistance = 10.0e7;
 amrex::Real PeleC::ef_circuit_capacitance = 30.0e-19;
+bool        PeleC::ef_circuit_load_data = false;
+int         PeleC::ef_circuit_load_num = 0;
 
 amrex::GpuArray<amrex::Real,NUM_SPECIES> PeleC::zk;
 amrex::GpuArray<int,NUM_SPECIES> PeleC::zk_num;
@@ -1358,6 +1361,18 @@ PeleC::post_restart()
 #ifdef PELEC_USE_PLASMA
   // Define data specific to Plasma
   plasma_define_data();
+
+  if(level == 0){
+    // Set up circuit file
+    if(ef_circuit_model && !ef_circuit_load_data){
+      circuitFileSetup();
+    }
+
+    // Load in old circuit file if specified
+    if(ef_circuit_load_data){
+      ef_loadCircuitData(parent->cumTime());
+    }
+  }
 #endif
 
   problem_post_restart();
@@ -1465,8 +1480,13 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
   }
 
   // Set up circuit file
-  if(ef_circuit_model){
+  if(ef_circuit_model && !ef_circuit_load_data){
     circuitFileSetup();
+  }
+
+  // Load in old circuit file if specified
+  if(ef_circuit_load_data){
+    ef_loadCircuitData(parent->cumTime());
   }
 }
 

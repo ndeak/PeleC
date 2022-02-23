@@ -49,7 +49,6 @@
   static amrex::Real ef_circuit_impedance;                           // Characteristic impedance Z_0, (erg-s/C^2)
   static amrex::Real ef_circuit_upstream_resistance;                  // upstream resistance (erg-s/C^2)
   static amrex::Real ef_circuit_capacitance;                  // Circuit capacitance (C^2/erg, should be calculated ahead of time) 
-
   static amrex::GpuArray<amrex::Real, NUM_SPECIES> zk;      // Species charge per unit mass (C/g)
   static amrex::GpuArray<int, NUM_SPECIES> zk_num;      // Species charge number 
   static amrex::GpuArray<amrex::Real, 20000>   time_ts;
@@ -59,8 +58,9 @@
   static amrex::GpuArray<amrex::Real, 20000>   reflectedWave_ts;
   static amrex::GpuArray<amrex::Real, 20000>   sourceCurrent_ts;
   static amrex::GpuArray<amrex::Real, 20000>   eleCurrent_ts;
-
   static amrex::GpuArray<amrex::Real, 10000>   lin_residuals;
+  static bool ef_circuit_load_data;                           // Load data from 'circuit.dat' file in current directory
+  static int ef_circuit_load_num;                             // Number of previous time steps taken if loading from circuit.dat file
 
   // Efield Poisson solve options
   static amrex::Real ef_PoissonTol;
@@ -112,6 +112,8 @@
   amrex::MultiFab     Ke_cc_mf;
   amrex::MultiFab     De_cc_mf;
 
+  amrex::MultiFab     spec_2ndo_gradients;    // 2nd order gradients used in circuit model displacement current calculation
+
   // Non-linear solve MFs/data
   // Transport
   FluxBoxes mob_e;
@@ -146,7 +148,7 @@
   amrex::MultiFab            nl_resid;
   amrex::MultiFab            nl_F_old;        // F(U^n) (used for the nE component in the coupled system trapezoidal time integration)
   amrex::MultiFab            nl_nE_2ndo_slopes;
-  amrex::MultiFab*           elec_Ueff;
+  amrex::MultiFab            elec_Ueff[3];
   amrex::MultiFab            gasN_cc;
   amrex::MultiFab            ionFlx_eb;
   amrex::MultiFab            tmp_nE_forcing;
@@ -233,7 +235,9 @@
 
   void circuitFileSetup();
 
-  void writeCircuitFile(amrex::Real time);
+  void ef_loadCircuitData(amrex::Real time);
+
+  void writeCircuitFile(amrex::Real time, int step_num);
 
 // non-linear solve functions
   void ef_solve_NL( const amrex::Real      &dt,

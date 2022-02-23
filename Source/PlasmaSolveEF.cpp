@@ -69,7 +69,16 @@ PeleC::solveEF ( Real time,
        {
           if(ef_noSpaceCharge == 0){
             Real tmp_chrg = 0.0;
-            for(int n=0; n<NUM_SPECIES; n++) tmp_chrg += rhoY_ar(i,j,k,n) * (1.0/mwt[n]) * EFConst::Na * zk_num[n];
+            Real tmp_val = 0.0;
+            for(int n=0; n<NUM_SPECIES; n++) {
+              if(n == E_ID) {
+                tmp_val = (ef_use_NLsolve == 1) ? -1.0*nE_ar(i,j,k) : rhoY_ar(i,j,k,n) * (1.0/mwt[n]) * EFConst::Na * zk_num[n];
+              }
+              else{
+                tmp_val = rhoY_ar(i,j,k,n) * (1.0/mwt[n]) * EFConst::Na * zk_num[n];
+              }
+              tmp_chrg += tmp_val;
+            }
             chrg_ar(i,j,k) = tmp_chrg * factor;
           }
           else{
