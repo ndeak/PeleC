@@ -100,6 +100,10 @@ PeleC::do_mol_advance(
 #ifdef PELEC_USE_PLASMA
   int step_num = parent->levelSteps(0) + ef_circuit_load_num;
   if(level > 0) step_num--;
+  int ng = Sborder.nGrow();
+  amrex::Real mwt[NUM_SPECIES];
+  auto eos = pele::physics::PhysicsType::eos();
+  eos.molecular_weight(mwt);   // CGS
 
   // Since there are several regridding and re-initialization steps during setup,
   // gap capacitance is not calculated until we begin the first time step
@@ -113,11 +117,81 @@ PeleC::do_mol_advance(
   //   }
   // }
 
+  // Calculate transport properties at time t=n if we are using semi-implicit efield method, or circuit model
+  // Needed due to fact that MFs defined in plasma_define_data() are reset upon regrid
+  if(ef_circuit_model == 1 || ef_semiImpEfield == 1){
+    FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
+
+    // Need to fill in E/N at time t=n as this is used in transport property calculations
+    for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+       const amrex::Box& tbox = mfi.tilebox();
+       const amrex::Box gbox = amrex::grow(tbox, ng);
+       const auto redEfab = redEfield.array(mfi);
+       const auto Sfab = Sborder.array(mfi);
+       amrex::ParallelFor(
+         gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+           amrex::Real ndens = 0.0;
+           for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
+           redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
+         });
+    }
+
+    // Calculate primitive variables
+    for (amrex::MFIter mfi(molSrc, amrex::TilingIfNotGPU()); mfi.isValid();
+           ++mfi) {
+      const amrex::Box& tbox = mfi.tilebox();
+      int ng = Sborder.nGrow();
+      const amrex::Box gbox = amrex::grow(tbox, ng);
+      auto const& s = Sborder.array(mfi);
+      auto const& q = Q_ext.array(mfi);
+      auto const& qaux = Qaux_ext.array(mfi);
+      {
+          PassMap const* lpmap = d_pass_map;
+          const int captured_clean_massfrac = clean_massfrac;
+          BL_PROFILE("PeleC::ctoprim()");
+          amrex::ParallelFor(
+            gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+              pc_ctoprim(i, j, k, s, q, qaux, *lpmap, captured_clean_massfrac);
+          });
+      }
+
+      {
+        // Calculate species diffusivities and mobilities
+        auto const* ltransparm = trans_parms.device_trans_parm();
+        auto const& qar_yin = Q_ext.array(mfi,QFS);
+        auto const& qar_Tin = Q_ext.array(mfi,QTEMP);
+        auto const& qar_rhoin = Q_ext.array(mfi,QRHO);
+        auto const& coe_rhoD = coeffs_old.array(mfi,dComp_rhoD);
+        auto const& coe_mu = coeffs_old.array(mfi,dComp_mu);
+        auto const& coe_xi = coeffs_old.array(mfi,dComp_xi);
+        auto const& coe_lambda = coeffs_old.array(mfi,dComp_lambda);
+        BL_PROFILE("PeleC::get_transport_coeffs()");
+        // Get Transport coefs on GPU.
+        amrex::launch(tbox, [=] AMREX_GPU_DEVICE(amrex::Box const& tbx)
+        {
+          auto trans = pele::physics::PhysicsType::transport();
+          trans.get_transport_coeffs(tbox, qar_yin, qar_Tin, qar_rhoin, coe_rhoD, coe_mu, coe_xi,coe_lambda, ltransparm);
+        });
+      }
+    }
+
+    // Get the cc species transport properties
+    ef_calc_transport(Sborder, time);
+  }
+
+  // Move to initialization?
   if(ef_circuit_model != 0 && ef_star_update > 0) amrex::Abort("Efield star-state update not currently compatible with circuit model");
+  if(ef_circuit_model != 0 && ef_semiImpEfield != 0) amrex::Abort("Semi-implicit efield calculation not currently compatible with circuit model");
 
   // Calculate the flux component of the displacement current (needs to be called at each level)
   if(ef_circuit_model != 0) {
+    // Get Laplace component of Efield
+    // FIXME: this normalized lapl could be calclated once and scaled, but need to make sure MF isn't overwritten on regrid
+    ProbParmDevice* lprobparm = d_prob_parm_device;
+    solveEF( time, dt, *lprobparm, Sborder, true);
     FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
+
+    // Calculate level's component of displacement current
     ef_dispCurrent(Sborder, KSpec_old, Efield, coeffs_old);
   }
 
@@ -133,17 +207,19 @@ PeleC::do_mol_advance(
     lprobparm->PhiV_bottom = 0.0;
   }
   else{   // Otherwise just use driven voltage directly
-    setCurrVoltage(time);
+    if(ef_semiImpEfield == 1){
+      setCurrVoltage(time + dt);
+    }
+    else{
+      setCurrVoltage(time);
+    }
   }
 
   // Compute PhiV
   const ProbParmDevice* lprobparm = d_prob_parm_device;
-  solveEF( time, dt, *lprobparm );
+  // Need tp pass in FillPatch'd S array if we are doing semi-implicit Efield solve
+  solveEF( time, dt, *lprobparm, Sborder);
 
-  amrex::Real mwt[NUM_SPECIES];
-  auto eos = pele::physics::PhysicsType::eos();
-  eos.molecular_weight(mwt);   // CGS
-  int ng = Sborder.nGrow();
 
   // Calculate the reduced electric field strength
   FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
@@ -250,7 +326,7 @@ PeleC::do_mol_advance(
     setCurrVoltage(time+dt);
 
     // Compute PhiV
-    solveEF( time+dt, dt, *lprobparm );
+    solveEF( time+dt, dt, *lprobparm, Sborder );
 
     // Calculate the reduced electric field strength
     FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
@@ -321,7 +397,7 @@ PeleC::do_mol_advance(
     setCurrVoltage(time+dt);
 
     // Compute PhiV
-    solveEF( time+dt, dt, *lprobparm );
+    solveEF( time+dt, dt, *lprobparm, Sborder );
 
   // Need FillPatch'd Sborders array with U^** data for E/N update and in coupled system
   

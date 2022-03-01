@@ -70,6 +70,7 @@ int PeleC::pstateY = -1;
 int PeleC::pstateNum = 0;
 
 #ifdef PELEC_USE_PLASMA
+// TODO: Organize this better
 int PeleC::PhiV = -1;
 int PeleC::nE = -1;
 int PeleC::Efieldx = -1;
@@ -97,6 +98,7 @@ int PeleC::ef_star_update = 0;
 int PeleC::ef_constVoltage = 0;
 int PeleC::ef_do_drift = 1;
 int PeleC::ef_do_photoionization = 0;
+int PeleC::ef_semiImpEfield = 0;
 int PeleC::ef_triangle_pulse = 0;
 int PeleC::ef_trapezoidal_pulse = 0;
 int PeleC::ef_sigmoid_pulse = 0;
@@ -133,6 +135,7 @@ bool PeleC::pac_mechanism = false;
 int PeleC::ef_constEleTransport = 0;
 amrex::Real PeleC::ef_eleMobility = 0.0;
 amrex::Real PeleC::ef_eleDiffusivity = 0.0;
+int PeleC::ion_rate_type = 0;
 
 bool PeleC::plot_numdens = true;
 
@@ -801,7 +804,8 @@ PeleC::initData()
   amrex::Real cur_time = state[State_Type].curTime();
   const ProbParmDevice* lprobparm = d_prob_parm_device;
   setCurrVoltage(0.0);
-  solveEF( cur_time, 0.0, *lprobparm );
+  if(ef_semiImpEfield == 1) FillPatch(*this, Sborder, numGrow() + nGrowF, cur_time, State_Type, 0, NVAR);
+  solveEF( cur_time, 0.0, *lprobparm, Sborder );
 
   if(ef_do_photoionization){
     solvePI( cur_time, 0.0, *lprobparm );

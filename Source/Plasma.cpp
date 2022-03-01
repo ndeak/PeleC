@@ -53,7 +53,9 @@ PeleC::plasma_init()
     pp.query("pulse_plateau",ef_pulse_plateau);
     pp.query("do_drift",ef_do_drift);
     pp.query("do_photoionization", ef_do_photoionization);
+    pp.query("ion_rate_type", ion_rate_type);
     pp.query("star_update", ef_star_update);
+    pp.query("semiImpEfield", ef_semiImpEfield);
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);
@@ -135,6 +137,14 @@ void PeleC::plasma_define_data() {
 
    if(ef_circuit_model) {
       spec_2ndo_gradients.define(grids,dmap,3*NUM_SPECIES,2); spec_2ndo_gradients.setVal(0.0);
+   }
+  
+   if(ef_semiImpEfield){
+      spec_edge.define(this, NUM_SPECIES+3, 0);
+      spec_edge_mfs = spec_edge.get();
+      spec_edge_mfs[0]->setVal(0.0);
+      spec_edge_mfs[1]->setVal(0.0);
+      spec_edge_mfs[2]->setVal(0.0);
    }
 
    if (ef_use_NLsolve) {

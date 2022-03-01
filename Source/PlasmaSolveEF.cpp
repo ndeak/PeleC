@@ -15,7 +15,9 @@ using std::string;
 void
 PeleC::solveEF ( Real time,
                  Real dt,
-                 ProbParmDevice const& prob_parm )
+                 ProbParmDevice const& prob_parm,
+                 const amrex::MultiFab& Sbord, 
+                 bool lapl_solve)
 {
    BL_PROFILE("PeleC::solveEF()");
 
@@ -43,15 +45,16 @@ PeleC::solveEF ( Real time,
    MultiFab phiV_borders(Sborder, amrex::make_alias, 0, 1);
    // VisMF::Write(phiV_borders,"phiv");
 
+   amrex::Real mwt[NUM_SPECIES];
+   auto eos = pele::physics::PhysicsType::eos();
+   eos.molecular_weight(mwt);   // CGS
+
 // Charge distribution MF
    MultiFab chargeDistrib(grids,dmap,1,0,MFInfo(),Factory());
 
 #ifdef _OPENMP
 #pragma omp parallel
 #endif
-    amrex::Real mwt[NUM_SPECIES];
-    auto eos = pele::physics::PhysicsType::eos();
-    eos.molecular_weight(mwt);   // CGS
 
    // TODO set charge to be equal to sum of ion/electron num densities
    for (MFIter mfi(chargeDistrib,true); mfi.isValid(); ++mfi)
@@ -67,7 +70,7 @@ PeleC::solveEF ( Real time,
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {
-          if(ef_noSpaceCharge == 0){
+          if(ef_noSpaceCharge == 0 && !lapl_solve){
             Real tmp_chrg = 0.0;
             Real tmp_val = 0.0;
             for(int n=0; n<NUM_SPECIES; n++) {
@@ -86,6 +89,79 @@ PeleC::solveEF ( Real time,
           }
        }); 
    }
+
+  // If using semi-implicit system, start by extrapolating diffusivites from cell centers to edges
+  // No need to consider cell flags, since EB Poisson solver must take care of this?
+  if(ef_semiImpEfield == 1 && ef_noSpaceCharge != 1){
+    spec_edge_mfs = spec_edge.get();
+    std::array<amrex::MultiFab*,AMREX_SPACEDIM> spec_edge_arr{AMREX_D_DECL(spec_edge_mfs[0], spec_edge_mfs[1], spec_edge_mfs[2])};
+    average_cellcenter_to_face(spec_edge_arr, coeffs_old, geom, NUM_SPECIES+3);
+    // Calculate necessary edge values
+    for (int idim = 0; idim < AMREX_SPACEDIM; ++idim) {
+        const amrex::GpuArray<const int, 3> bdim{{idim == 0, idim == 1, idim == 2}};
+        for (MFIter mfi(*spec_edge_mfs[idim],true); mfi.isValid(); ++mfi)
+        {   
+            const Box& bx = mfi.tilebox();
+            const auto& rhoY_ar = Sbord.array(mfi,UFS);
+            const auto& rho_ar = Sbord.array(mfi,0);
+            const auto& spec_edge_ar = spec_edge_mfs[idim]->array(mfi);
+            const Real* dx      = geom.CellSize();
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+                const int ii = i - bdim[0];
+                const int jj = j - bdim[1];
+                const int kk = k - bdim[2];
+  
+                for (int n = 0; n<NUM_SPECIES; n++){
+                  // Divide by density to get rhoD -> D
+                  spec_edge_ar(i,j,k,n) /= (rho_ar(i,j,k) + rho_ar(ii,jj,kk)) / 2.0;
+                  
+                  // Multiply by dn/dx
+                  spec_edge_ar(i,j,k,n) *= (rhoY_ar(i,j,k,n) - rhoY_ar(i,j,k,n)) / dx[idim] * (1.0/mwt[n]) * EFConst::Na;
+                }
+            }); 
+        }
+    }
+  
+    // Modify the RHS to account for divergence of diffusive term
+    amrex::Real vol = 1;
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      vol *= geom.CellSize()[dir];
+    }
+
+    for (MFIter mfi(chargeDistrib,true); mfi.isValid(); ++mfi)
+    {   
+        const Box& bx = mfi.tilebox();
+        const auto& chrg_ar = chargeDistrib.array(mfi);
+        const auto& sec_x_ar = spec_edge_mfs[0]->array(mfi);
+        const auto& sec_y_ar = spec_edge_mfs[1]->array(mfi);
+        const auto& sec_z_ar = spec_edge_mfs[2]->array(mfi);
+#ifdef PELEC_USE_EB
+        const auto& vf = vfrac.array(mfi);
+#endif
+        const amrex::Real volinv = 1.0 / vol;
+        Real        factor = -1.0 * EFConst::elemCharge / ( EFConst::eps0_cgs  * EFConst::epsr);
+        amrex::ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+          for(int n = 0; n<NUM_SPECIES; n++){
+
+#ifdef PELEC_USE_EB
+            const amrex::Real kappa_inv = 1.0 / amrex::max<amrex::Real>(vf(i,j,k), 1.0e-12);
+#else
+            const amrex::Real kappa_inv = 1.0;
+#endif
+            amrex::Real difftemp =
+              -(AMREX_D_TERM(
+                sec_x_ar(i+1,j,k,n) - sec_x_ar(i,j,k,n), +sec_y_ar(i,j+1,k,n) - sec_y_ar(i,j,k,n),
+                +sec_z_ar(i,j,k+1,n) - sec_z_ar(i,j,k,n)))  * volinv * kappa_inv;;
+
+             chrg_ar(i,j,k) -= factor * dt * zk_num[n] * difftemp;
+          }
+        }); 
+    }
+  }
+
 // If need be, visualize the charge distribution.
 //   VisMF::Write(chargeDistrib,"chargeDistribPhiV_"+std::to_string(level));
 
@@ -129,13 +205,51 @@ PeleC::solveEF ( Real time,
 
 // Setup solver coefficient: general form is (ascal * acoef - bscal * div bcoef grad ) phi = rhs   
 // For simple Poisson solve: ascal, acoef = 0 and bscal, bcoef = 1
+// For semi-implicit solve, problem becomes a variable coefficient Poisson problem
    MultiFab acoef(grids, dmap, 1, 0, MFInfo(), Factory());
    acoef.setVal(0.0);
    poissonOP.setACoeffs(0, acoef);
    Array<MultiFab,AMREX_SPACEDIM> bcoef;
    for (int idim = 0; idim < AMREX_SPACEDIM; ++idim) {
+       const amrex::GpuArray<const int, 3> bdim{{idim == 0, idim == 1, idim == 2}};
        bcoef[idim].define(amrex::convert(grids,IntVect::TheDimensionVector(idim)), dmap, 1, 0, MFInfo(), Factory());
-       bcoef[idim].setVal(1.0);
+  
+       // TODO: may be more concise to use FluxBoxes, cellcenter_to_face, and MutliFab Mutliply utility functions...
+       //       going with uglier approach for now
+       if(ef_semiImpEfield == 1 && ef_noSpaceCharge == 0){
+          for (MFIter mfi(bcoef[idim],true); mfi.isValid(); ++mfi)
+          {   
+              const Box& bx = mfi.tilebox();
+              const auto& rhoY_ar = Sbord.array(mfi,UFS);
+              const auto& nE_ar   = Ucurr.array(mfi,UFX+1);
+              const auto& mu_ar = KSpec_old.array(mfi);
+              const auto& beta_ar = bcoef[idim].array(mfi);
+              int useNL = ef_use_NLsolve;
+              amrex::Real factor = dt * EFConst::elemCharge / ( EFConst::eps0_cgs  * EFConst::epsr);
+
+              amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+              {
+                  const int ii = i - bdim[0];
+                  const int jj = j - bdim[1];
+                  const int kk = k - bdim[2];
+  
+                  beta_ar(i,j,k) = 1.0;
+                  amrex::Real temp_coef = 0.0;
+                  // Calculate edge state as simple average (unclear how to incorporate upwinding...)
+                  for (int n = 0; n<NUM_SPECIES; n++){
+                    // Recall mu already incorporates charge number
+                    temp_coef += ((rhoY_ar(i,j,k,n)*mu_ar(i,j,k,n) + rhoY_ar(ii,jj,kk,n)*mu_ar(ii,jj,kk,n)) / 2.0) * (1.0/mwt[n]) * EFConst::Na;
+                  }
+                  temp_coef *= factor;
+                  beta_ar(i,j,k) -= temp_coef;
+              }); 
+          }
+       }
+       else{
+          bcoef[idim].setVal(1.0);
+       }
+       amrex::Real beta_max= bcoef[idim].max(0, 0, false);
+       amrex::Real beta_min= bcoef[idim].min(0, 0, false);
    }
    poissonOP.setBCoeffs(0, amrex::GetArrOfConstPtrs(bcoef));   
    Real ascal = 0.0;
@@ -166,10 +280,8 @@ PeleC::solveEF ( Real time,
            Real y = problo[1] + (j + 0.5)*dx[1]; 
            if (y >= probhi[1] / 2.0) {
                phiV_ar(i,j,k) = prob_parm.PhiV_top;
-               // phiV_ar(i,j,k) = curr_voltage;
            } else {
                phiV_ar(i,j,k) = prob_parm.PhiV_bottom;
-               // phiV_ar(i,j,k) = 0.0;
            }   
        }); 
    }

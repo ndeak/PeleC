@@ -34,6 +34,7 @@
   static amrex::Real dfact;
   static amrex::Real sfact;
   static bool        pac_mechanism;            // If using PAC mechanism, output maximum reactor-type data in monitor file
+  static int         ion_rate_type;           // Controls the ionization rate calculations used for photoionization (0 = upd. Kossyi, 1 = Morrow, 2 = BOLSIG+)
   
   // Transport options
   static int         ef_constEleTransport;                   // Use constant electron mobility (and diffusivity, via Einsten relation)
@@ -72,6 +73,7 @@
   static int         ef_do_drift;             // Include drift processes for charged species
   static int         ef_do_photoionization;   // Include photoionization
   static int         ef_star_update;         // Do update after just first start state (=1), and second star state (=2), neither (=0)
+  static int         ef_semiImpEfield;         // Use a semi-implicit approach to solve for the reduced electric field
 
   // Non-linear solve options and variables
   static int         ef_use_PETSC_direct;      // Flag to trigger using PETSC direct solve
@@ -125,6 +127,10 @@
   FluxBoxes ionFlx_fb;
   amrex::MultiFab**   ionFlx;
 
+  // Flux boxes for all species (used in semi-implicit efield calculations)
+  FluxBoxes spec_edge;
+  amrex::MultiFab** spec_edge_mfs;
+  
   // Scaling
   amrex::Real                nE_scale;
   amrex::Real                phiV_scale;
@@ -185,7 +191,9 @@
   // Electric potential Poisson solve
   void solveEF (amrex::Real time,
                 amrex::Real dt, 
-                ProbParmDevice const& prob_parm);
+                ProbParmDevice const& prob_parm, 
+                const amrex::MultiFab& Sbord,
+                bool lapl_solve = false);
 
   // Photoionization helmholtz solve
   void solvePI (amrex::Real time,

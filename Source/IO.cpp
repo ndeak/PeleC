@@ -1232,7 +1232,7 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
     amrex::Real max_phiV = S.max(UFX, 0, false) * 1.0e-10;
     amrex::Real min_EN = redEfield.min(0, 0, false);
     amrex::Real max_EN = redEfield.max(0, 0, false);
-    amrex::Real max_De = coeffs_old.max(E_ID, 0, false);
+    amrex::Real max_De = coeffs_old.max(dComp_rhoD + E_ID, 0, false);
     amrex::Real min_rho = S.min(0, 0, false);
     amrex::Real max_Edrift_x = spec_drift.max(NUM_E*E_ID + 0, 0, false);
     amrex::Real max_Edrift_y = spec_drift.max(NUM_E*E_ID + 1, 0, false);
