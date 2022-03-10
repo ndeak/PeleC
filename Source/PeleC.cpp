@@ -1099,9 +1099,11 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     // }
     
 #ifdef PELEC_USE_PLASMA
-    amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
-    amrex::Real min_diele = (min_dielectric == 0) ? 1000:min_dielectric;
-    estdt_hydro = amrex::min<amrex::Real>(estdt_hydro, min_diele);
+    if(!ef_semiImpEfield){
+      amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
+      amrex::Real min_diele = (min_dielectric == 0) ? 1000:min_dielectric;
+      estdt_hydro = amrex::min<amrex::Real>(estdt_hydro, min_diele);
+    }
 #endif
 
     // Determine if this is more restrictive than the maximum timestep limiting

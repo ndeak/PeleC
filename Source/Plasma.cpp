@@ -680,10 +680,13 @@ void PeleC::setCurrVoltage(Real time) {
     }
   }
   else if(ef_sigmoid_pulse == 1){
-    amrex::Real pulse_lambda = 8.0 / ef_pulse_rise;
-    amrex::Real pulse_t1 = time - ef_pulse_delay;
-    amrex::Real pulse_t2 = time - ef_pulse_delay - ef_pulse_plateau - ef_pulse_rise;
-    curr_voltage = pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
+    for(int i=0; i<pulse_num; i++){
+      amrex::Real pulse_delay_adj = ef_pulse_delay + (i)*(1.0/pulse_freq);
+      amrex::Real pulse_lambda = 8.0 / ef_pulse_rise;
+      amrex::Real pulse_t1 = time - pulse_delay_adj;
+      amrex::Real pulse_t2 = time - pulse_delay_adj - ef_pulse_plateau - ef_pulse_rise;
+      curr_voltage += pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
+    }
   }
   else{
     for(int i=0; i<pulse_num; i++){
@@ -732,10 +735,13 @@ amrex::Real PeleC::getCurrVoltage(Real time) {
     }
   }
   else if(ef_sigmoid_pulse == 1){
-    amrex::Real pulse_lambda = 8.0 / ef_pulse_rise;
-    amrex::Real pulse_t1 = time - ef_pulse_delay;
-    amrex::Real pulse_t2 = time - ef_pulse_delay - ef_pulse_plateau - ef_pulse_rise; 
-    curr_voltage = pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
+    for(int i=0; i<pulse_num; i++){
+      amrex::Real pulse_delay_adj = ef_pulse_delay + (i)*(1.0/pulse_freq);
+      amrex::Real pulse_lambda = 8.0 / ef_pulse_rise;
+      amrex::Real pulse_t1 = time - pulse_delay_adj;
+      amrex::Real pulse_t2 = time - pulse_delay_adj - ef_pulse_plateau - ef_pulse_rise;
+      curr_voltage += pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
+    }
   }
   else{
     for(int i=0; i<pulse_num; i++){

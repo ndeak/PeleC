@@ -71,9 +71,6 @@ PeleC::solvePI ( Real time,
     // FIXME fix hard-coded to assume atmospheric pressure 
     amrex::Real pfact = 30.0 / (760 + 30.0);
 
-    // Improved fit coefficients
-    double N2fit_coefs[] = {-26685061586.6066, 1307959249.29072, -24087664.8330414, 208547.477008891, -1250.43557426934, -12.8703331099001};
-    double O2fit_coefs[] = {-28753255434.8899, 1411237102.41166, -26070786.1973826, 227356.558100037, -1235.08040930513, -12.8088319148813}; 
 
     // Efficiency factor, see Breden "A numerical study of high-pressure non-equilibrium streamers for combustion ignition application" (2013)
     // Also see Luque "Photoionization in negative streamers: Fast computations and two propagation modes" (2007)
@@ -98,30 +95,10 @@ PeleC::solvePI ( Real time,
           amrex::Real frateN2 = 0.0; 
           amrex::Real frateO2 = 0.0; 
 
-          // Extrapolate to get ionization rate
-          // amrex::Real logRateN2;
-          // amrex::Real logRateO2;
-          // ExtrapIonN2(eon_ar(i,j,k), &logRateN2);
-          // ExtrapIonO2(eon_ar(i,j,k), &logRateO2);
 
-          // frateN2 *= pow(10, logRateN2) * 1.0e6;
-          // frateO2 *= pow(10, logRateO2) * 1.0e6;
-
-          // amrex::Real tempsum = 0.0;
-          // if(eon_ar(i,j,k) > 1.0e-10){
-          //   for(int idx = 0; idx<6; idx++) tempsum += N2fit_coefs[idx] * pow(eon_ar(i,j,k), -5+idx);
-          //   frateN2 = pow(10, tempsum) * 1.0e6;  // Converting m3/s -> cm3/s
-          // }
-  
-          // tempsum = 0.0;
-          // if(eon_ar(i,j,k) > 1.0e-10){
-          //   for(int idx = 0; idx<6; idx++) tempsum += O2fit_coefs[idx] * pow(eon_ar(i,j,k), -5+idx);
-          //   frateO2 = pow(10, tempsum) * 1.0e6; // Converting m3/s -> cm3/s
-          // }          
-
-          // Old fit data, only valid at low E/N (<300 Td)
           if(eon_ar(i,j,k) > 1.0e-10){
             if(ion_rate_type == 0){
+              // "Updated" Kossyi rates
               frateN2 = pow(10, -7.6 - 600.0/eon_ar(i,j,k)); 
               frateO2 = pow(10, -8.0 - 400.0/eon_ar(i,j,k)); 
             }
@@ -133,8 +110,24 @@ PeleC::solvePI ( Real time,
               frateO2 = alphaN * We;
             }
             else{
+              // BOLSIG+ rates
+              double Te_val;
+              ExtrapTe(eon_ar(i,j,k), &Te_val);
+              double Janev_sum;
+              double logTe = log(Te_val/11595.0);     // Fits are performed assuming Te is eV rather than K
+              double Te_pow[] = {pow(logTe, 0), pow(logTe, 1), pow(logTe, 2), pow(logTe, 3), pow(logTe, 4), pow(logTe, 5), pow(logTe, 6), pow(logTe, 7), pow(logTe, 8)};
 
+              Janev_sum = 0.0;
+              double Jfit_coefs13[] = {-1.52253741e+1, 1.22128219e+1, -3.44118813e+1, 9.53529155e+1, -1.29866996e+2, 9.55876571e+1, -3.89159707e+1, 8.23320396e+0, -7.05901446e-1};
+              double Jfit_A13 = 3.345000e-08;
+              for(int j = 0; j<9; j++) Janev_sum += Jfit_coefs13[j] * Te_pow[j];
+              frateN2 = Jfit_A13 * exp(Janev_sum);
 
+              Janev_sum = 0.0;
+              double Jfit_coefs26[] = {-1.15454999e+1, 4.46065609e+0, -2.94991491e+1, 1.24957220e+2, -1.99556447e+2, 1.59113029e+2, -6.77343878e+1, 1.47183987e+1, -1.28365385e+0};
+              double Jfit_A26 = 3.925000e-08;
+              for(int j = 0; j<9; j++) Janev_sum += Jfit_coefs26[j] * Te_pow[j];
+              frateO2 = Jfit_A26 * exp(Janev_sum);
             }
           }
     
@@ -150,7 +143,6 @@ PeleC::solvePI ( Real time,
           else{
             ion_ar(i,j,k) = 0.0;
           }
-          // printf("ion (%i %i %i) = %.6e, eon = %.6e, nEl = %.6e, nO2 = %.6e, nN2 = %.6e, frateO2 = %.6e, frateN2 = %.6e\n", i, j, k, ion_ar(i,j,k), eon_ar(i,j,k),  nEl, nO2, nN2, frateO2, frateN2);
         }); 
     }
 
