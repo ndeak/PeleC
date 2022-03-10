@@ -35,6 +35,7 @@
   static amrex::Real sfact;
   static bool        pac_mechanism;            // If using PAC mechanism, output maximum reactor-type data in monitor file
   static int         ion_rate_type;           // Controls the ionization rate calculations used for photoionization (0 = upd. Kossyi, 1 = Morrow, 2 = BOLSIG+)
+  static bool        ef_joule_heating;        // Including Joule heating?
   
   // Transport options
   static int         ef_constEleTransport;                   // Use constant electron mobility (and diffusivity, via Einsten relation)
@@ -113,6 +114,7 @@
   amrex::MultiFab     disp_current_mf;
   amrex::MultiFab     Ke_cc_mf;
   amrex::MultiFab     De_cc_mf;
+  amrex::MultiFab     joule_heating;  
 
   amrex::MultiFab     spec_2ndo_gradients;    // 2nd order gradients used in circuit model displacement current calculation
 

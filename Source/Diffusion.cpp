@@ -736,6 +736,10 @@ PeleC::getMOLSrcTerm(
         copy_array4(Dfab.box(), NVAR, Dterm, Dterm_tmp);
         amrex::Real voltar = 0.5;
 
+        amrex::Real mwt[NUM_SPECIES];
+        auto eos = pele::physics::PhysicsType::eos();
+        eos.molecular_weight(mwt);
+
         auto flag_arr = flags.const_array(mfi);
         {
           BL_PROFILE("Redistribution::Apply()");
@@ -743,7 +747,7 @@ PeleC::getMOLSrcTerm(
             vbox, S.nComp(), Dterm, Dterm_tmp, S.const_array(mfi), scratch,
             flag_arr, AMREX_D_DECL(apx, apy, apz), vfrac.const_array(mfi),
             AMREX_D_DECL(fcx, fcy, fcz), ccc, d_bcs.dataPtr(), geom, dt,
-            redistribution_type, UFS, NUM_SPECIES, UFX+2, NUM_E, voltar);
+            redistribution_type, UFS, NUM_SPECIES, UFX+2, NUM_E, mwt, voltar);
         }
 
         // Make sure div is zero in covered cells

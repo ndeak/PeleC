@@ -56,6 +56,7 @@ PeleC::plasma_init()
     pp.query("ion_rate_type", ion_rate_type);
     pp.query("star_update", ef_star_update);
     pp.query("semiImpEfield", ef_semiImpEfield);
+    pp.query("joule_heating", ef_joule_heating);
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);
@@ -130,6 +131,7 @@ void PeleC::plasma_define_data() {
    PI_source.define(grids, dmap, 4, 1, amrex::MFInfo(), Factory()); PI_source.setVal(0.0);
    dielectric_ts.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); dielectric_ts.setVal(1.0);
    disp_current_mf.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); disp_current_mf.setVal(0.0);
+   joule_heating.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); joule_heating.setVal(0.0);
 
    // Intermediate MFs used in transport coef. calculations for NL system
    Ke_cc_mf.define(grids,dmap,1,numGrow(), amrex::MFInfo(), Factory()); Ke_cc_mf.setVal(0.0);
@@ -685,7 +687,9 @@ void PeleC::setCurrVoltage(Real time) {
       amrex::Real pulse_lambda = 8.0 / ef_pulse_rise;
       amrex::Real pulse_t1 = time - pulse_delay_adj;
       amrex::Real pulse_t2 = time - pulse_delay_adj - ef_pulse_plateau - ef_pulse_rise;
-      curr_voltage += pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
+      amrex::Real efact1 = amrex::min(100.0, -pulse_lambda*pulse_t1);
+      amrex::Real efact2 = amrex::min(100.0, pulse_lambda*pulse_t2);
+      curr_voltage += pulse_peak* ( (1.0 / (1.0 + exp(efact1) )) + (1.0 / (1.0 + exp(efact2) )) - 1.0);
     }
   }
   else{
@@ -740,7 +744,9 @@ amrex::Real PeleC::getCurrVoltage(Real time) {
       amrex::Real pulse_lambda = 8.0 / ef_pulse_rise;
       amrex::Real pulse_t1 = time - pulse_delay_adj;
       amrex::Real pulse_t2 = time - pulse_delay_adj - ef_pulse_plateau - ef_pulse_rise;
-      curr_voltage += pulse_peak* ( (1.0 / (1.0 + exp(-pulse_lambda*pulse_t1) )) + (1.0 / (1.0 + exp(pulse_lambda*pulse_t2) )) - 1.0);
+      amrex::Real efact1 = amrex::min(100.0, -pulse_lambda*pulse_t1);
+      amrex::Real efact2 = amrex::min(100.0, pulse_lambda*pulse_t2);
+      curr_voltage += pulse_peak* ( (1.0 / (1.0 + exp(efact1) )) + (1.0 / (1.0 + exp(efact2) )) - 1.0);
     }
   }
   else{

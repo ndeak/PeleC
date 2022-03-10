@@ -136,6 +136,7 @@ int PeleC::ef_constEleTransport = 0;
 amrex::Real PeleC::ef_eleMobility = 0.0;
 amrex::Real PeleC::ef_eleDiffusivity = 0.0;
 int PeleC::ion_rate_type = 0;
+bool PeleC::ef_joule_heating = true;
 
 bool PeleC::plot_numdens = true;
 
@@ -429,7 +430,6 @@ PeleC::read_params()
 #endif
 
 #ifdef PELEC_USE_PLASMA
-  // TODO PUT IN plasma.cpp
   pp.query("ion_bc_type", ion_bc_type);
   pp.query("zero_bc_flux", zero_bc_flux);
   pp.query("zero_bc_grad", zero_bc_grad);
