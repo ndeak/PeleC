@@ -56,7 +56,7 @@ PeleC::plasma_init()
     pp.query("ion_rate_type", ion_rate_type);
     pp.query("star_update", ef_star_update);
     pp.query("semiImpEfield", ef_semiImpEfield);
-    pp.query("joule_heating", ef_joule_heating);
+    // pp.query("electron_heating_pct", ef_electron_heating_pct);
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);
@@ -843,11 +843,11 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
            bool extdir_or_ho_hi = ( bc_hi == amrex::BCType::ext_dir ) || ( bc_hi == amrex::BCType::hoextrap );
            for(int n = 0; n < NUM_SPECIES; n++){
               if(dir == 0){
-                grad_ar(i,j,k,3*n) = amrex_calc_xslope_extdir(i,j,k,n,2,spec_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir)) / dx[dir];
+                grad_ar(i,j,k,3*n + 0) = amrex_calc_xslope_extdir(i,j,k,n,2,spec_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir)) / dx[dir];
               } else if (dir == 1){
-                grad_ar(i,j,k,3*n) = amrex_calc_yslope_extdir(i,j,k,n,2,spec_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir)) / dx[dir];
+                grad_ar(i,j,k,3*n + 1) = amrex_calc_yslope_extdir(i,j,k,n,2,spec_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir)) / dx[dir];
               } else {
-                grad_ar(i,j,k,3*n) = amrex_calc_zslope_extdir(i,j,k,n,2,spec_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir)) / dx[dir];
+                grad_ar(i,j,k,3*n + 2) = amrex_calc_zslope_extdir(i,j,k,n,2,spec_ar,extdir_or_ho_lo,extdir_or_ho_hi,domain.smallEnd(dir),domain.bigEnd(dir)) / dx[dir];
               }
            }
         });
@@ -874,7 +874,7 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
               fluxE_y = zk_num[n] * ( (E_cc(i,j,k,1) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMY)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) 
                         - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*grad_ar(i,j,k,3*n + 1) ) * E_cc(i,j,k,1);
               fluxE_z = zk_num[n] * ( (E_cc(i,j,k,2) * K_cc(i,j,k,n) + (S_arr(i,j,k,UMZ)/S_arr(i,j,k,URHO)))*S_arr(i,j,k,UFS+n) 
-                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*grad_ar(i,j,k,3*n+2) ) * E_cc(i,j,k,2);
+                        - (coe_rhoD(i,j,k,n)/S_arr(i,j,k,URHO))*grad_ar(i,j,k,3*n + 2) ) * E_cc(i,j,k,2);
       
               // Calculate the total flux contribution (erg/cm3-s)
               flux_component += EFConst::elemCharge * (fluxE_x + fluxE_x + fluxE_x) * ( EFConst::Na / mwt[n]);
