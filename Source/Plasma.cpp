@@ -56,7 +56,7 @@ PeleC::plasma_init()
     pp.query("ion_rate_type", ion_rate_type);
     pp.query("star_update", ef_star_update);
     pp.query("semiImpEfield", ef_semiImpEfield);
-    // pp.query("electron_heating_pct", ef_electron_heating_pct);
+    pp.query("electron_heating_pct", ef_electron_heating_pct);
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);
@@ -131,13 +131,13 @@ void PeleC::plasma_define_data() {
    PI_source.define(grids, dmap, 4, 1, amrex::MFInfo(), Factory()); PI_source.setVal(0.0);
    dielectric_ts.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); dielectric_ts.setVal(1.0);
    disp_current_mf.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); disp_current_mf.setVal(0.0);
-   joule_heating.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); joule_heating.setVal(0.0);
+   joule_heating.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); joule_heating.setVal(0.0);
 
    // Intermediate MFs used in transport coef. calculations for NL system
    Ke_cc_mf.define(grids,dmap,1,numGrow(), amrex::MFInfo(), Factory()); Ke_cc_mf.setVal(0.0);
    De_cc_mf.define(grids,dmap,1,numGrow(), amrex::MFInfo(), Factory()); De_cc_mf.setVal(0.0);
 
-   if(ef_circuit_model) {
+   if(ef_circuit_model || add_ext_src) {
       spec_2ndo_gradients.define(grids,dmap,3*NUM_SPECIES,2); spec_2ndo_gradients.setVal(0.0);
    }
   
@@ -159,7 +159,7 @@ void PeleC::plasma_define_data() {
       tmp_nE_forcing.define(grids,dmap,1,2,MFInfo(),Factory()); tmp_nE_forcing.setVal(0.0);
       nl_nE_2ndo_slopes.define(grids, dmap, 3, 2); nl_nE_2ndo_slopes.setVal(0.0);
 
-      // FIXME: Valgrind complained about unitialized values here, but turning off leads to leak
+      // FIXME: Valgrind complained about unitialized values here, but turning off may lead to leaks
 //       if (elec_Ueff != 0) delete [] elec_Ueff;
 
       // elec_Ueff = new MultiFab[AMREX_SPACEDIM];
@@ -834,7 +834,7 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
         const Box& ebx = mfi.tilebox();
         const Box& gbx = mfi.growntilebox(1);
         const auto spec_ar = state_curr.const_array(mfi,UFS);
-        const auto grad_ar = spec_2ndo_gradients.array(mfi,dir);
+        const auto grad_ar = spec_2ndo_gradients.array(mfi);
         amrex::ParallelFor(ebx,
         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
         {

@@ -136,7 +136,7 @@ int PeleC::ef_constEleTransport = 0;
 amrex::Real PeleC::ef_eleMobility = 0.0;
 amrex::Real PeleC::ef_eleDiffusivity = 0.0;
 int PeleC::ion_rate_type = 0;
-bool PeleC::ef_joule_heating = true;
+amrex::Real PeleC::ef_electron_heating_pct = 0.0;
 
 bool PeleC::plot_numdens = true;
 
@@ -159,7 +159,7 @@ amrex::GpuArray<amrex::Real,20000> PeleC::eleCurrent_ts;
 amrex::GpuArray<amrex::Real,20000> PeleC::incidentWave_ts;
 amrex::GpuArray<amrex::Real,20000> PeleC::reflectedWave_ts;
 
-amrex::GpuArray<amrex::Real,10000> PeleC::lin_residuals;
+amrex::GpuArray<amrex::Real,1000> PeleC::lin_residuals;
 #endif
 
 #include "pelec_defaults.H"
