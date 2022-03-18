@@ -117,7 +117,12 @@ PeleC::solveEF ( Real time,
                   spec_edge_ar(i,j,k,n) /= (rho_ar(i,j,k) + rho_ar(ii,jj,kk)) / 2.0;
                   
                   // Multiply by dn/dx
-                  spec_edge_ar(i,j,k,n) *= (rhoY_ar(i,j,k,n) - rhoY_ar(i,j,k,n)) / dx[idim] * (1.0/mwt[n]) * EFConst::Na;
+                  if(n == E_ID && ef_use_NLsolve == 1){
+                    spec_edge_ar(i,j,k,n) *= (rho_ar(i,j,k,UFX+1) - rho_ar(i,j,k,UFX+1)) / dx[idim];
+                  }
+                  else{
+                    spec_edge_ar(i,j,k,n) *= (rhoY_ar(i,j,k,n) - rhoY_ar(i,j,k,n)) / dx[idim] * (1.0/mwt[n]) * EFConst::Na;
+                  }
                 }
             }); 
         }
@@ -238,7 +243,12 @@ PeleC::solveEF ( Real time,
                   // Calculate edge state as simple average (unclear how to incorporate upwinding...)
                   for (int n = 0; n<NUM_SPECIES; n++){
                     // Recall mu already incorporates charge number
-                    temp_coef += ((rhoY_ar(i,j,k,n)*mu_ar(i,j,k,n) + rhoY_ar(ii,jj,kk,n)*mu_ar(ii,jj,kk,n)) / 2.0) * (1.0/mwt[n]) * EFConst::Na;
+                    if(n == E_ID && ef_use_NLsolve){
+                      temp_coef += ((nE_ar(i,j,k)*mu_ar(i,j,k,n) + nE_ar(ii,jj,kk)*mu_ar(ii,jj,kk,n)) / 2.0);
+                    }
+                    else{
+                      temp_coef += ((rhoY_ar(i,j,k,n)*mu_ar(i,j,k,n) + rhoY_ar(ii,jj,kk,n)*mu_ar(ii,jj,kk,n)) / 2.0) * (1.0/mwt[n]) * EFConst::Na;
+                    }
                   }
                   temp_coef *= factor;
                   beta_ar(i,j,k) -= temp_coef;
