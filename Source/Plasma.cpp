@@ -40,6 +40,7 @@ PeleC::plasma_init()
     pp.query("debug",ef_debug);
     pp.query("def_harm_avg_cen2edge",def_harm_avg_cen2edge);
     pp.query("use_nonLinearSolve",ef_use_NLsolve);
+    pp.query("use_nEimplicit",ef_use_nEimplicit);
 
     pp.query("Poisson_tol",ef_PoissonTol);
     pp.query("Poisson_verbose",ef_PoissonVerbose);
@@ -288,7 +289,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      auto const& Ks   = KSpec_old.array(mfi);
      auto const& redEfab = redEfield.array(mfi);
      Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
-     int useNL   = ef_use_NLsolve;
+     int useNL   = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
      amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rho_ar, rhoD, Ke, De, useNL, redEfab, mwt, eleMobility, eleDiffusivity]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
@@ -390,7 +391,7 @@ void PeleC::ef_calc_transport(amrex::Box const& bx,
   eos.molecular_weight(mwt);   // CGS
 
   Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
-  int useNL   = ef_use_NLsolve;
+  int useNL   = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
   amrex::ParallelFor(bx, [=]
   AMREX_GPU_DEVICE (int i, int j, int k) noexcept
   {

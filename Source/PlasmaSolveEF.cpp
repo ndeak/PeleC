@@ -65,7 +65,6 @@ PeleC::solveEF ( Real time,
        const auto& chrg_ar = chargeDistrib.array(mfi);
        const Real* dx      = geom.CellSize();
        const Real* problo  = geom.ProbLo();
-       int useNL = ef_use_NLsolve;
        Real        factor = -1.0 * EFConst::elemCharge / ( EFConst::eps0_cgs  * EFConst::epsr);
        amrex::ParallelFor(bx,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
@@ -75,7 +74,7 @@ PeleC::solveEF ( Real time,
             Real tmp_val = 0.0;
             for(int n=0; n<NUM_SPECIES; n++) {
               if(n == E_ID) {
-                tmp_val = (ef_use_NLsolve == 1) ? -1.0*nE_ar(i,j,k) : rhoY_ar(i,j,k,n) * (1.0/mwt[n]) * EFConst::Na * zk_num[n];
+                tmp_val = (ef_use_NLsolve == 1 || ef_use_nEimplicit) ? -1.0*nE_ar(i,j,k) : rhoY_ar(i,j,k,n) * (1.0/mwt[n]) * EFConst::Na * zk_num[n];
               }
               else{
                 tmp_val = rhoY_ar(i,j,k,n) * (1.0/mwt[n]) * EFConst::Na * zk_num[n];
@@ -117,7 +116,7 @@ PeleC::solveEF ( Real time,
                   spec_edge_ar(i,j,k,n) /= (rho_ar(i,j,k) + rho_ar(ii,jj,kk)) / 2.0;
                   
                   // Multiply by dn/dx
-                  if(n == E_ID && ef_use_NLsolve == 1){
+                  if(n == E_ID && (ef_use_NLsolve == 1 || ef_use_nEimplicit)){
                     spec_edge_ar(i,j,k,n) *= (rho_ar(i,j,k,UFX+1) - rho_ar(i,j,k,UFX+1)) / dx[idim];
                   }
                   else{
@@ -229,7 +228,6 @@ PeleC::solveEF ( Real time,
               const auto& nE_ar   = Ucurr.array(mfi,UFX+1);
               const auto& mu_ar = KSpec_old.array(mfi);
               const auto& beta_ar = bcoef[idim].array(mfi);
-              int useNL = ef_use_NLsolve;
               amrex::Real factor = dt * EFConst::elemCharge / ( EFConst::eps0_cgs  * EFConst::epsr);
 
               amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
@@ -243,7 +241,7 @@ PeleC::solveEF ( Real time,
                   // Calculate edge state as simple average (unclear how to incorporate upwinding...)
                   for (int n = 0; n<NUM_SPECIES; n++){
                     // Recall mu already incorporates charge number
-                    if(n == E_ID && ef_use_NLsolve){
+                    if(n == E_ID && (ef_use_NLsolve || ef_use_nEimplicit)){
                       temp_coef += ((nE_ar(i,j,k)*mu_ar(i,j,k,n) + nE_ar(ii,jj,kk)*mu_ar(ii,jj,kk,n)) / 2.0);
                     }
                     else{

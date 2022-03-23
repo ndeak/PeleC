@@ -350,7 +350,7 @@ PeleC::variableSetUp()
   store_in_checkpoint = true;
 #ifdef PELEC_USE_PLASMA
   int react_num = NUM_SPECIES+2;
-  if(ef_use_NLsolve){
+  if(ef_use_NLsolve || ef_use_nEimplicit){
     react_num += 1;
   }
   amrex::Vector<amrex::BCRec> react_bcs(react_num);
@@ -423,7 +423,12 @@ PeleC::variableSetUp()
     set_scalar_bc(bc, phys_bc);
     bcs[cnt] = bc;
     name[cnt] = "rho_" + spec_names[i];
+#ifdef PELEC_USE_PLASMA
+    if (spec_names[i].compare("O2") == 0) O2_idx = i;
+    if (spec_names[i].compare("N2") == 0) N2_idx = i;
+#endif
   }
+
   // Get the auxiliary names from the network model.
 #ifdef PELEC_USE_PLASMA
   // TODO: Fix any problems in 2D
@@ -511,7 +516,7 @@ PeleC::variableSetUp()
   react_bcs[NUM_SPECIES + 1] = bc;
   react_name[NUM_SPECIES + 1] = "heatRelease";
 #ifdef PELEC_USE_PLASMA
-  if (ef_use_NLsolve) {
+  if (ef_use_NLsolve || ef_use_nEimplicit) {
      react_bcs[NUM_SPECIES+2] = bc;
      react_name[NUM_SPECIES+2] = "rho_omega_nE";
   }

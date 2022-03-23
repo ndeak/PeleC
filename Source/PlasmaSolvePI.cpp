@@ -70,7 +70,7 @@ PeleC::solvePI ( Real time,
     // Quenching pressure factor, see Pancheshnyi "Photoionization produced by low-current discharges in O2, air, N2 and CO2" (2015)
     // FIXME fix hard-coded to assume atmospheric pressure 
     amrex::Real pfact = 30.0 / (760 + 30.0);
-
+    
 
     // Efficiency factor, see Breden "A numerical study of high-pressure non-equilibrium streamers for combustion ignition application" (2013)
     // Also see Luque "Photoionization in negative streamers: Fast computations and two propagation modes" (2007)
@@ -86,7 +86,7 @@ PeleC::solvePI ( Real time,
         const auto& rhoY_ar = Ucurr.array(mfi,UFS);
         const auto& ion_ar = ionRate.array(mfi);
         const auto& eon_ar = redEfield.array(mfi);
-        int useNL = ef_use_NLsolve;
+        int useNL = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
         amrex::ParallelFor(bx,
         [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
         {
@@ -95,6 +95,8 @@ PeleC::solvePI ( Real time,
           amrex::Real frateN2 = 0.0; 
           amrex::Real frateO2 = 0.0; 
 
+          // FIXME: Come up with clean way to set O2/N2 indices without hard-coding
+          amrex::Real nEl, nO2, nN2;
 
           if(eon_ar(i,j,k) > 1.0e-10){
             if(ion_rate_type == 0){
@@ -132,9 +134,9 @@ PeleC::solvePI ( Real time,
           }
     
           // Convert mass to number density
-          amrex::Real nEl = rhoY_ar(i,j,k,0) / EFConst::me_cgs;
-          amrex::Real nO2 = rhoY_ar(i,j,k,1) * EFConst::Na / mwt[1];
-          amrex::Real nN2 = rhoY_ar(i,j,k,2) * EFConst::Na / mwt[2];
+          nEl = (useNL) ? rhoY_ar(i,j,k,UFX+1-UFS):rhoY_ar(i,j,k,0) / EFConst::me_cgs;
+          nO2 = rhoY_ar(i,j,k,O2_idx) * EFConst::Na / mwt[O2_idx];
+          nN2 = rhoY_ar(i,j,k,N2_idx) * EFConst::Na / mwt[N2_idx];
 
           // Calculate PI emission rate [1/cm3-s]
           if(nEl > 0.0){

@@ -1216,7 +1216,7 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
     }
   }
   else{
-    if(ef_use_NLsolve){
+    if(ef_use_NLsolve || ef_use_nEimplicit){
       min_nE = S.min(UFX + 1, 0, false);
       max_nE = S.max(UFX + 1, 0, false);
     }

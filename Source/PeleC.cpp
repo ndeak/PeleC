@@ -79,6 +79,7 @@ int PeleC::Efieldz = -1;
 int PeleC::ef_verbose = 0;
 int PeleC::ef_debug = 0;
 int PeleC::ef_use_NLsolve = 0;
+int PeleC::ef_use_nEimplicit = 0;
 int PeleC::ef_use_PETSC_direct = 0;
 int PeleC::ef_diffT_jfnk = 1;
 int PeleC::ef_maxNewtonIter = 50;
@@ -106,6 +107,8 @@ amrex::Real PeleC::ef_pulse_delay = 3.0e-9;
 amrex::Real PeleC::ef_pulse_rise = 5.0e-9;
 amrex::Real PeleC::ef_pulse_plateau = 12.0e-9;
 int PeleC::ion_bc_type = 0;
+int PeleC::O2_idx = 0;
+int PeleC::N2_idx = 0;
 int PeleC::zero_bc_flux = 0;
 int PeleC::zero_bc_grad = 0;
 int PeleC::ef_PC_fixedIter = -1;
@@ -113,8 +116,8 @@ int PeleC::ef_PC_approx = 1;
 bool PeleC::def_harm_avg_cen2edge  = false;
 amrex::Real PeleC::ef_PoissonTol = 1.0e-7;
 amrex::Real PeleC::ef_lambda_jfnk = 1.0e-7;
-// amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
-amrex::Real PeleC::ef_newtonTol = 1.0e-6;
+amrex::Real PeleC::ef_newtonTol = std::pow(1.0e-13,2.0/3.0);
+// amrex::Real PeleC::ef_newtonTol = 1.0e-6;
 // amrex::Real PeleC::ef_GMRES_reltol = 1.0e-10;
 // amrex::Real PeleC::ef_PC_MG_Tol = 1.0e-6;
 amrex::Real PeleC::ef_GMRES_reltol = 1.0e-4;
@@ -1107,7 +1110,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 
     // Determine if this is more restrictive than the maximum timestep limiting
-    if (estdt_hydro < estdt && !ef_use_NLsolve) {
+    if (estdt_hydro < estdt && !ef_use_NLsolve && !ef_use_nEimplicit) {
       limiter = "hydro";
       estdt = estdt_hydro;
     }

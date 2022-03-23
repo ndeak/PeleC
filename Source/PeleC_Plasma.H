@@ -11,6 +11,7 @@
   static int         ef_verbose;                            // Runtime verbose
   static int         ef_debug;                              // Use VisMF to dump data (a lot ...)
   static int         ef_use_NLsolve;                        // Switch nonlinear solve ON/OFF
+  static int         ef_use_nEimplicit;                     // Switch nE implicit linear system solve ON/OFF
   static bool        def_harm_avg_cen2edge;                 // Face averaging type
   static int         ion_bc_type;                           // Sets the ion electrode loss type (0 = weak efield approx., 1 = strong efield approx.)
   static int         zero_bc_flux;                          // Set to 1 to zero out all electrode fluxes for electrons and ions
@@ -94,6 +95,10 @@
   static amrex::Real ef_PC_MG_Tol;             // Preconditioner linear solver tolerance
   static int         ef_PC_fixedIter;          // Preconditioner fixed number of iterations
   static int         ef_PC_approx;             // Type of approximation of Stilda
+
+  // O2 and N2 species indicies - used for photoionization calculations
+  static int         O2_idx;
+  static int         N2_idx;
 
   // MFs
   amrex::MultiFab     Efield;
