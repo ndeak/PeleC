@@ -155,7 +155,7 @@ PeleC::react_state(
           // for rk64 we set minimum, maximum and guess
           // number of sub-iterations
 #ifdef PELEC_USE_PLASMA
-          if (ef_use_NLsolve) {
+          if (ef_use_NLsolve || ef_use_nEimplicit) {
              amrex::Abort("Explicit chemistry not implemented with non-linear solve");
           }
 #endif
@@ -221,7 +221,7 @@ PeleC::react_state(
 
 #ifdef PELEC_USE_PLASMA
               // If using the NL solver, copy nE to rhoE, and copy/convert forcing term (1/cm3 -> g/cm3)
-              if(ef_use_NLsolve){
+              if(ef_use_NLsolve || ef_use_nEimplicit){
                 rhoY(i,j,k,E_ID) = sold_arr(i, j, k, UFX+1) / EFConst::Na * mwt[E_ID];
                 frcExt(i,j,k,E_ID) = nonrs_arr(i, j, k, UFX + 1) / EFConst::Na * mwt[E_ID];
               } 
@@ -356,7 +356,7 @@ PeleC::react_state(
             }
 
 #ifdef PELEC_USE_PLASMA
-            if(ef_use_NLsolve){
+            if(ef_use_NLsolve || ef_use_nEimplicit){
               // Copy and convert rhoE -> nE, zero out rhoE
               snew_arr(i,j,k,UFX+1) = snew_arr(i,j,k,UFS+E_ID) * EFConst::Na / mwt[E_ID];
               snew_arr(i,j,k,UFS+E_ID) = 0.0;

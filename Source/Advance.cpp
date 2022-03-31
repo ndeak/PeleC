@@ -248,13 +248,13 @@ PeleC::do_mol_advance(
     amrex::Print() << "... Computing MOL source term at t^{n} " << std::endl;
   }
 
-  if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
+  if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
 #ifndef PELEC_USE_PLASMA
   FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
 #endif
   amrex::Real flux_factor = 0;
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
-  if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
+  if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
 
   // Calculate the cel-centered dielectric relaxation timescales
   for (amrex::MFIter mfi(KSpec_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
@@ -262,10 +262,11 @@ PeleC::do_mol_advance(
      const amrex::Box gbox = amrex::grow(tbox, numGrow());
      const auto muEfab = KSpec_old.array(mfi,E_ID);
      const auto ne_fab = Sborder.array(mfi,UFS+E_ID);
+     const auto nE_fab = Sborder.array(mfi,UFX+1);
      const auto diele_fab = dielectric_ts.array(mfi);
      amrex::ParallelFor(
        gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          amrex::Real ne_val = amrex::max(amrex::Math::abs(ne_fab(i,j,k))/EFConst::me_cgs, 1.0e-10);
+          amrex::Real ne_val = (ef_use_NLsolve || ef_use_nEimplicit) ? amrex::max(amrex::Math::abs(nE_fab(i,j,k)), 1.0e-10):amrex::max(amrex::Math::abs(ne_fab(i,j,k))/EFConst::me_cgs, 1.0e-10);
           amrex::Real mu_E = amrex::max(amrex::Math::abs(muEfab(i,j,k)), 1.0e-10);
           diele_fab(i,j,k) = amrex::Math::abs(EFConst::eps0_cgs / (EFConst::elemCharge * mu_E * ne_val));
        });
@@ -276,6 +277,11 @@ PeleC::do_mol_advance(
      // NL solve
      MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
      ef_solve_NL(dt,time,Sborder, molSrc,I_R,forcing_nE);
+  }
+  if (ef_use_nEimplicit) {
+     // nE implict solve
+     MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
+     nESolveImplicit(time,dt,I_R,Sborder,forcing_nE);
   }
 #endif
 
@@ -309,7 +315,7 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Saxpy(S_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
-    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
+    if (ef_use_NLsolve || ef_use_nEimplicit) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
 #endif
   }
 #endif
@@ -348,15 +354,20 @@ PeleC::do_mol_advance(
 
   FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
   flux_factor = mol_iters > 1 ? 0 : 1;
-  if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
+  if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
-  if(ef_use_NLsolve) Sborder.setVal(0.0, UFS+E_ID, 1);
+  if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
 
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
      // NL solve
      MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
      ef_solve_NL(dt,time,Sborder,molSrc,I_R,forcing_nE);
+  }
+  if (ef_use_nEimplicit) {
+     // nE implict solve
+     MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
+     nESolveImplicit(time,dt,I_R,Sborder,forcing_nE);
   }
 #endif
 
@@ -389,7 +400,7 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
-    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
+    if (ef_use_NLsolve || ef_use_nEimplicit) amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
 #endif
 
 #ifdef PELEC_USE_PLASMA
@@ -426,7 +437,7 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Subtract(molSrc, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
-    if (ef_use_NLsolve) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
+    if (ef_use_NLsolve || ef_use_nEimplicit) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
 #endif
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
@@ -447,7 +458,7 @@ PeleC::do_mol_advance(
 
 
   computeTemp(S_new, 0);
-  if(ef_use_NLsolve) S_new.setVal(0.0, UFS+E_ID, 1);
+  if(ef_use_NLsolve || ef_use_nEimplicit) S_new.setVal(0.0, UFS+E_ID, 1);
 
   // // floor negative electron number density values after reactive update
   //  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
@@ -880,7 +891,7 @@ PeleC::construct_Snew(
     amrex::MultiFab::Saxpy(S_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
-    if (ef_use_NLsolve) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0); 
+    if (ef_use_NLsolve || ef_use_nEimplicit) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0); 
 #endif
   }
 #endif

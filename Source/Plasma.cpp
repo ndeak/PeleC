@@ -170,13 +170,6 @@ void PeleC::plasma_define_data() {
       }
 
       // Transport coefficients
-      diff_e.define(this);
-      De_ec = diff_e.get();
-      De_ec[0]->setVal(0.0);
-      De_ec[1]->setVal(0.0);
-      De_ec[2]->setVal(0.0);
-      mob_e.define(this);
-      Ke_ec = mob_e.get();
       gasN_fb.define(this);
       gasN_ec = gasN_fb.get();
       // ionFlx_fb.define(this,1,3);
@@ -185,6 +178,21 @@ void PeleC::plasma_define_data() {
       for (int d = 0; d < AMREX_SPACEDIM; ++d) {
          ionFlx[d]->setVal(0.0);
       }
+   }
+
+   if(ef_use_NLsolve || ef_use_nEimplicit){
+      mob_e.define(this);
+      Ke_ec = mob_e.get();
+      Ke_ec[0]->setVal(0.0);
+      Ke_ec[1]->setVal(0.0);
+      Ke_ec[2]->setVal(0.0);
+      diff_e.define(this);
+      De_ec = diff_e.get();
+      De_ec[0]->setVal(0.0);
+      De_ec[1]->setVal(0.0);
+      De_ec[2]->setVal(0.0);
+      nE_state.define(grids,dmap,1,2);
+      nE_state_old.define(grids,dmap,1,2);
    }
 }
 
@@ -265,6 +273,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   // Handling of De is the same
   // N*mu and N*De supplied should be consistent with a given E/N value
   // TODO: this is performed each time step since xport coefs would be overwritten otherwise, but
+  // FIXME: Too much hard coding for constant transport coeffs
   // this can be done more efficiently in the future. 
   // Note: rhoDe needs to be recalculated for each cell anyways since rho may differ across the domain
   amrex::Real eleMobility;
@@ -322,13 +331,13 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      });
   }
   // Copy NL Ke results back into normal array for CFL calculation later
-  if(ef_use_NLsolve) MultiFab::Copy(KSpec_old, Ke_cc, 0, E_ID, 1, 0);
+  if(ef_use_NLsolve || ef_use_nEimplicit) MultiFab::Copy(KSpec_old, Ke_cc, 0, E_ID, 1, 0);
   if ( ef_debug ) {
      std::string timetag = (whichTime == AmrOldTime) ? "old" : "new";
      VisMF::Write(KSpec_old,"KappaSpec"+timetag+"_Lvl"+std::to_string(level));
   }
 
-  if ( ef_use_NLsolve ) {
+  if ( ef_use_NLsolve || ef_use_nEimplicit) {
      // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
      // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
      // TODO: does cen2edg_cpp need to be modified to take into account EBs?

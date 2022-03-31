@@ -167,6 +167,8 @@
   amrex::MultiFab            tmp_nE_forcing;
   amrex::Real                disp_current = 0.0;
   amrex::Real                level_capacitance;     // Individual capacitance component of a given level
+  amrex::MultiFab            nE_state;
+  amrex::MultiFab            nE_state_old;
 
   // Preconditioner data
 #ifdef PELEC_USE_EB
@@ -201,6 +203,13 @@
                 ProbParmDevice const& prob_parm, 
                 const amrex::MultiFab& Sbord,
                 bool lapl_solve = false);
+
+  // Implicit nE solve
+  void nESolveImplicit (amrex::Real time,
+                amrex::Real dt, 
+                const amrex::MultiFab &I_R_in,
+                const amrex::MultiFab & Sbord,
+                      amrex::MultiFab & forcing_nE);
 
   // Photoionization helmholtz solve
   void solvePI (amrex::Real time,
