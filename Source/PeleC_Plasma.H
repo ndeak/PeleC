@@ -116,7 +116,7 @@
   amrex::MultiFab** gradPhiV;
   amrex::MultiFab     PI_source;  
   amrex::MultiFab     dielectric_ts;
-  amrex::MultiFab     disp_current_mf;
+  amrex::MultiFab     flux_current_mf;
   amrex::MultiFab     Ke_cc_mf;
   amrex::MultiFab     De_cc_mf;
   amrex::MultiFab     joule_heating;  
@@ -166,6 +166,8 @@
   amrex::MultiFab            ionFlx_eb;
   amrex::MultiFab            tmp_nE_forcing;
   amrex::Real                disp_current = 0.0;
+  amrex::Real                flux_current = 0.0;
+  amrex::Real                total_current = 0.0;
   amrex::Real                level_capacitance;     // Individual capacitance component of a given level
   amrex::MultiFab            nE_state;
   amrex::MultiFab            nE_state_old;
@@ -246,7 +248,7 @@
 
   void ef_circuitModel(amrex::Real time, amrex::Real dt);
 
-  void ef_dispCurrent(const amrex::MultiFab &state_curr,
+  void ef_fluxCurrent(const amrex::MultiFab &state_curr,
                       const amrex::MultiFab &mu_curr,
                       const amrex::MultiFab &E_curr,
                       const amrex::MultiFab &D_curr);
@@ -335,8 +337,8 @@
 
   amrex::MultiFab& get_PI_data () noexcept { return PI_source; }
 
-  amrex::Real getDispCurrent () noexcept {return disp_current; }
-  void setDispCurrent (amrex::Real current_in) noexcept {disp_current = current_in; }
+  amrex::Real getFluxCurrent () noexcept {return flux_current; }
+  void setFluxCurrent (amrex::Real current_in) noexcept {flux_current = current_in; }
 
   amrex::Real getGapCapacitance () noexcept {return level_capacitance; }
   void setGapCapacitance (amrex::Real capacitance_in) noexcept {level_capacitance = capacitance_in; }

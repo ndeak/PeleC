@@ -139,7 +139,7 @@ int PeleC::ef_constEleTransport = 0;
 amrex::Real PeleC::ef_eleMobility = 0.0;
 amrex::Real PeleC::ef_eleDiffusivity = 0.0;
 int PeleC::ion_rate_type = 0;
-amrex::Real PeleC::ef_electron_heating_pct = 0.0;
+amrex::Real PeleC::ef_electron_heating_pct = 1.0;
 
 bool PeleC::plot_numdens = true;
 
@@ -1094,7 +1094,12 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
         estdt_vdif, amrex::min<amrex::Real>(estdt_tdif, estdt_edif)));
 
     amrex::ParallelDescriptor::ReduceRealMin(estdt_hydro);
-    estdt_hydro *= cfl;
+    if(ef_use_nEimplicit){
+      estdt_hydro *= 10.0;
+    }
+    else{
+      estdt_hydro *= cfl;
+    }
 
     // if (verbose) {
       amrex::Print() << "...estimated hydro-limited timestep at level " << level
@@ -1102,15 +1107,13 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     // }
     
 #ifdef PELEC_USE_PLASMA
-    if(!ef_semiImpEfield){
-      amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
-      amrex::Real min_diele = (min_dielectric == 0) ? 1000:min_dielectric;
-      estdt_hydro = amrex::min<amrex::Real>(estdt_hydro, min_diele);
-    }
+    amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
+    amrex::Real min_diele = (min_dielectric == 0) ? 1000:min_dielectric;
+    estdt_hydro = (ef_semiImpEfield) ? amrex::min<amrex::Real>(estdt_hydro, 10.0*min_diele):amrex::min<amrex::Real>(estdt_hydro, min_diele);
 #endif
 
     // Determine if this is more restrictive than the maximum timestep limiting
-    if (estdt_hydro < estdt && !ef_use_NLsolve && !ef_use_nEimplicit) {
+    if (estdt_hydro < estdt && !ef_use_NLsolve) {
       limiter = "hydro";
       estdt = estdt_hydro;
     }

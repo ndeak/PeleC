@@ -181,9 +181,9 @@ PeleC::do_mol_advance(
 
   // Move to initialization?
   if(ef_circuit_model != 0 && ef_star_update > 0) amrex::Abort("Efield star-state update not currently compatible with circuit model");
-  if(ef_circuit_model != 0 && ef_semiImpEfield != 0) amrex::Abort("Semi-implicit efield calculation not currently compatible with circuit model");
+  // if(ef_circuit_model != 0 && ef_semiImpEfield != 0) amrex::Abort("Semi-implicit efield calculation not currently compatible with circuit model");
 
-  // Calculate the flux component of the displacement current (needs to be called at each level)
+  // Calculate the flux component of the total current (needs to be called at each level)
   if(ef_circuit_model != 0) {
     // Get Laplace component of Efield
     // FIXME: this normalized lapl could be calclated once and scaled, but need to make sure MF isn't overwritten on regrid
@@ -191,12 +191,12 @@ PeleC::do_mol_advance(
     solveEF( time, dt, *lprobparm, Sborder, true);
     FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
 
-    // Calculate level's component of displacement current
-    ef_dispCurrent(Sborder, KSpec_old, Efield, coeffs_old);
+    // Calculate level's component of flux current
+    ef_fluxCurrent(Sborder, KSpec_old, Efield, coeffs_old);
   }
 
   // Explicit calculation of the electrode voltage via transmission line and Sato equations
-  // NOTE: we are only ready to calculate everything at the finest level (otherwise we dont have complete displacement current)
+  // NOTE: we are only ready to calculate everything at the finest level (otherwise we dont have complete flux current)
   // NOTE: assumes finest grid level always present
   if(ef_circuit_model != 0 && level == parent->finestLevel()) ef_circuitModel(time, dt);
 

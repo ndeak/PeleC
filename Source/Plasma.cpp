@@ -131,7 +131,7 @@ void PeleC::plasma_define_data() {
    ionFlx_eb.define(grids,dmap,1,numGrow()); ionFlx_eb.setVal(0.0);      // EB ion fluxes - a bit inefficient to store as full MF
    PI_source.define(grids, dmap, 4, 1, amrex::MFInfo(), Factory()); PI_source.setVal(0.0);
    dielectric_ts.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); dielectric_ts.setVal(1.0);
-   disp_current_mf.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); disp_current_mf.setVal(0.0);
+   flux_current_mf.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); flux_current_mf.setVal(0.0);
    joule_heating.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); joule_heating.setVal(0.0);
 
    // Intermediate MFs used in transport coef. calculations for NL system
@@ -816,7 +816,7 @@ void PeleC::ef_waveVoltageSources(amrex::Real time){
   }
 }
 
-void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
+void PeleC::ef_fluxCurrent(const amrex::MultiFab &state_curr,
                       const amrex::MultiFab &mu_curr,
                       const amrex::MultiFab &E_curr,
                       const amrex::MultiFab &D_curr){
@@ -864,9 +864,9 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
      }
   }
 
-  for (amrex::MFIter mfi(disp_current_mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+  for (amrex::MFIter mfi(flux_current_mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& tbox = mfi.tilebox();
-      const auto curr_arr = disp_current_mf.array(mfi);
+      const auto curr_arr = flux_current_mf.array(mfi);
       auto const& S_arr = state_curr.array(mfi);
       auto const& E_cc = E_curr.array(mfi);
       auto const& K_cc = KSpec_old.array(mfi);
@@ -891,38 +891,39 @@ void PeleC::ef_dispCurrent(const amrex::MultiFab &state_curr,
             }
           }
 
-          // Calculate the displacement current density (erg/cm3-s)
+          // Calculate the flux current density (erg/cm3-s)
           curr_arr(i,j,k) = flux_component;
         });
   }
 
-  // Perform volume weighted sum (integral) over the whole domain to obtain displacement current (erg/s)
+  // Perform volume weighted sum (integral) over the whole domain to obtain flux current (erg/s)
   // Note: finemask is set to true, so that the integral at each level is calculated only with cells that aren't covered by a finer level
   // By summing the component from each level, we recover the full volume integral
-  disp_current = volWgtSumMF(disp_current_mf, 0, false, true);
+  flux_current = volWgtSumMF(flux_current_mf, 0, false, true);
 
-  // If we are at the finest level, we need to calculate displacement current as the sum from each previous level
+  // If we are at the finest level, we need to calculate flux current as the sum from each previous level
   if(level == parent->finestLevel()){
     int lidx = 0;
     while(lidx < parent->finestLevel()) {
       auto& crselev = getLevel(lidx);
-      disp_current += crselev.getDispCurrent();
+      flux_current += crselev.getFluxCurrent();
       lidx++;
     }
 
-    // Now need to set the correct displace current at each coarse level
+    // Now need to set the correct flux current at each coarse level
     lidx = 0;
     while(lidx < parent->finestLevel()) {
       auto& crselev = getLevel(lidx);
-      crselev.setDispCurrent(disp_current);
+      crselev.setFluxCurrent(flux_current);
       lidx++;
     }
   }
 
-  amrex::Print() << "AT LEVEL " << level << " DISP CURRENT IS " << disp_current << "\n";
+  amrex::Print() << "AT LEVEL " << level << " FLUX CURRENT IS " << flux_current << "\n";
 }
 
 void PeleC::ef_voltagesCurrents(amrex::Real time, amrex::Real dt){
+  // NOTE: Some weird minus sign stuff based on sign convention of current, still need to figure out why
 
   // Get the current step number
   int step_num = parent->levelSteps(0) + ef_circuit_load_num - 1;
@@ -931,7 +932,7 @@ void PeleC::ef_voltagesCurrents(amrex::Real time, amrex::Real dt){
   eleCurrent_ts[step_num] = (eleVoltage_ts[step_num] - reflectedWave_ts[step_num]) / ef_circuit_impedance;
 
   // Calculate electrode voltage to be used at next time step V_e^n+1
-  eleVoltage_ts[step_num + 1] = (eleVoltage_ts[step_num] == 0) ? eleVoltage_ts[step_num] - (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num]):eleVoltage_ts[step_num] - (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num] - disp_current / eleVoltage_ts[step_num]); 
+  eleVoltage_ts[step_num + 1] = (eleVoltage_ts[step_num] == 0) ? eleVoltage_ts[step_num] - (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num]):eleVoltage_ts[step_num] - (dt/ef_circuit_capacitance) * (eleCurrent_ts[step_num] - flux_current / eleVoltage_ts[step_num]); 
 
   // Calculate source current I_s^n
   // amrex::Real applied_voltage = (time < 2.0*ef_circuit_time_delay) ? getCurrVoltage(time): -1.0*incidentWave_ts[step_num];
@@ -1008,7 +1009,7 @@ void PeleC::ef_loadCircuitData (amrex::Real time){
     eleCurrent_ts[tstep - 1] = tecur;  
     incidentWave_ts[tstep - 1] = tiwave * 1.0e10;
     reflectedWave_ts[tstep - 1] = trwave * 1.0e10;   
-    disp_current = tfluxcur;
+    flux_current = tfluxcur;
   }
 
 

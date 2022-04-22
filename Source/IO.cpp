@@ -1189,6 +1189,7 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
 
   amrex::Real min_nE;
   amrex::Real max_nE;
+  amrex::Real flux_curr;
 
   if(pac_mechanism){
     amrex::Real max_EN = redEfield.max(0, 0, false);
@@ -1242,6 +1243,11 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
     amrex::Real CFL = max_Edrift * dt / dx[0];
     amrex::Real min_edrift = (max_Edrift == 0.0) ? 1.0:0.3 * dx[0] / max_Edrift;
     amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
+    if(ef_circuit_model == 1) {
+      int step_num = parent->levelSteps(0) + ef_circuit_load_num - 1;
+      disp_current = (eleVoltage_ts[step_num] - eleVoltage_ts[step_num-1]) / dt * ef_circuit_capacitance;
+      flux_curr = (eleVoltage_ts[step_num] == 0) ? 0.0:flux_current / eleVoltage_ts[step_num];
+    }
 
     if (amrex::ParallelDescriptor::IOProcessor()) {
       std::string baseName = "MonitorFile_Level";
@@ -1251,11 +1257,12 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
 
       std::ofstream MonitorFile;
       MonitorFile.open(monitorFileName.c_str(), std::ios::out | std::ios::app);
-      MonitorFile << time << "\t" << min_nE  << "\t" << max_nE  << "\t" << min_nO4p  << "\t" << max_nO4p  << "\t" << min_nO2m  << "\t" << max_nO2m  << "\t" << min_phiV  << "\t" << max_phiV  << "\t" << min_EN  << "\t" << max_EN  << "\t" << disp_current << "\t" << Ddtodx2  << "\t" << CFL << "\t" << min_dielectric  << "\t" << min_edrift << "\t" << dt << std::endl;
+      MonitorFile << time << "\t" << max_nE << "\t" << max_nO4p << "\t" << max_nO2m << "\t" << max_phiV << "\t" << max_EN  << "\t" << flux_curr <<"\t" << disp_current << "\t" << Ddtodx2  << "\t" << CFL << "\t" << min_dielectric  << "\t" << min_edrift << "\t" << dt << std::endl;
       MonitorFile.close();
     }
   }
 }
+
 
 void PeleC::writeCircuitFile(amrex::Real time, int step_num){
 
@@ -1265,10 +1272,10 @@ void PeleC::writeCircuitFile(amrex::Real time, int step_num){
   if (amrex::ParallelDescriptor::IOProcessor()) {
     std::string circuitFileName = "circuit.dat";
 
-    amrex::Real flux_current = (eleVoltage_ts[step_num] == 0) ? 0.0:disp_current / eleVoltage_ts[step_num];
+    amrex::Real flux_curr = (eleVoltage_ts[step_num] == 0) ? 0.0:flux_current / eleVoltage_ts[step_num];
     std::ofstream CircuitFile;
     CircuitFile.open(circuitFileName.c_str(), std::ios::out | std::ios::app);
-    CircuitFile << step_num+1 << "\t" << time  << "\t" << sourceVoltage_ts[step_num]*1.0e-10 << "\t" << eleVoltage_ts[step_num]*1.0e-10 << "\t" << eleVoltage_ts[step_num+1]*1.0e-10  <<  "\t" << sourceCurrent_ts[step_num] << "\t" << eleCurrent_ts[step_num] << "\t" << incidentWave_ts[step_num]*1.0e-10  << "\t" << reflectedWave_ts[step_num]*1.0e-10  << "\t" << flux_current << "\t" << ef_circuit_capacitance*1.0e19 << std::endl;
+    CircuitFile << step_num+1 << "\t" << time  << "\t" << sourceVoltage_ts[step_num]*1.0e-10 << "\t" << eleVoltage_ts[step_num]*1.0e-10 << "\t" << eleVoltage_ts[step_num+1]*1.0e-10  <<  "\t" << sourceCurrent_ts[step_num] << "\t" << eleCurrent_ts[step_num] << "\t" << incidentWave_ts[step_num]*1.0e-10  << "\t" << reflectedWave_ts[step_num]*1.0e-10  << "\t" << flux_curr << "\t" << ef_circuit_capacitance*1.0e19 << std::endl;
     CircuitFile.close();
   }
 }
@@ -1286,7 +1293,7 @@ void PeleC::monitorFileSetup(int i){
     if(pac_mechanism){
       MonitorFile << "(1)time[s] \t (2)E/N[Td] \t (3)Te[eV] \t (4)Tgas[k] \t (5)nE[1/cm3] \t (6)nO[1/cm3] \t (7)nOH[1/cm3] \t (8)nH[1/cm3] \t (9)nN2*[1/cm3] \t (10)nCO[1/cm3] \t (11)nCO2[1/cm3] \t (12)nC2H4[1/cm3] \t (13)dt[s]" << std::endl;
     }else{
-      MonitorFile << "(1)time[s] \t (2)min_nE[1/cm3] \t (3)max_nE[1/cm3] \t (4)min_nO4+[1/cm3] \t (5)max_nO4+[1/cm3] \t (6)min_nO2-[1/cm3] \t (7)max_nO2-[1/cm3] \t (8)min_phiV[kV] \t (9)max_phiV[kV] \t (10)min_EN[Td] \t (11)max_EN[Td] \t (12)disp_current[C/s] \t (13)Ddtodx2 \t (14)CFL \t (15)min_dielectric[s] \t (16)min_drift[s] \t (17)dt[s]" << std::endl;
+      MonitorFile << "(1)time[s] \t (2)max_nE[1/cm3] \t (3)max_nO4+[1/cm3] \t (4)max_nO2-[1/cm3] \t (5)max_phiV[kV] \t (6)max_EN[Td] \t (7)flux_current[C/s] \t (8)disp_current[C/s] \t(9)Ddtodx2 \t (10)CFL \t (11)min_dielectric[s] \t (12)min_drift[s] \t (13)dt[s]" << std::endl;
     }
     MonitorFile.close();
   }

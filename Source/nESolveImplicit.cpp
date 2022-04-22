@@ -133,7 +133,7 @@ PeleC::nESolveImplicit ( Real time,
 
   // relative and absolute tolerances for linear solve
   const Real tol_rel = ef_PoissonTol;
-  const Real tol_abs = std::max(std::max(nEresid.norm0(),nE_state.norm0()) * ef_PoissonTol, 1.0e-5);
+  const Real tol_abs = std::max(std::max(nEresid.norm0(),nE_state.norm0()) * ef_PoissonTol * 1.0e1, 1.0e-2);
 
   mlmg.setVerbose(ef_PoissonVerbose);
   mlmg.setMaxIter(1000);
