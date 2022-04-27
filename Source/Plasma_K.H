@@ -61,14 +61,13 @@ AMREX_FORCE_INLINE
 void
 getDiffE(int i, int j, int k, 
          int Ecomp, int use_NL,
-         const amrex::Real &factor,
+         const amrex::Real &relax_factor,
          amrex::Array4<const amrex::Real> const& rhoY,
          amrex::Array4<      amrex::Real> const& rhoD,
          amrex::Array4<const amrex::Real> const& EoN,
          const amrex::Real * mwt) noexcept
 {
   // ndeak note - calculates rho*diffusivity in units of (cm2/s)*(g/cm3)
-  // factor has units of J/K-C
    using namespace amrex::literals;
 
    amrex::Real Na = 6.0221409e23;  // 1/mol
@@ -106,7 +105,7 @@ getDiffE(int i, int j, int k,
 
    amrex::Real ndens = 0.0;
    for(int n=0; n<NUM_SPECIES; n++) ndens += rhoY(i,j,k,n) * (1.0/mwt[n]) * Na;
-   rhoD(i,j,k,Ecomp) *= (1.0/ndens);       // Convert to (cm2/s)
+   rhoD(i,j,k,Ecomp) *= (1.0/ndens) * relax_factor;       // Convert to (cm2/s)
    if(!use_NL) rhoD(i,j,k,Ecomp) *= rho;   // Convert to (g/cm-s) unless using coupled system
 }
 

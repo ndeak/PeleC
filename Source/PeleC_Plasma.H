@@ -12,6 +12,7 @@
   static int         ef_debug;                              // Use VisMF to dump data (a lot ...)
   static int         ef_use_NLsolve;                        // Switch nonlinear solve ON/OFF
   static int         ef_use_nEimplicit;                     // Switch nE implicit linear system solve ON/OFF
+  static int         ef_use_nEDiffImp;                      // Switch implicit diffusion for electrons ON/OFF
   static bool        def_harm_avg_cen2edge;                 // Face averaging type
   static int         ion_bc_type;                           // Sets the ion electrode loss type (0 = weak efield approx., 1 = strong efield approx.)
   static int         zero_bc_flux;                          // Set to 1 to zero out all electrode fluxes for electrons and ions
@@ -42,6 +43,7 @@
   static int         ef_constEleTransport;                   // Use constant electron mobility (and diffusivity, via Einsten relation)
   static amrex::Real ef_eleMobility;                         // (Normalized) constant electron mobility mu*N (1/V-m-s)  
   static amrex::Real ef_eleDiffusivity;                      // (Normalized) constant electron diffusivity De*N (1/m-s)  
+  static int         ef_relax_eleDiff;                       // Use a factor to reduce electron mobility by order of magnitude in between pulses?
 
   // Plotting options
   static bool plot_numdens;                                   // Plot number densities?
@@ -113,7 +115,9 @@
   amrex::MultiFab     Qaux_ext;  
   std::array<const amrex::MultiFab* ,AMREX_SPACEDIM> Efield_edge;
   FluxBoxes gphi;
+  FluxBoxes DegnE;
   amrex::MultiFab** gradPhiV;
+  amrex::MultiFab** DegradnE;
   amrex::MultiFab     PI_source;  
   amrex::MultiFab     dielectric_ts;
   amrex::MultiFab     flux_current_mf;
@@ -212,6 +216,11 @@
                 const amrex::MultiFab &I_R_in,
                 const amrex::MultiFab & Sbord,
                       amrex::MultiFab & forcing_nE);
+
+  // Implicit nE diffusion solve
+  void nEDiffuseImplicit (amrex::Real time,
+                amrex::Real dt, 
+                const amrex::MultiFab & Sbord);
 
   // Photoionization helmholtz solve
   void solvePI (amrex::Real time,

@@ -80,6 +80,7 @@ int PeleC::ef_verbose = 0;
 int PeleC::ef_debug = 0;
 int PeleC::ef_use_NLsolve = 0;
 int PeleC::ef_use_nEimplicit = 0;
+int PeleC::ef_use_nEDiffImp = 0;
 int PeleC::ef_use_PETSC_direct = 0;
 int PeleC::ef_diffT_jfnk = 1;
 int PeleC::ef_maxNewtonIter = 50;
@@ -138,6 +139,7 @@ bool PeleC::pac_mechanism = false;
 int PeleC::ef_constEleTransport = 0;
 amrex::Real PeleC::ef_eleMobility = 0.0;
 amrex::Real PeleC::ef_eleDiffusivity = 0.0;
+int PeleC::ef_relax_eleDiff = 0;
 int PeleC::ion_rate_type = 0;
 amrex::Real PeleC::ef_electron_heating_pct = 1.0;
 
@@ -1107,9 +1109,10 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     // }
     
 #ifdef PELEC_USE_PLASMA
+    // NOTE: Hard-coding factor of 100 for dielectric timescale increase when using semi-implicit system
     amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
     amrex::Real min_diele = (min_dielectric == 0) ? 1000:min_dielectric;
-    estdt_hydro = (ef_semiImpEfield) ? amrex::min<amrex::Real>(estdt_hydro, 10.0*min_diele):amrex::min<amrex::Real>(estdt_hydro, min_diele);
+    estdt_hydro = (ef_semiImpEfield) ? amrex::min<amrex::Real>(estdt_hydro, 100.0*min_diele):amrex::min<amrex::Real>(estdt_hydro, min_diele);
 #endif
 
     // Determine if this is more restrictive than the maximum timestep limiting

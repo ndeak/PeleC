@@ -157,6 +157,9 @@ PeleC::getMOLSrcTerm(
   // Get the cc species transport properties
   ef_calc_transport(S, time); 
 
+  // Calculate implicit electron diffusive flux if needed (this will overwrite flux values later)
+  if(ef_use_nEDiffImp) nEDiffuseImplicit(time, dt, S);
+
   // Obtain potential BCRec to use later
   const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
   const int* PhiVbc = bcphiV.data();
@@ -349,6 +352,21 @@ PeleC::getMOLSrcTerm(
         typ, Ncut, d_sv_eb_bndry_geom, flags.array(mfi)
 #endif
       );
+
+      // Overwrite the electron flux with the implicit solution
+      if(ef_use_nEDiffImp){
+        amrex::Print() << "Overwriting fluxes!\n";
+        std::array<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> DegnE_arr = {AMREX_D_DECL(DegradnE[0]->array(mfi), DegradnE[1]->array(mfi), DegradnE[2]->array(mfi))} ;
+        for(int dir = 0; dir < AMREX_SPACEDIM; dir++){
+          amrex::ParallelFor(
+            eboxes[dir], [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+             if(i == 120 && j == 100 && k == 120) printf("dir %i - flux old(%i %i %i) = %.6e, flux new = %.6e\n", dir, i, j, k, flx[dir](i,j,k,UFS+E_ID), DegnE_arr[dir](i,j,k) );
+             flx[dir](i,j,k,UFS+E_ID) = -1.0*DegnE_arr[dir](i,j,k);
+             // flx[dir](i,j,k,UFS+E_ID) = 0.0;
+          });
+
+        }
+      }
 
       // Compute flux divergence (1/Vol).Div(F.A)
       {

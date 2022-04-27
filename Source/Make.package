@@ -69,6 +69,7 @@ ifeq ($(USE_PLASMA), TRUE)
   CEXE_sources += PlasmaSolvePI.cpp
   CEXE_sources += PlasmaNL.cpp
   CEXE_sources += nESolveImplicit.cpp
+  CEXE_sources += nEDiffuseImplicit.cpp
 endif
 
 ifeq ($(USE_PARTICLES), TRUE)

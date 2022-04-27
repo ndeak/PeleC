@@ -41,6 +41,7 @@ PeleC::plasma_init()
     pp.query("def_harm_avg_cen2edge",def_harm_avg_cen2edge);
     pp.query("use_nonLinearSolve",ef_use_NLsolve);
     pp.query("use_nEimplicit",ef_use_nEimplicit);
+    pp.query("use_nEDiffImp",ef_use_nEDiffImp);
 
     pp.query("Poisson_tol",ef_PoissonTol);
     pp.query("Poisson_verbose",ef_PoissonVerbose);
@@ -79,6 +80,7 @@ PeleC::plasma_init()
     pp.query("constEleTransport", ef_constEleTransport);
     pp.query("eleMobility", ef_eleMobility);
     pp.query("eleDiffusivity", ef_eleDiffusivity);
+    pp.query("relax_eleDiff", ef_relax_eleDiff);
 
     pp.query("plot_numdens", plot_numdens);
 
@@ -180,7 +182,7 @@ void PeleC::plasma_define_data() {
       }
    }
 
-   if(ef_use_NLsolve || ef_use_nEimplicit){
+   if(ef_use_NLsolve || ef_use_nEimplicit || ef_use_nEDiffImp){
       mob_e.define(this);
       Ke_ec = mob_e.get();
       Ke_ec[0]->setVal(0.0);
@@ -269,6 +271,23 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   auto eos = pele::physics::PhysicsType::eos();
   eos.molecular_weight(mwt);   // CGS
 
+  // Option to reduce electron diffusivity between pulses to allor for larger time step sizes
+  amrex::Real eleDiff_factor = 1.0;
+  if(ef_relax_eleDiff){
+    pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0)));
+    dfact = 5.0;
+    sfact = 1.0;
+    amrex::Real pulse_dist=1.0e10;
+    amrex::Real pulse_timing_tmp = 0.0;
+    amrex::Real pfact = 0.0;
+    for(int i=0; i<pulse_num; i++){
+      pulse_timing_tmp = pulse_timing + pfact*(1.0/pulse_freq);
+      pulse_dist = amrex::min<amrex::Real>(amrex::Math::abs(time - pulse_timing_tmp), pulse_dist);
+      pfact += 1.0;
+    }
+    eleDiff_factor = 1.0 / (1.0 + (10.0 - 1.0) * 0.5 * (1.0 + tanh((pulse_dist - dfact*pulse_sigma) / (sfact*pulse_sigma))));
+  }
+
   // Calculate a constant electron mobility given N*mu, and assuming atmospheric conditions
   // Handling of De is the same
   // N*mu and N*De supplied should be consistent with a given E/N value
@@ -299,7 +318,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      auto const& redEfab = redEfield.array(mfi);
      Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
      int useNL   = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
-     amrex::ParallelFor(gbox, [rhoY, T, factor, Ks, rho_ar, rhoD, Ke, De, useNL, redEfab, mwt, eleMobility, eleDiffusivity]
+     amrex::ParallelFor(gbox, [rhoY, T, eleDiff_factor, Ks, rho_ar, rhoD, Ke, De, useNL, redEfab, mwt, eleMobility, eleDiffusivity]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
         if(ef_constEleTransport == 1){
@@ -315,11 +334,12 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
         else{
           if (useNL) {
              getKappaE(i,j,k,0,Ke,redEfab,rhoY,mwt);
-             getDiffE(i,j,k,0,useNL,factor,rhoY,De,redEfab,mwt);
+             getDiffE(i,j,k,0,useNL,eleDiff_factor,rhoY,De,redEfab,mwt);
           } else {
              getKappaE(i,j,k,E_ID,Ks,redEfab,rhoY,mwt);
-             getDiffE(i,j,k,E_ID,useNL,factor,rhoY,rhoD,redEfab,mwt);
+             getDiffE(i,j,k,E_ID,useNL,eleDiff_factor,rhoY,rhoD,redEfab,mwt);
           }
+          if(ef_use_nEDiffImp) getDiffE(i,j,k,0,useNL,eleDiff_factor,rhoY,De,redEfab,mwt);
         }
      });
      Real mwt[NUM_SPECIES];
@@ -337,7 +357,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      VisMF::Write(KSpec_old,"KappaSpec"+timetag+"_Lvl"+std::to_string(level));
   }
 
-  if ( ef_use_NLsolve || ef_use_nEimplicit) {
+  if ( ef_use_NLsolve || ef_use_nEimplicit || ef_use_nEDiffImp) {
      // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
      // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
      // TODO: does cen2edg_cpp need to be modified to take into account EBs?
@@ -367,7 +387,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
                bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && idx[dir] <= edomain.smallEnd(dir) );
                bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && idx[dir] >= edomain.bigEnd(dir) );
                cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, diff_c, diff_ed);
-               cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, kappa_c, kappa_ed);
+               if(!ef_use_nEDiffImp) cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, kappa_c, kappa_ed);
             });
          }
       }
