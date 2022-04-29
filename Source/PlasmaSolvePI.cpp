@@ -21,6 +21,10 @@ PeleC::solvePI ( Real time,
 
     amrex::Print() << "Solving for photoionization source \n";
 
+    // Photoionization model for air under atmospheric conditions
+    // FIXME: Model does not account for photon absoption when hydrocarbons are present
+    // FIXME: Validity of model at higher initial pressures?
+
     // Get current PhiV
     Real prev_time = state[State_Type].prevTime();
     MultiFab& Ucurr = (time == prev_time) ? get_old_data(State_Type) : get_new_data(State_Type);
@@ -152,8 +156,7 @@ PeleC::solvePI ( Real time,
     // See Bourdon "Efficient models for photoionization produced by non-thermal gas discharges in air based on radiative transfer and the Helmholtz equations" (2007)
     // Using 3 exponential model
     // (-(lambda_j P_O2)^2 + nabla^2)S_ph^j = -A_j P_O2^2 I_r
-    // FIXME Hard-coding O2 partial pressure for now...
-    amrex::Real P_O2 = 1012350 * 0.21;
+    amrex::Real P_O2 = prob_parm.p * 0.21;
     amrex::Real PI_lambda[3] = {4.14785e-5, 1.095e-4, 6.6756e-4};   // [cm-1 Ba-1]
     amrex::Real PI_A[3] = {1.1173e-10, 2.869e-9, 2.7488e-7};        // [cm-2 Ba-2]
     
