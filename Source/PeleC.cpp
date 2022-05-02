@@ -1109,10 +1109,11 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     // }
     
 #ifdef PELEC_USE_PLASMA
-    // NOTE: Hard-coding factor of 100 for dielectric timescale increase when using semi-implicit system
+    // NOTE: Hard-coding factor of 10 for dielectric timescale increase when using semi-implicit system
+    // Tried factors of 50 and 100, but solution instability was observed 
     amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
     amrex::Real min_diele = (min_dielectric == 0) ? 1000:min_dielectric;
-    estdt_hydro = (ef_semiImpEfield) ? amrex::min<amrex::Real>(estdt_hydro, 100.0*min_diele):amrex::min<amrex::Real>(estdt_hydro, min_diele);
+    estdt_hydro = (ef_semiImpEfield) ? amrex::min<amrex::Real>(estdt_hydro, 10.0*min_diele):amrex::min<amrex::Real>(estdt_hydro, min_diele);
 #endif
 
     // Determine if this is more restrictive than the maximum timestep limiting
