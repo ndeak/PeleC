@@ -1,0 +1,9 @@
+export AMREX_HOME=/PATH/TO/amrex
+export PELE_PHYSICS_HOME=/PATH/TO/PelePhysics
+export AMREX_HYDRO_HOME=/PATH/TO/AMReX-Hydro
+
+# Modules for frontera
+module load gcc
+
+# Modules for eagle
+module load openmpi/4.0.4/gcc-8.4.0

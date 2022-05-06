@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH -N 32
+#SBATCH -n 1792
+#SBATCH -o myjob.%j.out
+#SBATCH -J PeleCPlasma
+#SBATCH -p normal
+#SBATCH -A CTS21022
+#SBATCH -t 48:00:00
+
+module load gcc
+
+module list
+pwd
+date
+
+# Run simulation from scratch
+mpirun -n 1792 ./PeleC3d.gnu.MPI.ex inputs.3d
+
+# If restarting a simulation...
+mpirun -n 1792 ./PeleC3d.gnu.MPI.ex inputs.3d amr.restart=/PATH/TO/chkXXXXX
