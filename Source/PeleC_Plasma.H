@@ -35,7 +35,7 @@
   static amrex::Real curr_voltage;                          // Voltage at time t=n (erg/C)
   static amrex::Real dfact;
   static amrex::Real sfact;
-  static bool        pac_mechanism;            // If using PAC mechanism, output maximum reactor-type data in monitor file
+  static int         pac_mechanism;            // If using PAC mechanism, output maximum reactor-type data in monitor file
   static int         ion_rate_type;           // Controls the ionization rate calculations used for photoionization (0 = upd. Kossyi, 1 = Morrow, 2 = BOLSIG+)
   static amrex::Real ef_electron_heating_pct;                // Percentage of electron energy that results in fast heating (treated as instantaneous)
   
