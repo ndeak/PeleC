@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH --nodes=12                  # Number of nodes
+#SBATCH --ntasks=432               # Request 100 CPU cores
+#SBATCH --time=24:00:00             # Job should run for up to 6 hours
+#SBATCH --account=plasdisfb		    # Where to charge NREL Hours
+#SBATCH --job-name=PeleCPlasma
+#SBATCH --mail-user=YOUR@EMAIL.edu
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --output=job_output_filename.%j.out  # %j will be replaced with the job ID
+
+module purge
+module load openmpi/4.0.4/gcc-8.4.0
+
+lscpu
+
+# Run simulation from scratch
+srun -n 432 ./PeleC3d.gnu.MPI.ex inputs.3d
+
+# If restarting a simulation...
+srun -n 432 ./PeleC3d.gnu.MPI.ex inputs.3d amr.restart=/PATH/TO/chkXXXXX
