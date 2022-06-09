@@ -119,7 +119,7 @@ PeleC::do_mol_advance(
 
   // Calculate transport properties at time t=n if we are using semi-implicit efield method, or circuit model
   // Needed due to fact that MFs defined in plasma_define_data() are reset upon regrid
-  if(ef_circuit_model == 1 || ef_semiImpEfield == 1){
+  if(ef_circuit_model == 1 || ef_semiImpEfield == 1 || (diffuse_temp == 0 && diffuse_enth == 0 && diffuse_spec == 0 && diffuse_vel == 0 && do_hydro == 0)){
     FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
 
     // Need to fill in E/N at time t=n as this is used in transport property calculations
