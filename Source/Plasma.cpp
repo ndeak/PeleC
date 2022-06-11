@@ -59,6 +59,7 @@ PeleC::plasma_init()
     pp.query("star_update", ef_star_update);
     pp.query("semiImpEfield", ef_semiImpEfield);
     pp.query("electron_heating_pct", ef_electron_heating_pct);
+    pp.query("ambiDiff", ef_ambiDiff);
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);

@@ -345,22 +345,30 @@ PeleC::getMOLSrcTerm(
       auto const& Dterm = Dfab.array();
       setV(cbox, NVAR, Dterm, 0.0);
 
+      amrex::Real mwt[NUM_SPECIES];
+      auto eos = pele::physics::PhysicsType::eos();
+      eos.molecular_weight(mwt);
+
       pc_compute_diffusion_flux(
         cbox, qar, coe_cc, flx, area_arr, dx, do_harmonic
 #ifdef PELEC_USE_EB
         ,
         typ, Ncut, d_sv_eb_bndry_geom, flags.array(mfi)
 #endif
+#ifdef PELEC_USE_PLASMA
+        ,
+        ef_ambiDiff, zk_num, mwt 
+#endif
       );
 
       // Overwrite the electron flux with the implicit solution
+      // FIXME: super broken
       if(ef_use_nEDiffImp){
         amrex::Print() << "Overwriting fluxes!\n";
         std::array<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> DegnE_arr = {AMREX_D_DECL(DegradnE[0]->array(mfi), DegradnE[1]->array(mfi), DegradnE[2]->array(mfi))} ;
         for(int dir = 0; dir < AMREX_SPACEDIM; dir++){
           amrex::ParallelFor(
             eboxes[dir], [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-             if(i == 120 && j == 100 && k == 120) printf("dir %i - flux old(%i %i %i) = %.6e, flux new = %.6e\n", dir, i, j, k, flx[dir](i,j,k,UFS+E_ID), DegnE_arr[dir](i,j,k) );
              flx[dir](i,j,k,UFS+E_ID) = -1.0*DegnE_arr[dir](i,j,k);
              // flx[dir](i,j,k,UFS+E_ID) = 0.0;
           });
@@ -488,7 +496,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, area_arr, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, ionFlux_eb_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, zero_bc_grad, ef_use_NLsolve, secondary_em_coef, electron_emit_const, ef_do_drift
+            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, ionFlux_eb_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, zero_bc_grad, ef_use_NLsolve, secondary_em_coef, electron_emit_const, ef_do_drift, ef_ambiDiff
 #endif
 #ifdef PELEC_USE_EB
             ,
@@ -754,9 +762,9 @@ PeleC::getMOLSrcTerm(
         copy_array4(Dfab.box(), NVAR, Dterm, Dterm_tmp);
         amrex::Real voltar = 0.5;
 
-        amrex::Real mwt[NUM_SPECIES];
-        auto eos = pele::physics::PhysicsType::eos();
-        eos.molecular_weight(mwt);
+        // amrex::Real mwt[NUM_SPECIES];
+        // auto eos = pele::physics::PhysicsType::eos();
+        // eos.molecular_weight(mwt);
 
         auto flag_arr = flags.const_array(mfi);
         {

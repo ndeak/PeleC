@@ -37,6 +37,11 @@ struct SpeciesEnergyFlux
     const amrex::Real dxinv,
     const amrex::Real coef[],
     const amrex::Array4<const amrex::Real>& q,
+#ifdef PELEC_USE_PLASMA
+    const int use_ambiDiff,
+    const amrex::GpuArray<int, NUM_SPECIES> chrg,
+    const amrex::Real wts[],
+#endif
     const amrex::Array4<amrex::Real>& flx)
   {
     auto eos = pele::physics::PhysicsType::eos();
@@ -64,6 +69,18 @@ struct SpeciesEnergyFlux
     const amrex::Real dpdx = dxinv * (q(i, j, k, QPRES) - q(im, jm, km, QPRES));
     const amrex::Real dlnp =
       dpdx / (0.5 * (q(i, j, k, QPRES) + q(im, jm, km, QPRES)));
+
+    amrex::Real beta; 
+    amrex::Real beta_denom = 0.0;
+    amrex::Real flx_zero[NUM_SPECIES];
+    // Calculate the denominator for beta (used in ambipolar diffusion), and diffusive fluxes    
+    for (int ns = 0; ns < NUM_SPECIES; ++ns) {
+      const amrex::Real Xface = 0.5 * (mole1[ns] + mole2[ns]);
+      const amrex::Real dYdx = dxinv * (mass1[ns] - mass2[ns]);
+      beta_denom += chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * Xface;
+      flx_zero[ns] = -coef[dComp_rhoD + ns] * (dYdx);
+    }
+
     for (int ns = 0; ns < NUM_SPECIES; ++ns) {
       const amrex::Real Xface = 0.5 * (mole1[ns] + mole2[ns]);
       const amrex::Real Yface = 0.5 * (mass1[ns] + mass2[ns]);
@@ -77,6 +94,16 @@ struct SpeciesEnergyFlux
       else{
         Vd = -coef[dComp_rhoD + ns] * (dXdx + (Xface - Yface) * dlnp);
       }
+    
+      if(use_ambiDiff && beta_denom != 0.0 && chrg[ns] != 0){
+        amrex::Real beta = chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * Xface / beta_denom;
+        amrex::Real tmp_sum = 0.0;
+        for (int nsp = 0; nsp < NUM_SPECIES; ++nsp) {
+          if(nsp != ns) tmp_sum += (chrg[nsp]*wts[ns]) / (chrg[ns]*wts[nsp]) * flx_zero[nsp];
+        }
+        Vd = (1.0 - beta) * flx_zero[ns] - beta * tmp_sum;
+
+      }
       flx(i, j, k, UFS + ns) = Vd;
       Vc += Vd;
       flx(i, j, k, UEDEN) += Vd * hface;
@@ -85,12 +112,15 @@ struct SpeciesEnergyFlux
     for (int ns = 0; ns < NUM_SPECIES; ++ns) {
       const amrex::Real Yface = 0.5 * (mass1[ns] + mass2[ns]);
       const amrex::Real hface = 0.5 * (hi1[ns] + hi2[ns]);
-      flx(i, j, k, UFS + ns) -= Yface * Vc;
-      flx(i, j, k, UEDEN) -= Yface * hface * Vc;
+      if(!use_ambiDiff || beta_denom == 0.0 || chrg[ns] == 0){
+        flx(i, j, k, UFS + ns) -= Yface * Vc;
+        flx(i, j, k, UEDEN) -= Yface * hface * Vc;
+      }
     }
   }
 };
 
+// TODO: update diffusion model for this EOS template
 template <>
 struct SpeciesEnergyFlux<pele::physics::eos::SRK>
 {
@@ -105,6 +135,11 @@ struct SpeciesEnergyFlux<pele::physics::eos::SRK>
     const amrex::Real dxinv,
     const amrex::Real coef[],
     const amrex::Array4<const amrex::Real>& q,
+#ifdef PELEC_USE_PLASMA
+    const int ef_ambiDiff,
+    const amrex::GpuArray<int, NUM_SPECIES> chrg,
+    const amrex::Real wts[],
+#endif
     const amrex::Array4<amrex::Real>& flx)
   {
     pele::physics::eos::SRK eos;
@@ -191,6 +226,11 @@ pc_diffusion_flux(
   const amrex::Real coef[],
   const amrex::Array4<const amrex::Real>& td,
   const amrex::Array4<const amrex::Real>& area,
+#ifdef PELEC_USE_PLASMA
+  const int ef_ambiDiff,
+  const amrex::GpuArray<int, NUM_SPECIES> chrg,
+  const amrex::Real wts[], 
+#endif
   const amrex::Array4<amrex::Real>& flx,
   const amrex::Real delta,
   const int dir)
@@ -264,7 +304,11 @@ pc_diffusion_flux(
             -tauz * (q(i, j, k, QW) + q(im, jm, km, QW)))) -
     coef[dComp_lambda] * (dxinv * (q(i, j, k, QTEMP) - q(im, jm, km, QTEMP)));
 
-  FluxTypes::SpeciesEnergyFluxType()(i, j, k, im, jm, km, dxinv, coef, q, flx);
+  FluxTypes::SpeciesEnergyFluxType()(i, j, k, im, jm, km, dxinv, coef, q, 
+#ifdef PELEC_USE_PLASMA
+                                    ef_ambiDiff, chrg, wts,
+#endif
+                                    flx);
 
   // Scale by area
   AMREX_D_TERM(flx(i, j, k, UMX) *= area(i, j, k);
@@ -313,6 +357,12 @@ void pc_compute_diffusion_flux(
   const int Ncut,
   const EBBndryGeom* ebg,
   const amrex::Array4<amrex::EBCellFlag const>& flags
+#endif
+#ifdef PELEC_USE_PLASMA
+  ,
+  const int ef_ambiDiff,
+  const amrex::GpuArray<int, NUM_SPECIES> chrg,
+  const amrex::Real wts[]
 #endif
 );
 

@@ -25,6 +25,12 @@ pc_compute_diffusion_flux(
   const EBBndryGeom* ebg,
   const amrex::Array4<amrex::EBCellFlag const>& flags
 #endif
+#ifdef PELEC_USE_PLASMA
+  ,
+  const int ef_ambiDiff,
+  const amrex::GpuArray<int, NUM_SPECIES> chrg,
+  const amrex::Real wts[]
+#endif
 )
 {
   {
@@ -75,7 +81,11 @@ pc_compute_diffusion_flux(
             pc_move_transcoefs_to_ec(i, j, k, n, coef, c, dir, do_harmonic);
           }
           pc_diffusion_flux(
-            i, j, k, q, c, tander, area[dir], flx[dir], delta, dir);
+            i, j, k, q, c, tander, area[dir], 
+#ifdef PELEC_USE_PLASMA
+            ef_ambiDiff, chrg, wts,
+#endif
+            flx[dir], delta, dir);
         });
     }
   }

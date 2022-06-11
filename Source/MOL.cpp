@@ -37,7 +37,8 @@ pc_compute_hyp_mol_flux(
   const int use_NL,
   const amrex::Real secondary_em_coef,
   const amrex::Real electron_emit_const,
-  const int ef_do_drift
+  const int ef_do_drift,
+  const int ef_ambiDiff
 #endif
 #ifdef PELEC_USE_EB
   ,
@@ -185,10 +186,12 @@ pc_compute_hyp_mol_flux(
         }
 
         // Store cell-center drift velocity for time step estimation
-        for(int n=0; n<NUM_SPECIES; n++){
-          drift_cc(i, j, k, NUM_E*n + 0) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 0));
-          drift_cc(i, j, k, NUM_E*n + 1) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 1));
-          drift_cc(i, j, k, NUM_E*n + 2) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 2));
+        if(!ef_ambiDiff){
+          for(int n=0; n<NUM_SPECIES; n++){
+            drift_cc(i, j, k, NUM_E*n + 0) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 0));
+            drift_cc(i, j, k, NUM_E*n + 1) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 1));
+            drift_cc(i, j, k, NUM_E*n + 2) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 2));
+          }
         }
 #endif
         amrex::Real flux_tmp[NVAR] = {0.0};
@@ -240,7 +243,7 @@ pc_compute_hyp_mol_flux(
         amrex::Real mwt[NUM_SPECIES];
         auto eos = pele::physics::PhysicsType::eos();
         eos.molecular_weight(mwt);
-        if(ef_do_drift == 1){
+        if(ef_do_drift == 1 && !ef_ambiDiff){
           // Recalculate fluxes taking into account drift velocity
           // Riemann solver temporary values: tmp0 = idir velocity
           //                                  tmp1 = other velocity comp 1
@@ -312,6 +315,7 @@ pc_compute_hyp_mol_flux(
         // so doesn't matter which species array we take from for now
         // TODO: make sure calculation of EoN is in units of Td
         // TODO: Make sure other flux values are updated as well, if necessary
+        // TODO: Make BCs consistent with ambipolar diffusion model when used
 
         int iv[3] = {i,j,k};
         amrex::Real ionFlux = 0.0;

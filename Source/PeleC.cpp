@@ -104,6 +104,7 @@ int PeleC::ef_semiImpEfield = 0;
 int PeleC::ef_triangle_pulse = 0;
 int PeleC::ef_trapezoidal_pulse = 0;
 int PeleC::ef_sigmoid_pulse = 0;
+int PeleC::ef_ambiDiff = 0;
 amrex::Real PeleC::ef_pulse_delay = 3.0e-9;
 amrex::Real PeleC::ef_pulse_rise = 5.0e-9;
 amrex::Real PeleC::ef_pulse_plateau = 12.0e-9;

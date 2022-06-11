@@ -57,6 +57,9 @@ PeleC::fill_ext_source(
   // Option to include portion of electron heating as well to mimic fast heating
   // Source term calculated as S_{jh} = - e \sum_k z_k \Gamma_k . E
   // Ion flux \Gamma_k = z_k mu_k n_k E - D dn_k/dx + n_k u
+  //
+  // TODO: should be updated to account for use of ambipolar diffusion model
+  // (not doing for now since JH is negligible during interpulse period)
 
   amrex::Real prev_time = state[State_Type].prevTime();
   amrex::Real elemChrg = 1.60217662e-19;     //Coulomb per charge
