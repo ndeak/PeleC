@@ -60,6 +60,8 @@ PeleC::plasma_init()
     pp.query("semiImpEfield", ef_semiImpEfield);
     pp.query("electron_heating_pct", ef_electron_heating_pct);
     pp.query("ambiDiff", ef_ambiDiff);
+    pp.query("use_joule_heating", ef_use_joule_heating);
+    pp.query("use_radiative_losses", ef_use_radiative_losses);
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);
@@ -136,6 +138,7 @@ void PeleC::plasma_define_data() {
    dielectric_ts.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory()); dielectric_ts.setVal(1.0);
    flux_current_mf.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); flux_current_mf.setVal(0.0);
    joule_heating.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); joule_heating.setVal(0.0);
+   radiative_losses.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); radiative_losses.setVal(0.0);
 
    // Intermediate MFs used in transport coef. calculations for NL system
    Ke_cc_mf.define(grids,dmap,1,numGrow(), amrex::MFInfo(), Factory()); Ke_cc_mf.setVal(0.0);

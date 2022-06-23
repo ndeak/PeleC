@@ -17,6 +17,8 @@
   static int         ion_bc_type;                           // Sets the ion electrode loss type (0 = weak efield approx., 1 = strong efield approx.)
   static int         zero_bc_flux;                          // Set to 1 to zero out all electrode fluxes for electrons and ions
   static int         zero_bc_grad;                          // Set to 1 to set a flux consistent with a zero-grad BC
+  static int         ef_use_joule_heating;                  // Set to 1 to include joule heating effects
+  static int         ef_use_radiative_losses;               // Include radiative heat losses
   static amrex::Real secondary_em_coef;                     // Boundary emission
   static amrex::Real electron_emit_const;                     // Boundary emission
   static amrex::Real pulse_freq;                            // Pulse frequency (Hz)
@@ -125,6 +127,7 @@
   amrex::MultiFab     Ke_cc_mf;
   amrex::MultiFab     De_cc_mf;
   amrex::MultiFab     joule_heating;  
+  amrex::MultiFab     radiative_losses;  
 
   amrex::MultiFab     spec_2ndo_gradients;    // 2nd order gradients used in circuit model displacement current calculation
 

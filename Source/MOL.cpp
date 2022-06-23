@@ -328,7 +328,7 @@ pc_compute_hyp_mol_flux(
         if ((bcr[dir] == amrex::BCType::ext_dir) and (iv[dir] == domlo[dir])) {
           // Use EoN to get Te for electron flux at the boundary
           ExtrapTe(eon(i, j, k, 0), &Te);
-          if(zero_bc_flux == 0){
+          if(zero_bc_flux == 0 && !ef_ambiDiff){
             flx[dir](i, j, k, URHO) = 0.0;
             for(int n=0; n<NUM_SPECIES; n++){
                 flx[dir](i, j, k, UFS + n) = 0.0;
@@ -376,7 +376,7 @@ pc_compute_hyp_mol_flux(
         }
         if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
           ExtrapTe(eon(ii, jj, kk, 0), &Te);
-          if(zero_bc_flux == 0){
+          if(zero_bc_flux == 0 && !ef_ambiDiff){
             flx[dir](i, j, k, URHO) = 0.0;
             for(int n=0; n<NUM_SPECIES; n++){
                 flx[dir](i, j, k, UFS + n) = 0.0;
@@ -523,7 +523,7 @@ pc_compute_hyp_mol_flux(
       // overwrite fluxes on all ext_dir boundaries
       // Use EoN to get Te for electron flux at the boundary
       ExtrapTe(eon(i, j, k, 0), &Te);
-      if(zero_bc_flux == 0){
+      if(zero_bc_flux == 0 && ef_ambiDiff){
         flux_tmp[URHO] = 0.0;
         for(int n=0; n<NUM_SPECIES; n++){
             flux_tmp[UFS + n] = 0.0;

@@ -73,8 +73,8 @@ PeleC::solvePI ( Real time,
 
     // Quenching pressure factor, see Pancheshnyi "Photoionization produced by low-current discharges in O2, air, N2 and CO2" (2015)
     // FIXME fix hard-coded to assume atmospheric pressure 
+    // FIXME: Would this value differ when HC fuel present? probably...
     amrex::Real pfact = 30.0 / (760 + 30.0);
-    
 
     // Efficiency factor, see Breden "A numerical study of high-pressure non-equilibrium streamers for combustion ignition application" (2013)
     // Also see Luque "Photoionization in negative streamers: Fast computations and two propagation modes" (2007)
@@ -160,6 +160,10 @@ PeleC::solvePI ( Real time,
     amrex::Real PI_lambda[3] = {4.14785e-5, 1.095e-4, 6.6756e-4};   // [cm-1 Ba-1]
     amrex::Real PI_A[3] = {1.1173e-10, 2.869e-9, 2.7488e-7};        // [cm-2 Ba-2]
     
+    // 3 term exponential fit for ethylene/air mixture (same units as above)
+    // PI_lambda[0] = 7.1678576e-4;  PI_lambda[1] = 4.251459675e-4;  PI_lambda[2] = 1.5016644256e-3;
+    // PI_A[0] = 3.7617338e-8; PI_A[1] = 1.571636e-9;  PI_A[2] = 3.495984e-7;
+
     // amrex::Real PI_lambda[3] = {3.35278e-5, 8.4082e-5, 4.49588e-4};   // [cm-1 Ba-1]
     // amrex::Real PI_A[3] = {5.025427e-6, 2.59522e-5, 2.294445e-4};        // [cm-1 Ba-1]
     
@@ -223,6 +227,7 @@ PeleC::solvePI ( Real time,
       // relative and absolute tolerances for linear solve
       const Real tol_rel = ef_PoissonTol;
       const Real tol_abs = std::max(std::max(helmholtzRHS.norm0(),PI_comp.norm0()) * ef_PoissonTol, 1.0e-15);
+      // const Real tol_abs = std::max(std::max(helmholtzRHS.norm0(),PI_comp.norm0()) * ef_PoissonTol*1.0e4, 1.0e5);
   
       // Set solver verbosity
       mlmg.setVerbose(ef_PoissonVerbose);

@@ -153,6 +153,14 @@ PeleC::fill_ext_source(
 //   }
   
 
+  // Coefficients for radiative heat loss fit
+  // Data fit from "Net emission coefficient of air thermal plasmas" (2002), see Fig. 13
+  // Data is in SI units (W/m3-sr), and the fit is for log10(E_loss)
+  // Coefficients for R_p = 0
+  double radiation_coeffs[] = {-4.69393371944433e-33, 6.42484192766636e-28, -3.61449522007878e-23, 1.07401256128979e-18, -1.80422980655138e-14, 1.71848147786282e-10, -9.38484312102902e-07, 0.00380695502932053, -4.03169557840341 };
+  // Coefficients for R_p = 0.1 mm
+  // double radiation_coeffs[] = { -5.37734547038786e-33, 8.05470506138091e-28, -5.05170461809753e-23, 1.71463710673129e-18, -3.39808585583430e-14, 3.96509823029999e-10, -2.64746628950791e-06, 0.00992474394418707, -11.9984373861060};
+
   // OLD joule heating code...
 #ifdef _OPENMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -160,7 +168,6 @@ PeleC::fill_ext_source(
   for (amrex::MFIter mfi(ext_src, amrex::TilingIfNotGPU()); mfi.isValid();
        ++mfi) {
     const amrex::Box& bx = mfi.growntilebox(ng);
-
 #ifdef PELEC_USE_EB
     const auto& flag_fab = flags[mfi];
     amrex::FabType typ = flag_fab.getType(bx);
@@ -171,6 +178,7 @@ PeleC::fill_ext_source(
     auto const& S_arr = (time == prev_time) ? state_old.array(mfi):state_new.array(mfi);
     auto const& Farr = ext_src.array(mfi);
     auto const& joule_src = joule_heating.array(mfi);
+    auto const& radiation_src = radiative_losses.array(mfi);
     auto const& E_cc = Efield.array(mfi);
     auto const& ve = spec_drift.array(mfi, NUM_E * E_ID);
     auto const& K_cc = KSpec_old.array(mfi);
@@ -180,11 +188,18 @@ PeleC::fill_ext_source(
     // Calculating joule heating source term: S_joule = -e * ne * u_e \dot E    [erg/cm3-s]
     amrex::ParallelFor(
       bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        joule_src(i,j,k) = -(1.0/me_g)*elemChrg * S_arr(i,j,k,UFS+E_ID) * K_cc(i,j,k,E_ID) * (E_cc(i,j,k,0)*E_cc(i,j,k,0) + E_cc(i,j,k,1)*E_cc(i,j,k,1) + E_cc(i,j,k,2)*E_cc(i,j,k,2));
-        Farr(i, j, k, UEDEN) = joule_src(i,j,k);
-        Farr(i, j, k, UEINT) = joule_src(i,j,k);
+        if(ef_use_joule_heating){
+          joule_src(i,j,k) = -(1.0/me_g)*elemChrg * S_arr(i,j,k,UFS+E_ID) * K_cc(i,j,k,E_ID) * (E_cc(i,j,k,0)*E_cc(i,j,k,0) + E_cc(i,j,k,1)*E_cc(i,j,k,1) + E_cc(i,j,k,2)*E_cc(i,j,k,2));
+        }
+        if(ef_use_radiative_losses){
+          amrex::Real polytemp = 0.0;
+          for(int n = 0; n<9; n++) polytemp += radiation_coeffs[n] * pow(S_arr(i,j,k,UTEMP),8-n);
+          radiation_src(i,j,k) = pow(10,polytemp) * 10.0 * 4.0 * constants::PI();   // Factor to convert W/m3-sr -> erg/cm3
+        }
+        Farr(i, j, k, UEDEN) = joule_src(i,j,k) - radiation_src(i,j,k);
+        Farr(i, j, k, UEINT) = joule_src(i,j,k) - radiation_src(i,j,k);
         // if(i == 1 && j == 1 && k == 1) printf("JOULE HEATING SRC IS %.6e, Eden = %.6e, Eint = %.6e, lterm = %.6e, sterm = %.6e\n", Farr(i,j,k,Eden), S_arr(i,j,k,Eden), S_arr(i,j,k,Eint), K_cc(i,j,k,E_ID) * (E_cc(i,j,k,0)*E_cc(i,j,k,0) + E_cc(i,j,k,1)*E_cc(i,j,k,1) + E_cc(i,j,k,2)*E_cc(i,j,k,2)), elemChrg * S_arr(i,j,k,UFS+E_ID));
     });
-  } 
+  }
   
 }

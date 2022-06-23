@@ -74,11 +74,17 @@ struct SpeciesEnergyFlux
     amrex::Real beta_denom = 0.0;
     amrex::Real flx_zero[NUM_SPECIES];
     // Calculate the denominator for beta (used in ambipolar diffusion), and diffusive fluxes    
-    for (int ns = 0; ns < NUM_SPECIES; ++ns) {
-      const amrex::Real Xface = 0.5 * (mole1[ns] + mole2[ns]);
-      const amrex::Real dYdx = dxinv * (mass1[ns] - mass2[ns]);
-      beta_denom += chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * Xface;
-      flx_zero[ns] = -coef[dComp_rhoD + ns] * (dYdx);
+    if(use_ambiDiff){
+      for (int ns = 0; ns < NUM_SPECIES; ++ns) {
+        const amrex::Real Xface = (mole1[ns] + mole2[ns] >= 0.0) ? 0.5 * (mole1[ns] + mole2[ns]):0.0;
+        const amrex::Real dYdx = dxinv * (mass1[ns] - mass2[ns]);
+        beta_denom += chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * Xface;
+        flx_zero[ns] = -coef[dComp_rhoD + ns] * (dYdx);
+        if(beta_denom < 0.0){
+          printf("ERROR: BETA DENOMINATOR SHOULD BE GREATER THAN ZERO (%.6e)! \n", beta_denom);
+          exit(1);
+        }
+      }
     }
 
     for (int ns = 0; ns < NUM_SPECIES; ++ns) {
@@ -96,13 +102,17 @@ struct SpeciesEnergyFlux
       }
     
       if(use_ambiDiff && beta_denom != 0.0 && chrg[ns] != 0){
-        amrex::Real beta = chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * Xface / beta_denom;
+        amrex::Real Xtmp = (Xface >= 0.0) ? Xface:0.0;
+        amrex::Real beta = chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * amrex::Math::abs(Xtmp) / beta_denom;
         amrex::Real tmp_sum = 0.0;
         for (int nsp = 0; nsp < NUM_SPECIES; ++nsp) {
           if(nsp != ns) tmp_sum += (chrg[nsp]*wts[ns]) / (chrg[ns]*wts[nsp]) * flx_zero[nsp];
         }
-        Vd = (1.0 - beta) * flx_zero[ns] - beta * tmp_sum;
-
+        if(beta < 0.0 || beta > 1.0) {
+          printf("ERROR: VALUE OF BETA NOT BETWEEN ZERO AND ONE (%.6e)\n", beta);
+          exit(1);
+        }
+        Vd = ((1.0 - beta) * flx_zero[ns] - beta * tmp_sum);
       }
       flx(i, j, k, UFS + ns) = Vd;
       Vc += Vd;
@@ -112,10 +122,10 @@ struct SpeciesEnergyFlux
     for (int ns = 0; ns < NUM_SPECIES; ++ns) {
       const amrex::Real Yface = 0.5 * (mass1[ns] + mass2[ns]);
       const amrex::Real hface = 0.5 * (hi1[ns] + hi2[ns]);
-      if(!use_ambiDiff || beta_denom == 0.0 || chrg[ns] == 0){
+      // if(!use_ambiDiff || beta_denom == 0.0 || chrg[ns] == 0){
         flx(i, j, k, UFS + ns) -= Yface * Vc;
         flx(i, j, k, UEDEN) -= Yface * hface * Vc;
-      }
+      // }
     }
   }
 };
