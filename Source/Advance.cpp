@@ -257,6 +257,7 @@ PeleC::do_mol_advance(
   if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
 
   // Calculate the cel-centered dielectric relaxation timescales
+  // FIXME: why did I put this here..?
   for (amrex::MFIter mfi(KSpec_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
      const amrex::Box& tbox = mfi.tilebox();
      const amrex::Box gbox = amrex::grow(tbox, numGrow());
@@ -315,7 +316,12 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Saxpy(S_new, dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
+#ifdef PELEC_USE_TWO_TEMP
+    amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES + 2, Uele, 1, 0);
+    if (ef_use_NLsolve || ef_use_nEimplicit) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+3, FirstAux+1, 1, 0);
+#else
     if (ef_use_NLsolve || ef_use_nEimplicit) amrex::MultiFab::Saxpy(S_new, dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
+#endif
 #endif
   }
 #endif
@@ -400,7 +406,12 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
+#ifdef PELEC_USE_TWO_TEMP
+    amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES + 2, Uele, 1, 0);
+    if (ef_use_NLsolve || ef_use_nEimplicit) amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES+3, FirstAux+1, 1, 0);
+#else
     if (ef_use_NLsolve || ef_use_nEimplicit) amrex::MultiFab::Saxpy(S_new, 0.5 * dt, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
+#endif
 #endif
 
 #ifdef PELEC_USE_PLASMA
@@ -437,7 +448,12 @@ PeleC::do_mol_advance(
     amrex::MultiFab::Subtract(molSrc, I_R, 0, FirstSpec, NUM_SPECIES, 0);
     amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES, Eden, 1, 0);
 #ifdef PELEC_USE_PLASMA
+#ifdef PELEC_USE_TWO_TEMP
+    amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES + 2, Uele, 1, 0);
+    if (ef_use_NLsolve || ef_use_nEimplicit) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+3, FirstAux+1, 1, 0);
+#else
     if (ef_use_NLsolve || ef_use_nEimplicit) amrex::MultiFab::Subtract(molSrc, I_R, NUM_SPECIES+2, FirstAux+1, 1, 0);
+#endif
 #endif
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)

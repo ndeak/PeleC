@@ -91,6 +91,11 @@ mol_slope(
                              : 0.0;
   }
 
+#ifdef PELEC_USE_TWO_TEMP
+  dlft[QFX+5] = flagArrayL ? q(i, j, k, QFX+5) - q(im, jm, km, QFX+5) : 0.0;
+  drgt[QFX+5] = flagArrayR ? q(ip, jp, kp, QFX+5) - q(i, j, k, QFX+5) : 0.0;
+#endif
+
   for (int n = 0; n < QVAR; n++) {
     const amrex::Real dcen = 0.5 * (dlft[n] + drgt[n]);
     const amrex::Real dlim =

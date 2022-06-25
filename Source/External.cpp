@@ -196,8 +196,14 @@ PeleC::fill_ext_source(
           for(int n = 0; n<9; n++) polytemp += radiation_coeffs[n] * pow(S_arr(i,j,k,UTEMP),8-n);
           radiation_src(i,j,k) = pow(10,polytemp) * 10.0 * 4.0 * constants::PI();   // Factor to convert W/m3-sr -> erg/cm3
         }
+#ifdef PELEC_USE_TWO_TEMP
+        Farr(i, j, k, UEDEN) = -radiation_src(i,j,k);
+        Farr(i, j, k, UEINT) = -radiation_src(i,j,k);
+        Farr(i, j, k, Uele) = joule_src(i,j,k);
+#else
         Farr(i, j, k, UEDEN) = joule_src(i,j,k) - radiation_src(i,j,k);
         Farr(i, j, k, UEINT) = joule_src(i,j,k) - radiation_src(i,j,k);
+#endif
         // if(i == 1 && j == 1 && k == 1) printf("JOULE HEATING SRC IS %.6e, Eden = %.6e, Eint = %.6e, lterm = %.6e, sterm = %.6e\n", Farr(i,j,k,Eden), S_arr(i,j,k,Eden), S_arr(i,j,k,Eint), K_cc(i,j,k,E_ID) * (E_cc(i,j,k,0)*E_cc(i,j,k,0) + E_cc(i,j,k,1)*E_cc(i,j,k,1) + E_cc(i,j,k,2)*E_cc(i,j,k,2)), elemChrg * S_arr(i,j,k,UFS+E_ID));
     });
   }

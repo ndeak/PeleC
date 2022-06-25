@@ -1261,7 +1261,11 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
     }
 
     amrex::Real max_EN = redEfield.max(0, 0, false);
+#ifdef PELEC_USE_TWO_TEMP
+    amrex::Real max_Te = S.max(UFX+6, 0, false); max_Te *= (1.0/11595.0);
+#else
     amrex::Real max_Te; ExtrapTe(max_EN, &max_Te); max_Te *= (1.0/11595.0);
+#endif
     amrex::Real max_Tg = S.max(UTEMP, 0, false);
     amrex::Real max_nE = S.max(UFS+E_ID, 0, false) * (1.0/mwt[E_ID]) * NA;
     amrex::Real max_nO = S.max(UFS+3, 0, false) * (1.0/mwt[3]) * NA;
@@ -1349,6 +1353,11 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
     amrex::Real CFL = max_Edrift * dt / dx[0];
     amrex::Real min_edrift = (max_Edrift == 0.0) ? 1.0:0.3 * dx[0] / max_Edrift;
     amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
+#ifdef PELEC_USE_TWO_TEMP
+    amrex::Real max_Te = S.max(UFX+6, 0, false); max_Te *= (1.0/11595.0);
+#else
+    amrex::Real max_Te; ExtrapTe(max_EN, &max_Te); max_Te *= (1.0/11595.0);
+#endif
     if(ef_circuit_model == 1) {
       int step_num = parent->levelSteps(0) + ef_circuit_load_num - 1;
       disp_current = (eleVoltage_ts[step_num] - eleVoltage_ts[step_num-1]) / dt * ef_circuit_capacitance;
@@ -1363,7 +1372,7 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
 
       std::ofstream MonitorFile;
       MonitorFile.open(monitorFileName.c_str(), std::ios::out | std::ios::app);
-      MonitorFile << time << "\t" << max_nE << "\t" << max_nO4p << "\t" << max_nO2m << "\t" << max_phiV << "\t" << max_EN  << "\t" << flux_curr <<"\t" << disp_current << "\t" << Ddtodx2  << "\t" << CFL << "\t" << min_dielectric  << "\t" << min_edrift << "\t" << dt << "\t" << max_Tg << "\t" << tot_E << "\t" << mcations << "\t" << manions << std::endl;
+      MonitorFile << time << "\t" << max_nE << "\t" << max_nO4p << "\t" << max_nO2m << "\t" << max_phiV << "\t" << max_EN  << "\t" << flux_curr <<"\t" << disp_current << "\t" << Ddtodx2  << "\t" << CFL << "\t" << min_dielectric  << "\t" << min_edrift << "\t" << dt << "\t" << max_Tg << "\t" << max_Te <<"\t" << tot_E << "\t" << mcations << "\t" << manions << std::endl;
       MonitorFile.close();
     }
   }
@@ -1399,7 +1408,7 @@ void PeleC::monitorFileSetup(int i){
     if(pac_mechanism){
       MonitorFile << "(1)time[s] \t (2)E/N[Td] \t (3)Te[eV] \t (4)Tgas[k] \t (5)nE[1/cm3] \t (6)nO[1/cm3] \t (7)nOH[1/cm3] \t (8)nH[1/cm3] \t (9)nN2vib[1/cm3] \t (10)nN2ele[1/cm3] \t (11)O2ele[1/cm3] \t (12)O2+[1/cm3] \t (13)N2+[1/cm3] \t (14)O2-[1/cm3] \t (15)O-[1/cm3] \t (16)nCO[1/cm3] \t (17)nCO2[1/cm3] \t (18)nC2H4[1/cm3] \t (19)mO[g] \t (20)mOH[g] \t (21)mH[g] \t (22)mN2vib[g] \t (23)mN2ele[g] \t (24)mO2ele[g] \t (25)mO2+[g] \t (26)mN2+[g] \t (27)mO2-[g] \t (28)mO-[g] \t (29)mCO[g] \t (30)mCO2[g] \t (31)mC2H4[g] \t (32)tot_E[erg] \t (33)dt[s]" << std::endl;
     }else{
-      MonitorFile << "(1)time[s] \t (2)max_nE[1/cm3] \t (3)max_nO4+[1/cm3] \t (4)max_nO2-[1/cm3] \t (5)max_phiV[kV] \t (6)max_EN[Td] \t (7)flux_current[C/s] \t (8)disp_current[C/s] \t(9)Ddtodx2 \t (10)CFL \t (11)min_dielectric[s] \t (12)min_drift[s] \t (13)dt[s] \t (14)Tmax[K] \t (15)tot_E[erg] \t (16)mcations[g] \t (17)manions[g]" << std::endl;
+      MonitorFile << "(1)time[s] \t (2)max_nE[1/cm3] \t (3)max_nO4+[1/cm3] \t (4)max_nO2-[1/cm3] \t (5)max_phiV[kV] \t (6)max_EN[Td] \t (7)flux_current[C/s] \t (8)disp_current[C/s] \t(9)Ddtodx2 \t (10)CFL \t (11)min_dielectric[s] \t (12)min_drift[s] \t (13)dt[s] \t (14)Tmax[K] \t (15)Temax[eV] \t (16)tot_E[erg] \t (17)mcations[g] \t (18)manions[g]" << std::endl;
     }
     MonitorFile.close();
   }

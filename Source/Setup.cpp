@@ -151,6 +151,7 @@ PeleC::variableSetUp()
 
   // Output the git commit hashes used to build the executable.
 
+
   if (amrex::ParallelDescriptor::IOProcessor()) {
     const char* pelec_hash = amrex::buildInfoGetGitHash(1);
     const char* amrex_hash = amrex::buildInfoGetGitHash(2);
@@ -353,6 +354,9 @@ PeleC::variableSetUp()
   if(ef_use_NLsolve || ef_use_nEimplicit){
     react_num += 1;
   }
+#ifdef PELEC_USE_TWO_TEMP
+  react_num += 1;
+#endif
   amrex::Vector<amrex::BCRec> react_bcs(react_num);
   amrex::Vector<std::string> react_name(react_num);
 #else
@@ -431,8 +435,11 @@ PeleC::variableSetUp()
 
   // Get the auxiliary names from the network model.
 #ifdef PELEC_USE_PLASMA
-  // TODO: Fix any problems in 2D
+#ifdef PELEC_USE_TWO_TEMP
+  AMREX_ASSERT(NUM_AUX == 7);
+#else
   AMREX_ASSERT(NUM_AUX == 5);
+#endif
   // Add phiV
   cnt++;
   set_phiV_bc(bc, phys_bc);
@@ -458,12 +465,28 @@ PeleC::variableSetUp()
   set_scalar_bc(bc, phys_bc);
   bcs[cnt] = bc;
   name[cnt] = "Efieldz";
+#ifdef PELEC_USE_TWO_TEMP
+  // Add mean electron energy
+  cnt++;
+  set_scalar_bc(bc, phys_bc);
+  bcs[cnt] = bc;
+  name[cnt] = "Uele";
+  // Add electron temperature
+  cnt++;
+  set_scalar_bc(bc, phys_bc);
+  bcs[cnt] = bc;
+  name[cnt] = "Tele";
+#endif
 
   PhiV = FirstAux;
   nE = FirstAux+1;
   Efieldx = FirstAux+2;
   Efieldy = FirstAux+3;
   Efieldz = FirstAux+4;
+#ifdef PELEC_USE_TWO_TEMP
+  Uele = FirstAux+5;
+  Tele = FirstAux+6;
+#endif
 #else
   amrex::Vector<std::string> aux_names;
   for (int i = 0; i < NUM_AUX; i++) {
@@ -516,10 +539,19 @@ PeleC::variableSetUp()
   react_bcs[NUM_SPECIES + 1] = bc;
   react_name[NUM_SPECIES + 1] = "heatRelease";
 #ifdef PELEC_USE_PLASMA
+#ifdef PELEC_USE_TWO_TEMP
+  react_bcs[NUM_SPECIES + 2] = bc;
+  react_name[NUM_SPECIES + 2] = "Uele_dot";
+  if (ef_use_NLsolve || ef_use_nEimplicit) {
+     react_bcs[NUM_SPECIES+3] = bc;
+     react_name[NUM_SPECIES+3] = "rho_omega_nE";
+  }
+#else
   if (ef_use_NLsolve || ef_use_nEimplicit) {
      react_bcs[NUM_SPECIES+2] = bc;
      react_name[NUM_SPECIES+2] = "rho_omega_nE";
   }
+#endif
 #endif
 
   amrex::StateDescriptor::BndryFunc bndryfunc2(pc_reactfill_hyp);

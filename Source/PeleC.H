@@ -509,6 +509,9 @@ public:
 
   // static int NVAR;
   static int Density, Xmom, Ymom, Zmom, Eden, Eint, Temp;
+#ifdef PELEC_USE_TWO_TEMP
+  static int Uele, Tele;
+#endif
 
   static int FirstAdv, NumAdv;
   static int FirstSpec;

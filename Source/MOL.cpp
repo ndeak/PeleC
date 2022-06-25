@@ -302,6 +302,13 @@ pc_compute_hyp_mol_flux(
           // amrex::Real rhoetot = regd + 0.5 * tmp5 * (tmp0 * tmp0 + tmp1 * tmp1 + tmp2 * tmp2);
           // flux_tmp[UEDEN] = tmp0 * (rhoetot + tmp3); 
           // flux_tmp[UEINT] = tmp0 * regd;
+#ifdef PELEC_USE_TWO_TEMP
+          amrex::Real uelel = q(ii, jj, kk, QFX+5) + 0.5 * dq(ii, jj, kk, QFX+5);
+          amrex::Real ueler = q(i, j, k, QFX+5) - 0.5 * dq(i, j, k, QFX+5);
+
+          flux_tmp[UFX + 5] = (ustar + drift_tmp[E_ID] > 0.0) ? (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * uelel : (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * ueler;
+          flux_tmp[UFX + 5] = (ustar + drift_tmp[E_ID] == 0.0)? (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * 0.5 * (uelel + ueler) : flux_tmp[UFX + 5];
+#endif
         }
 #endif
         for (int ivar = 0; ivar < NVAR; ivar++) {

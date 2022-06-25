@@ -116,7 +116,11 @@ struct SpeciesEnergyFlux
       }
       flx(i, j, k, UFS + ns) = Vd;
       Vc += Vd;
+#ifdef PELEC_USE_TWO_TEMP
+      if(ns != E_ID) flx(i, j, k, UEDEN) += Vd * hface;
+#else
       flx(i, j, k, UEDEN) += Vd * hface;
+#endif
     }
     // Add correction velocity to fluxes
     for (int ns = 0; ns < NUM_SPECIES; ++ns) {
@@ -124,9 +128,19 @@ struct SpeciesEnergyFlux
       const amrex::Real hface = 0.5 * (hi1[ns] + hi2[ns]);
       // if(!use_ambiDiff || beta_denom == 0.0 || chrg[ns] == 0){
         flx(i, j, k, UFS + ns) -= Yface * Vc;
+#ifdef PELEC_USE_TWO_TEMP
+        if(ns != E_ID) flx(i, j, k, UEDEN) -= Yface * hface * Vc;
+#else
         flx(i, j, k, UEDEN) -= Yface * hface * Vc;
+#endif
       // }
     }
+
+#ifdef PELEC_USE_TWO_TEMP
+    // Calculate electron energy flux
+    const amrex::Real dUeledx = dxinv * (q(i,j,k,QFX+5) - q(im,jm,km,QFX+5));
+    flx(i, j, k, UFX+5) = (5.0/3.0) * (-coef[dComp_rhoD + E_ID]/q(i, j, k, QRHO)) * dUeledx;
+#endif
   }
 };
 
@@ -207,7 +221,11 @@ struct SpeciesEnergyFlux<pele::physics::eos::SRK>
       const amrex::Real Vd = -coef[dComp_rhoD + ns] * ddrive[ns];
       flx(i, j, k, UFS + ns) = Vd;
       Vc += Vd;
+#ifdef PELEC_USE_TWO_TEMP
+      if(ns != E_ID) flx(i, j, k, UEDEN) += Vd * hface;
+#else
       flx(i, j, k, UEDEN) += Vd * hface;
+#endif
     }
 
     // Add correction velocity to fluxes
@@ -215,7 +233,11 @@ struct SpeciesEnergyFlux<pele::physics::eos::SRK>
       const amrex::Real Yface = 0.5 * (mass1[ns] + mass2[ns]);
       const amrex::Real hface = 0.5 * (hi1[ns] + hi2[ns]);
       flx(i, j, k, UFS + ns) -= Yface * Vc;
+#ifdef PELEC_USE_TWO_TEMP
+      if(ns != E_ID) flx(i, j, k, UEDEN) -= Yface * hface * Vc;
+#else
       flx(i, j, k, UEDEN) -= Yface * hface * Vc;
+#endif
     }
   }
 };

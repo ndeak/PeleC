@@ -75,9 +75,16 @@ PeleC::react_state(
   prefetchToDevice(react_src);
 
   // for sundials box integration
+#ifdef PELEC_USE_TWO_TEMP
+  amrex::MultiFab STemp(grids, dmap, NUM_SPECIES + 4, 0);
+#else
   amrex::MultiFab STemp(grids, dmap, NUM_SPECIES + 2, 0);
+#endif
   amrex::MultiFab extsrc_rY(grids, dmap, NUM_SPECIES, 0);
   amrex::MultiFab extsrc_rE(grids, dmap, 1, 0);
+#ifdef PELEC_USE_TWO_TEMP
+  amrex::MultiFab extsrc_Uele(grids, dmap, 1, 0);
+#endif
   amrex::iMultiFab dummyMask(grids, dmap, 1, 0);
   amrex::MultiFab fctCount(grids, dmap, 1, 0);
   dummyMask.setVal(1);
@@ -88,11 +95,17 @@ PeleC::react_state(
     amrex::MultiFab::Copy(STemp, S_old, UTEMP, NUM_SPECIES, 1, STemp.nGrow());
     amrex::MultiFab::Copy(
       STemp, S_old, UEINT, NUM_SPECIES + 1, 1, STemp.nGrow());
+#ifdef PELEC_USE_TWO_TEMP
+    amrex::MultiFab::Copy(STemp, S_old, Uele, NUM_SPECIES + 2, 2, STemp.nGrow());
+#endif
   } else {
     amrex::MultiFab::Copy(STemp, S_new, UFS, 0, NUM_SPECIES, STemp.nGrow());
     amrex::MultiFab::Copy(STemp, S_new, UTEMP, NUM_SPECIES, 1, STemp.nGrow());
     amrex::MultiFab::Copy(
       STemp, S_new, UEINT, NUM_SPECIES + 1, 1, STemp.nGrow());
+#ifdef PELEC_USE_TWO_TEMP
+    amrex::MultiFab::Copy(STemp, S_new, Uele, NUM_SPECIES + 2, 2, STemp.nGrow());
+#endif
   }
   amrex::MultiFab::Copy(
     extsrc_rY, *non_react_src, UFS, 0, NUM_SPECIES, STemp.nGrow());
@@ -188,6 +201,11 @@ PeleC::react_state(
           auto const& rhoE = STemp.array(mfi, NUM_SPECIES + 1);
           auto const& frcExt = extsrc_rY.array(mfi);
           auto const& frcEExt = extsrc_rE.array(mfi);
+#ifdef PELEC_USE_TWO_TEMP
+          auto const& Ue = STemp.array(mfi, NUM_SPECIES + 2);
+          auto const& Te = STemp.array(mfi, NUM_SPECIES + 3);
+          auto const& frcUeleExt = extsrc_Uele.array(mfi);
+#endif
           auto const& mask = dummyMask.array(mfi);
           auto const& fc = fctCount.array(mfi);
 
@@ -228,6 +246,10 @@ PeleC::react_state(
 #endif
 
               frcEExt(i, j, k) = rhoedot_ext;
+#ifdef PELEC_USE_TWO_TEMP
+              frcUeleExt(i, j, k) = (snew_arr(i, j, k,Uele) - sold_arr(i, j, k,Uele)) / dt;              
+#endif
+
               if (captured_clean_massfrac == 1) {
                 clip_normalize_rYarr(i, j, k, sold_arr, rhoY);
               }
@@ -235,7 +257,11 @@ PeleC::react_state(
 
           const int reactor_type = 1;
           react(
-            bx, rhoY, frcExt, T, rhoE, frcEExt, fc, mask, dt, current_time,
+            bx, rhoY, frcExt, T, rhoE, frcEExt, 
+#ifdef PELEC_USE_TWO_TEMP
+            Ue, frcUeleExt,
+#endif
+            fc, mask, dt, current_time,
             reactor_type
 #ifdef PELEC_USE_PLASMA
             , eon, pi_source
@@ -301,7 +327,16 @@ PeleC::react_state(
                 }
                 snew_arr(i, j, k, UTEMP) = T(i, j, k);
 
+#ifdef PELEC_USE_TWO_TEMP
+                // We need to replace snew ei with the internal energy that cvode returns,
+                // which includes energy gained/lost via collisions w electrons
+                snew_arr(i, j, k, UEINT) = rhoE(i,j,k);
+                // Also need to use new electron energy and temperature
+                snew_arr(i, j, k, Uele) = Ue(i,j,k);
+                snew_arr(i, j, k, Tele) = Te(i,j,k);
+#else
                 snew_arr(i, j, k, UEINT) = rho_old * e_old + dt * rhoedot_ext;
+#endif
                 snew_arr(i, j, k, UEDEN) =
                   snew_arr(i, j, k, UEINT) +
                   0.5 * (umnew * umnew + vmnew * vmnew + wmnew * wmnew) /
@@ -315,6 +350,18 @@ PeleC::react_state(
                                     nonrs_arr(i, j, k, UFS + nsp);
               }
 
+#ifdef PELEC_USE_TWO_TEMP
+                // Time lagged reactive source term should be constructed using 
+                // rhoE, which includes the effects of electron energy transfer
+                I_R(i, j, k, NUM_SPECIES) = (rhoE(i, j, k)              // new rhoy
+                                     - sold_arr(i, j, k, UEDEN)) // old rhoy
+                                      / dt -
+                                    nonrs_arr(i, j, k, UEDEN);
+                I_R(i, j, k, NUM_SPECIES + 2) = (Ue(i, j, k)              // new rhoy
+                                     - sold_arr(i, j, k, Uele)) // old rhoy
+                                      / dt -
+                                    nonrs_arr(i, j, k, Uele);
+#else
               I_R(i, j, k, NUM_SPECIES) =
                 (rho_old * e_old + dt * rhoedot_ext // new internal energy
                  + 0.5 * (umnew * umnew + vmnew * vmnew + wmnew * wmnew) /
@@ -322,6 +369,7 @@ PeleC::react_state(
                  - sold_arr(i, j, k, UEDEN)) // old total energy
                   / dt -
                 nonrs_arr(i, j, k, UEDEN);
+#endif
             });
 
           wt = (amrex::ParallelDescriptor::second() - wt) / bx.d_numPts();
@@ -352,7 +400,11 @@ PeleC::react_state(
               snew_arr(i, j, k, URHO), snew_arr(i, j, k, UTEMP), Yspec, hi);
 
             for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+#ifdef PELEC_USE_TWO_TEMP
+              if(nsp != E_ID) I_R(i, j, k, NUM_SPECIES + 1) -= hi[nsp] * I_R(i, j, k, nsp);
+#else
               I_R(i, j, k, NUM_SPECIES + 1) -= hi[nsp] * I_R(i, j, k, nsp);
+#endif
             }
 
 #ifdef PELEC_USE_PLASMA

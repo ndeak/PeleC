@@ -58,7 +58,9 @@
 
 #ifndef PELEC_USE_AUX
 #define NUM_ADV 0
-#ifdef PELEC_USE_PLASMA
+#if defined(PELEC_USE_PLASMA) && defined(PELEC_USE_TWO_TEMP)
+#define NUM_AUX 7
+#elif defined(PELEC_USE_PLASMA)
 #define NUM_AUX 5
 #else
 #define NUM_AUX 0

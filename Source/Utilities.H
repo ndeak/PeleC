@@ -123,7 +123,11 @@ pc_rst_int_e(
     amrex::Real eos_state_e = 0.0;
     for (int sp = 0; sp < NUM_SPECIES; sp++) {
       eos_state_massfrac[sp] = S(i, j, k, sp + UFS) * rhoInv;
+#ifdef PELEC_USE_TWO_TEMP
+      if(sp != E_ID) eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
+#else
       eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
+#endif
     }
     const amrex::Real small_e = eos_state_e;
     if (eden < small_e) {
@@ -133,7 +137,11 @@ pc_rst_int_e(
         eos.T2Ei(eos_state_T_loc, eos_state_ei);
         eos_state_e = 0.0;
         for (int sp = 0; sp < NUM_SPECIES; sp++) {
+#ifdef PELEC_USE_TWO_TEMP
+          if(sp != E_ID) eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
+#else
           eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
+#endif
         }
         S(i, j, k, UEINT) = S(i, j, k, URHO) * eos_state_e;
       }
@@ -156,7 +164,11 @@ pc_rst_int_e(
         eos.T2Ei(eos_state_T_loc, eos_state_ei);
         eos_state_e = 0.0;
         for (int sp = 0; sp < NUM_SPECIES; sp++) {
+#ifdef PELEC_USE_TWO_TEMP
+          if(sp != E_ID) eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
+#else
           eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
+#endif
         }
         if (dual_energy_update_E_from_e == 1) {
           S(i, j, k, UEDEN) =
@@ -186,7 +198,11 @@ pc_rst_int_e(
         amrex::Real eos_state_e = 0.0;
         for (int sp = 0; sp < NUM_SPECIES; sp++) {
           eos_state_massfrac[sp] = S(i, j, k, sp + UFS) * rhoInv;
+#ifdef PELEC_USE_TWO_TEMP
+          if(sp != E_ID) eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
+#else
           eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
+#endif
         }
         S(i, j, k, UEINT) = S(i, j, k, URHO) * eos_state_e;
       }
@@ -218,7 +234,11 @@ pc_rst_int_e(
         amrex::Real eos_state_e = 0.0;
         for (int sp = 0; sp < NUM_SPECIES; sp++) {
           eos_state_massfrac[sp] = S(i, j, k, sp + UFS) * rhoInv;
+#ifdef PELEC_USE_TWO_TEMP
+          if(sp != E_ID) eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
+#else
           eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
+#endif
         }
         const amrex::Real eint_new = eos_state_e;
         /* Avoiding this for now due to GPU restricitions
@@ -303,6 +323,12 @@ pc_ctoprim(
       q(i, j, k, sp + QFS) = massfrac[sp];
     }
   }
+
+#ifdef PELEC_USE_TWO_TEMP
+  // Make sure Uele and Tele are available as primitive variables
+  q(i, j, k, QFX + 5) = u(i, j, k, UFX + 5);  
+  q(i, j, k, QFX + 6) = u(i, j, k, UFX + 6);  
+#endif
 
   //    amrex::Real aux[NUM_AUX];
   //    for(int ax = 0; ax < NUM_AUX; ++ax) aux[ax] = q(i,j,k,ax+QFX);

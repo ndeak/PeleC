@@ -58,6 +58,10 @@ int PeleC::Temp = -1;
 int PeleC::Xmom = -1;
 int PeleC::Ymom = -1;
 int PeleC::Zmom = -1;
+#ifdef PELEC_USE_TWO_TEMP
+int PeleC::Uele = -1;
+int PeleC::Tele = -1;
+#endif
 int PeleC::FirstSpec = -1;
 int PeleC::FirstAux = -1;
 int PeleC::NumAdv = 0;
@@ -2376,6 +2380,15 @@ PeleC::computeTemp(amrex::MultiFab& S, int ng)
     amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       pc_cmpTemp(i, j, k, sarr);
     });
+
+#ifdef PELEC_USE_TWO_TEMP
+    amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::Real kB = 1.380649e-16;             // erg/K
+      amrex::Real me_g = 9.10938356e-28;         // electron mass (g)
+      amrex::Real ne = sarr(i,j,k,UFS+E_ID) / me_g;
+      sarr(i,j,k,Tele) = sarr(i,j,k,Uele) * (2.0/3.0) * 1.0/(kB * ne);
+    });
+#endif
   }
 }
 
