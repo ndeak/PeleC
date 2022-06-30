@@ -74,14 +74,22 @@ void
 pc_cmpTemp(
   const int i, const int j, const int k, amrex::Array4<amrex::Real> const& S)
 {
+#ifdef PELEC_USE_TWO_TEMP
+  amrex::Real rhoInv = 1.0 / (S(i, j, k, URHO) - S(i,j,k,UFS+E_ID));
+#else
   amrex::Real rhoInv = 1.0 / S(i, j, k, URHO);
+#endif
   amrex::Real T = S(i, j, k, UTEMP);
   amrex::Real e = S(i, j, k, UEINT) * rhoInv;
   amrex::Real massfrac[NUM_SPECIES];
   for (int n = 0; n < NUM_SPECIES; ++n) {
     massfrac[n] = S(i, j, k, UFS + n) * rhoInv;
   }
+#ifdef PELEC_USE_TWO_TEMP
+  amrex::Real rho = S(i, j, k, URHO) - S(i, j, k, UFS + E_ID);
+#else
   amrex::Real rho = S(i, j, k, URHO);
+#endif
   auto eos = pele::physics::PhysicsType::eos();
   eos.REY2T(rho, e, massfrac, T);
   S(i, j, k, UTEMP) = T;

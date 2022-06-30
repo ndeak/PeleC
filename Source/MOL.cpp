@@ -126,6 +126,9 @@ pc_compute_hyp_mol_flux(
         for (int n = 0; n < NUM_SPECIES; n++) {
           qtempl[R_Y + n] = qtempl[R_Y + n] / qtempl[R_RHO];
         }
+#ifdef PELEC_USE_TWO_TEMP
+          amrex::Real uelel = q(ii, jj, kk, QFX+5) + 0.5 * dq(ii, jj, kk, QFX+5);
+#endif
 
         amrex::Real qtempr[5 + NUM_SPECIES] = {0.0};
         qtempr[R_UN] =
@@ -149,6 +152,9 @@ pc_compute_hyp_mol_flux(
         for (int n = 0; n < NUM_SPECIES; n++) {
           qtempr[R_Y + n] = qtempr[R_Y + n] / qtempr[R_RHO];
         }
+#ifdef PELEC_USE_TWO_TEMP
+          amrex::Real ueler = q(i, j, k, QFX+5) - 0.5 * dq(i, j, k, QFX+5);
+#endif
 
         const amrex::Real cavg =
           0.5 * (qaux(i, j, k, QC) + qaux(ii, jj, kk, QC));
@@ -303,9 +309,6 @@ pc_compute_hyp_mol_flux(
           // flux_tmp[UEDEN] = tmp0 * (rhoetot + tmp3); 
           // flux_tmp[UEINT] = tmp0 * regd;
 #ifdef PELEC_USE_TWO_TEMP
-          amrex::Real uelel = q(ii, jj, kk, QFX+5) + 0.5 * dq(ii, jj, kk, QFX+5);
-          amrex::Real ueler = q(i, j, k, QFX+5) - 0.5 * dq(i, j, k, QFX+5);
-
           flux_tmp[UFX + 5] = (ustar + drift_tmp[E_ID] > 0.0) ? (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * uelel : (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * ueler;
           flux_tmp[UFX + 5] = (ustar + drift_tmp[E_ID] == 0.0)? (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * 0.5 * (uelel + ueler) : flux_tmp[UFX + 5];
 #endif
@@ -341,6 +344,10 @@ pc_compute_hyp_mol_flux(
                 flx[dir](i, j, k, UFS + n) = 0.0;
                 if(zero_bc_grad == 1){
                   flx[dir](i,j,k,UFS+n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
+#ifdef PELEC_USE_TWO_TEMP
+                  // TODO: Should there be a factor of 5/3 for this?
+                  if(n == E_ID) flx[dir](i,j,k,UFX+5) = (5.0/3.0) * ueler * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
+#endif
                 }
                 else{
                   if(zero_bc_grad == 2){    // Assume cathode is on domlo
@@ -389,6 +396,10 @@ pc_compute_hyp_mol_flux(
                 flx[dir](i, j, k, UFS + n) = 0.0;
                 if(zero_bc_grad == 1){
                   flx[dir](i,j,k,UFS+n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
+#ifdef PELEC_USE_TWO_TEMP
+                  // TODO: Should there be a factor of 5/3 for this?
+                  if(n == E_ID) flx[dir](i,j,k,UFX+5) = (5.0/3.0) * uelel * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
+#endif
                 }
                 else{
                   if(n == E_ID && !use_NL){
@@ -536,6 +547,9 @@ pc_compute_hyp_mol_flux(
             flux_tmp[UFS + n] = 0.0;
             if(zero_bc_grad == 1){
                 flux_tmp[UFS + n] = q(i,j,k,QRHO) * q(i,j,k,QFS + n) * K_cc(i,j,k,n) * Enorm;
+#ifdef PELEC_USE_TWO_TEMP
+                if(n == E_ID) flux_tmp[UFX + 5] = (5.0/3.0) * q(i,j,k,QFX+5) * K_cc(i,j,k,n) * Enorm;
+#endif
             }
             else{
               if(zero_bc_grad == 2 && y <= probhi[1] / 2.0){

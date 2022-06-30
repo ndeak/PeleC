@@ -158,7 +158,13 @@ pc_expl_reactions(
       amrex::Real wdot[NUM_SPECIES];
       auto eos = pele::physics::PhysicsType::eos();
 #ifdef PELEC_USE_PLASMA
+#ifdef PELEC_USE_TWO_TEMP
+      amrex::Real enerExch = 0.0;
+      amrex::Real Ue = 0.0;
+      eos.RTY2WDOT(urk[URHO], urk[UTEMP], massfrac, wdot, &enerExch, Ue, eon(i,j,k,0), pi_source(i,j,k,0));
+#else
       eos.RTY2WDOT(urk[URHO], urk[UTEMP], massfrac, wdot, eon(i,j,k,0), pi_source(i,j,k,0));
+#endif
 #else
       eos.RTY2WDOT(urk[URHO], urk[UTEMP], massfrac, wdot);
 #endif

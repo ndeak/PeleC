@@ -76,7 +76,8 @@ PeleC::react_state(
 
   // for sundials box integration
 #ifdef PELEC_USE_TWO_TEMP
-  amrex::MultiFab STemp(grids, dmap, NUM_SPECIES + 4, 0);
+  // Expand when using two-temp model to include electron energy
+  amrex::MultiFab STemp(grids, dmap, NUM_SPECIES + 3, 0);
 #else
   amrex::MultiFab STemp(grids, dmap, NUM_SPECIES + 2, 0);
 #endif
@@ -96,7 +97,7 @@ PeleC::react_state(
     amrex::MultiFab::Copy(
       STemp, S_old, UEINT, NUM_SPECIES + 1, 1, STemp.nGrow());
 #ifdef PELEC_USE_TWO_TEMP
-    amrex::MultiFab::Copy(STemp, S_old, Uele, NUM_SPECIES + 2, 2, STemp.nGrow());
+    amrex::MultiFab::Copy(STemp, S_old, Uele, NUM_SPECIES + 2, 1, STemp.nGrow());
 #endif
   } else {
     amrex::MultiFab::Copy(STemp, S_new, UFS, 0, NUM_SPECIES, STemp.nGrow());
@@ -104,7 +105,7 @@ PeleC::react_state(
     amrex::MultiFab::Copy(
       STemp, S_new, UEINT, NUM_SPECIES + 1, 1, STemp.nGrow());
 #ifdef PELEC_USE_TWO_TEMP
-    amrex::MultiFab::Copy(STemp, S_new, Uele, NUM_SPECIES + 2, 2, STemp.nGrow());
+    amrex::MultiFab::Copy(STemp, S_new, Uele, NUM_SPECIES + 2, 1, STemp.nGrow());
 #endif
   }
   amrex::MultiFab::Copy(
@@ -203,7 +204,6 @@ PeleC::react_state(
           auto const& frcEExt = extsrc_rE.array(mfi);
 #ifdef PELEC_USE_TWO_TEMP
           auto const& Ue = STemp.array(mfi, NUM_SPECIES + 2);
-          auto const& Te = STemp.array(mfi, NUM_SPECIES + 3);
           auto const& frcUeleExt = extsrc_Uele.array(mfi);
 #endif
           auto const& mask = dummyMask.array(mfi);
@@ -331,9 +331,8 @@ PeleC::react_state(
                 // We need to replace snew ei with the internal energy that cvode returns,
                 // which includes energy gained/lost via collisions w electrons
                 snew_arr(i, j, k, UEINT) = rhoE(i,j,k);
-                // Also need to use new electron energy and temperature
+                // Also need to use new electron energy (Te is recomputed in Advance directly after reactions)
                 snew_arr(i, j, k, Uele) = Ue(i,j,k);
-                snew_arr(i, j, k, Tele) = Te(i,j,k);
 #else
                 snew_arr(i, j, k, UEINT) = rho_old * e_old + dt * rhoedot_ext;
 #endif

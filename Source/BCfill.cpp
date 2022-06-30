@@ -179,6 +179,7 @@ struct PCHypFillExtDir
 #endif
     }
 
+    {
     // Try to catch the nE BCs.
     const int* bcp = bcr[UFX+1].data();
     // xlo and xhi
@@ -240,6 +241,139 @@ struct PCHypFillExtDir
     }
 #endif
 #endif
+    }
+
+#ifdef PELEC_USE_TWO_TEMP
+    {
+    // Try to catch the Uele BCs.
+    const int* bcp = bcr[UFX+5].data();
+    // xlo and xhi
+    idir = 0;
+    if ((bcp[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(domlo[idir], iv[1], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, +1, time, geom, *lprobparm);
+      dest(iv, UFX+5) = s_ext[UFX+5];
+    } else if (
+      (bcp[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(domhi[idir], iv[1], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, -1, time, geom, *lprobparm);
+      dest(iv, UFX+5) = s_ext[UFX+5];
+    }
+#if AMREX_SPACEDIM > 1
+    // ylo and yhi
+    idir = 1;
+    if ((bcp[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(iv[0], domlo[idir], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, +1, time, geom, *lprobparm);
+      dest(iv, UFX+5) = s_ext[UFX+5];
+    } else if (
+      (bcp[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(iv[0], domhi[idir], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, -1, time, geom, *lprobparm);
+      dest(iv, UFX+5) = s_ext[UFX+5];
+    }
+#if AMREX_SPACEDIM == 3
+    // zlo and zhi
+    idir = 2;
+    if ((bcp[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(iv[0], iv[1], domlo[idir], n);
+      }
+      bcnormal(x, s_int, s_ext, idir, +1, time, geom, *lprobparm);
+      dest(iv, UFX+5) = s_ext[UFX+5];
+    } else if (
+      (bcp[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(iv[0], iv[1], domhi[idir], n);
+      }
+      bcnormal(x, s_int, s_ext, idir, -1, time, geom, *lprobparm);
+      dest(iv, UFX+5) = s_ext[UFX+5];
+    }
+#endif
+#endif
+    }
+
+    {
+    // Try to catch the Tele BCs.
+    const int* bcp = bcr[UFX+6].data();
+    // xlo and xhi
+    idir = 0;
+    if ((bcp[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(domlo[idir], iv[1], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, +1, time, geom, *lprobparm);
+      dest(iv, UFX+6) = s_ext[UFX+6];
+    } else if (
+      (bcp[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(domhi[idir], iv[1], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, -1, time, geom, *lprobparm);
+      dest(iv, UFX+6) = s_ext[UFX+6];
+    }
+#if AMREX_SPACEDIM > 1
+    // ylo and yhi
+    idir = 1;
+    if ((bcp[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(iv[0], domlo[idir], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, +1, time, geom, *lprobparm);
+      dest(iv, UFX+6) = s_ext[UFX+6];
+    } else if (
+      (bcp[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      amrex::IntVect loc(AMREX_D_DECL(iv[0], domhi[idir], iv[2]));
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(loc, n);
+      }
+      bcnormal(x, s_int, s_ext, idir, -1, time, geom, *lprobparm);
+      dest(iv, UFX+6) = s_ext[UFX+6];
+    }
+#if AMREX_SPACEDIM == 3
+    // zlo and zhi
+    idir = 2;
+    if ((bcp[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(iv[0], iv[1], domlo[idir], n);
+      }
+      bcnormal(x, s_int, s_ext, idir, +1, time, geom, *lprobparm);
+      dest(iv, UFX+6) = s_ext[UFX+6];
+    } else if (
+      (bcp[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and
+      (iv[idir] > domhi[idir])) {
+      for (int n = 0; n < NVAR; n++) {
+        s_int[n] = dest(iv[0], iv[1], domhi[idir], n);
+      }
+      bcnormal(x, s_int, s_ext, idir, -1, time, geom, *lprobparm);
+      dest(iv, UFX+6) = s_ext[UFX+6];
+    }
+#endif
+#endif
+    }
+
+#endif
+
 #endif
   }
 };
