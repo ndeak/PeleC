@@ -37,6 +37,10 @@ ifeq ($(USE_PLASMA), TRUE)
   DEFINES += -DPELEC_USE_PLASMA
 endif
 
+ifeq ($(USE_TWO_TEMP), TRUE)
+  DEFINES += -DPELEC_USE_TWO_TEMP
+endif
+
 all: $(executable) 
 	$(SILENT) $(RM) AMReX_buildInfo.cpp
 	@echo SUCCESS
