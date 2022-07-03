@@ -1019,7 +1019,12 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
             AMREX_D_DECL(dx1, dx2, dx3));
         });
+#ifdef PELEC_USE_TWO_TEMP
+      // Adjust by factor of 3/5 when including electron energy
+      estdt_hydro = amrex::min<amrex::Real>((3.0/5.0) * estdt_hydro, dt);
+#else
       estdt_hydro = amrex::min<amrex::Real>(estdt_hydro, dt);
+#endif
     }
 
     if (diffuse_vel) {
@@ -2382,10 +2387,12 @@ PeleC::computeTemp(amrex::MultiFab& S, int ng)
     });
 
 #ifdef PELEC_USE_TWO_TEMP
+    // Fix any negative electron energies and recompute T
     amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       amrex::Real kB = 1.380649e-16;             // erg/K
       amrex::Real me_g = 9.10938356e-28;         // electron mass (g)
-      amrex::Real ne = sarr(i,j,k,UFS+E_ID) / me_g;
+      amrex::Real ne = (sarr(i,j,k,UFS+E_ID) > 1.0e-35) ? sarr(i,j,k,UFS+E_ID)/me_g : 1.0e-35/me_g;
+      sarr(i,j,k,Uele) = (sarr(i,j,k,Uele) > 1.0e-20 ) ? sarr(i,j,k,Uele) : (sarr(i,j,k,Tele) >= sarr(i,j,k,UTEMP)) ? (3.0/2.0)*kB*ne*sarr(i,j,k,Tele) : (3.0/2.0)*kB*ne*sarr(i,j,k,UTEMP);
       sarr(i,j,k,Tele) = sarr(i,j,k,Uele) * (2.0/3.0) * 1.0/(kB * ne);
     });
 #endif

@@ -414,6 +414,22 @@ PeleC::do_mol_advance(
 #endif
 #endif
 
+#ifdef PELEC_USE_TWO_TEMP
+  // Try fixing negative electron energies/temperatures
+  amrex::Real kB = 1.380649e-16; // erg/K
+  amrex::Real me_g = 9.10938356e-28;         // electron mass (g)
+  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& tbox = mfi.growntilebox();
+      const auto Sfab = S_new.array(mfi);
+      amrex::ParallelFor(
+        tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          amrex::Real ne = (Sfab(i,j,k,UFS+E_ID) > 1.0e-35) ? Sfab(i,j,k,UFS+E_ID)/me_g : 1.0e-35/me_g;
+          Sfab(i,j,k,Uele) = (Sfab(i,j,k,Uele) > 1.0e-20 ) ? Sfab(i,j,k,Uele) : (Sfab(i,j,k,Tele) >= Sfab(i,j,k,UTEMP)) ? (3.0/2.0)*kB*ne*Sfab(i,j,k,Tele) : (3.0/2.0)*kB*ne*Sfab(i,j,k,UTEMP);
+          Sfab(i,j,k,Tele) = Sfab(i,j,k,Uele) * (2.0/3.0) * 1.0/(kB * ne);
+        });
+  }
+#endif
+
 #ifdef PELEC_USE_PLASMA
   if(ef_star_update >= 2){
     setCurrVoltage(time+dt);

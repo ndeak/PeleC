@@ -90,6 +90,9 @@ PeleC::solvePI ( Real time,
         const auto& rhoY_ar = Ucurr.array(mfi,UFS);
         const auto& ion_ar = ionRate.array(mfi);
         const auto& eon_ar = redEfield.array(mfi);
+#ifdef PELEC_USE_TWO_TEMP
+        const auto& Te_ar = Ucurr.array(mfi,UFX+6);
+#endif
         int useNL = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
         amrex::ParallelFor(bx,
         [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
@@ -118,7 +121,11 @@ PeleC::solvePI ( Real time,
             else{
               // BOLSIG+ rates
               double Te_val;
+#ifdef PELEC_USE_TWO_TEMP
+              Te_val = Te_ar(i,j,k);
+#else
               ExtrapTe(eon_ar(i,j,k), &Te_val);
+#endif
               double Janev_sum;
               double logTe = log(Te_val/11595.0);     // Fits are performed assuming Te is eV rather than K
               double Te_pow[] = {pow(logTe, 0), pow(logTe, 1), pow(logTe, 2), pow(logTe, 3), pow(logTe, 4), pow(logTe, 5), pow(logTe, 6), pow(logTe, 7), pow(logTe, 8)};

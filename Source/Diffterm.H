@@ -138,8 +138,9 @@ struct SpeciesEnergyFlux
 
 #ifdef PELEC_USE_TWO_TEMP
     // Calculate electron energy flux
-    const amrex::Real dUeledx = dxinv * (q(i,j,k,QFX+5) - q(im,jm,km,QFX+5));
-    flx(i, j, k, UFX+5) = (5.0/3.0) * (-coef[dComp_rhoD + E_ID]/q(i, j, k, QRHO)) * dUeledx;
+    // NOTE: Explicit electron energy diffusion requires an exceedingly small time step size to remain stable - removing for now
+    // const amrex::Real dUeledx = dxinv * (q(i,j,k,QFX+5) - q(im,jm,km,QFX+5));
+    // flx(i, j, k, UFX+5) = (5.0/3.0) * (-coef[dComp_rhoD + E_ID]/q(i, j, k, QRHO)) * dUeledx;
 #endif
   }
 };
