@@ -1,0 +1,6 @@
+rm myjob*
+rm -rf plt*
+rm -rf chk*
+rm Backtrace*
+rm Monitor*
+rm postprocess-movies/*

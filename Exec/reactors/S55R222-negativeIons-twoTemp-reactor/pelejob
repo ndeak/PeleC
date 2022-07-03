@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -n 56
+#SBATCH -o myjob.%j.out
+#SBATCH -J PeleCPlasma
+#SBATCH -p small
+#SBATCH -A CTS21022
+#SBATCH -t 00:01:00
+
+module load gcc
+
+module list
+pwd
+date
+
+
+mpirun -n 56 ./PeleC3d.gnu.MPI.ex inputs.3d 
+#mpirun -n 56 ./ONE-TEMP.PeleC3d.gnu.MPI.ex inputs.3d 
+#mpirun -n 1792 ./PeleC3d.gnu.MPI.ex inputs.3d amr.restart=/scratch1/04361/ndeak/pelec_check-6lev-0p27cfl-343K-1p3bar-parabolicPinsFP-50um-2p5mm-trapPulse-15kVanode-10nst-10fwhm-1e3init-SRD1old-scaling-Egradtag100-PAC55-zeroGradBC/chk02800/
