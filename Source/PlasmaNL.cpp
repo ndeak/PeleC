@@ -1221,13 +1221,24 @@ void PeleC::ef_setUpPrecond (const Real &dt_lcl,
          auto const& ne_arr = nE_a.const_array(mfi);
          auto const& rhoY = Sborder.array(mfi,UFS);
          auto const& redEfab = redEfield.array(mfi);
+#ifdef PELEC_USE_TWO_TEMP
+         auto const& Tefab = Sborder.array(mfi,UFX+6);
+#endif
          auto const& Schur  = ( ef_PC_approx == 2 ) ? Schur_nEKe.array(mfi) : nEKe.array(mfi);
          auto const& diag_a = ( ef_PC_approx == 2 ) ? diagDiff.array(mfi) : nEKe.array(mfi);
          int do_Schur = ( ef_PC_approx == 2 ) ? 1 : 0;
-         amrex::ParallelFor(gbx, [neke,Schur,diag_a,ne_arr,dt_lcl,do_Schur,rhoY,redEfab,mwt]
+         amrex::ParallelFor(gbx, [neke,Schur,diag_a,ne_arr,dt_lcl,do_Schur,rhoY,redEfab,
+#ifdef PELEC_USE_TWO_TEMP
+                                  Tefab,
+#endif
+                                  mwt]
          AMREX_GPU_DEVICE (int i, int j, int k) noexcept
          {
-            getKappaE(i,j,k,0,neke,redEfab,rhoY,mwt);
+            getKappaE(i,j,k,0,neke,redEfab,
+#ifdef PELEC_USE_TWO_TEMP
+                      Tefab,
+#endif
+                      rhoY,mwt);
             neke(i,j,k) *= ne_arr(i,j,k) * -1.0;  // invert sign since getKappaE return negative kappa_e
 #ifndef PELEC_USE_EB
             if ( do_Schur ) {

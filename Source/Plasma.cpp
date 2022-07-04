@@ -322,9 +322,16 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      auto const& De   = De_cc.array(mfi);
      auto const& Ks   = KSpec_old.array(mfi);
      auto const& redEfab = redEfield.array(mfi);
+#ifdef PELEC_USE_TWO_TEMP
+     auto const& Tefab = S.array(mfi,UFX+6);
+#endif
      Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
      int useNL   = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
-     amrex::ParallelFor(gbox, [rhoY, T, eleDiff_factor, Ks, rho_ar, rhoD, Ke, De, useNL, redEfab, mwt, eleMobility, eleDiffusivity]
+     amrex::ParallelFor(gbox, [rhoY, T, eleDiff_factor, Ks, rho_ar, rhoD, Ke, De, useNL, 
+#ifdef PELEC_USE_TWO_TEMP
+                              Tefab,
+#endif
+                              redEfab, mwt, eleMobility, eleDiffusivity]
      AMREX_GPU_DEVICE (int i, int j, int k) noexcept
      {
         if(ef_constEleTransport == 1){
@@ -339,13 +346,35 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
         }
         else{
           if (useNL) {
-             getKappaE(i,j,k,0,Ke,redEfab,rhoY,mwt);
-             getDiffE(i,j,k,0,useNL,eleDiff_factor,rhoY,De,redEfab,mwt);
+             getKappaE(i,j,k,0,Ke,redEfab,
+#ifdef PELEC_USE_TWO_TEMP
+                      Tefab,
+#endif
+                      rhoY,mwt);
+             getDiffE(i,j,k,0,useNL,eleDiff_factor,rhoY,De,redEfab,
+#ifdef PELEC_USE_TWO_TEMP
+                      Tefab,
+#endif
+                      mwt);
           } else {
-             getKappaE(i,j,k,E_ID,Ks,redEfab,rhoY,mwt);
-             getDiffE(i,j,k,E_ID,useNL,eleDiff_factor,rhoY,rhoD,redEfab,mwt);
+             getKappaE(i,j,k,E_ID,Ks,redEfab,
+#ifdef PELEC_USE_TWO_TEMP
+                      Tefab,
+#endif
+                      rhoY,mwt);
+             getDiffE(i,j,k,E_ID,useNL,eleDiff_factor,rhoY,rhoD,redEfab,
+#ifdef PELEC_USE_TWO_TEMP
+                      Tefab,
+#endif
+                      mwt);
           }
-          if(ef_use_nEDiffImp) getDiffE(i,j,k,0,useNL,eleDiff_factor,rhoY,De,redEfab,mwt);
+          if(ef_use_nEDiffImp) {
+            getDiffE(i,j,k,0,useNL,eleDiff_factor,rhoY,De,redEfab,
+#ifdef PELEC_USE_TWO_TEMP
+                    Tefab,
+#endif
+                    mwt);
+          }
         }
      });
      Real mwt[NUM_SPECIES];
@@ -407,34 +436,34 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
 }
 
 // TODO: finish working on version of ef transport calc that can be folded more cleanly into Diffusion.cpp
-void PeleC::ef_calc_transport(amrex::Box const& bx,
-                              amrex::Array4<const amrex::Real> const& rhoY_in,
-                              amrex::Array4<const amrex::Real> const& EoN_in,
-                              amrex::Array4<amrex::Real> const& Ke_out,
-                              amrex::Array4<amrex::Real> const& rhoDe_out,
-                              amrex::Array4<amrex::Real> const& K_out
-) {
-  BL_PROFILE("PeleC::ef_calc_transport()");
- 
-  // ndeak note - since only MOL is being used for now, it is assumed all data MFs are at time t=n
-
-  if ( ef_verbose ) amrex::Print() << " Compute EF transport prop.\n";
-
-  // ndeak add - get BCs for species (used in center->edge extrap)
-  amrex::Real mwt[NUM_SPECIES];
-  auto eos = pele::physics::PhysicsType::eos();
-  eos.molecular_weight(mwt);   // CGS
-
-  Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
-  int useNL   = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
-  amrex::ParallelFor(bx, [=]
-  AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-  {
-     getKappaE(i,j,k,E_ID,Ke_out,EoN_in,rhoY_in,mwt);
-     getDiffE(i,j,k,E_ID,useNL,factor,rhoY_in,rhoDe_out,EoN_in,mwt);
-     getKappaSp(i,j,k, zk_num, K_out);
-  });
-
+// void PeleC::ef_calc_transport(amrex::Box const& bx,
+//                               amrex::Array4<const amrex::Real> const& rhoY_in,
+//                               amrex::Array4<const amrex::Real> const& EoN_in,
+//                               amrex::Array4<amrex::Real> const& Ke_out,
+//                               amrex::Array4<amrex::Real> const& rhoDe_out,
+//                               amrex::Array4<amrex::Real> const& K_out
+// ) {
+//   BL_PROFILE("PeleC::ef_calc_transport()");
+//  
+//   // ndeak note - since only MOL is being used for now, it is assumed all data MFs are at time t=n
+// 
+//   if ( ef_verbose ) amrex::Print() << " Compute EF transport prop.\n";
+// 
+//   // ndeak add - get BCs for species (used in center->edge extrap)
+//   amrex::Real mwt[NUM_SPECIES];
+//   auto eos = pele::physics::PhysicsType::eos();
+//   eos.molecular_weight(mwt);   // CGS
+// 
+//   Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
+//   int useNL   = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
+//   amrex::ParallelFor(bx, [=]
+//   AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+//   {
+//      getKappaE(i,j,k,E_ID,Ke_out,EoN_in,rhoY_in,mwt);
+//      getDiffE(i,j,k,E_ID,useNL,factor,rhoY_in,rhoDe_out,EoN_in,mwt);
+//      getKappaSp(i,j,k, zk_num, K_out);
+//   });
+// 
 //   if ( ef_use_NLsolve ) {
 //      // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
 //      // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
@@ -476,7 +505,7 @@ void PeleC::ef_calc_transport(amrex::Box const& bx,
 //          VisMF::Write(*Ke_ec[1],"KeEcY_Lvl"+std::to_string(level));
 //       }
 //   }
-}
+// }
 
 // Setup BC conditions for linear Poisson solve on PhiV. Directly copied from the diffusion one ...
 void PeleC::ef_set_PoissonBC(std::array<LinOpBCType,AMREX_SPACEDIM> &mlmg_lobc,

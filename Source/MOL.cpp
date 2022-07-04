@@ -541,7 +541,7 @@ pc_compute_hyp_mol_flux(
       // overwrite fluxes on all ext_dir boundaries
       // Use EoN to get Te for electron flux at the boundary
       ExtrapTe(eon(i, j, k, 0), &Te);
-      if(zero_bc_flux == 0 && ef_ambiDiff){
+      if(zero_bc_flux == 0 && !ef_ambiDiff){
         flux_tmp[URHO] = 0.0;
         for(int n=0; n<NUM_SPECIES; n++){
             flux_tmp[UFS + n] = 0.0;

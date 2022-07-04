@@ -12,6 +12,9 @@ void
 getKappaE(int i, int j, int k, int Ecomp,
           amrex::Array4<      amrex::Real> const& Ks,
           amrex::Array4<const amrex::Real> const& EoN,
+#ifdef PELEC_USE_TWO_TEMP
+          amrex::Array4<const amrex::Real> const& Te,
+#endif
           amrex::Array4<const amrex::Real> const& rhoY,
           const amrex::Real *mwt) noexcept
 {
@@ -26,6 +29,31 @@ getKappaE(int i, int j, int k, int Ecomp,
    Ks(i,j,k,Ecomp) = -483.13744177895e-7; // CGS cm2/erg-s
 
    // Truncate value for low and high reduced electric fields
+#ifdef PELEC_USE_TWO_TEMP
+   amrex::Real TeeV = Te(i,j,k,0) / 11604.51812;
+   if(TeeV < 2.5e-2) Ks(i,j,k,Ecomp) = 0.402E+26;    // units 1/m-V-s
+   else if(TeeV > 18.0) Ks(i,j,k,Ecomp) = 0.5E+24;    // units 1/m-V-s
+   else{
+     // Perform JANEV fitting to calculate electron mobility based on E/N
+     double Jfit_coefs[] = {-3.40823148867166,
+                            -0.583328353480193,
+                             0.370656206209368,
+                            -0.00784238163450707,
+                            -0.0773717373972128,
+                            -6.68545439104852e-05,
+                             0.00656784390919327,
+                             0.000113198307893528,
+                            -0.000156778529032339};
+
+     double JfitA = 4.02e25;       // Dimensional coefficient [1/m-V-s]
+     double Janev_sum = 0.0;      // Dimensionless JANEV sum
+     // Calculate JANEV fit for mu*N
+     for(int n=0; n<9; n++){
+       Janev_sum += Jfit_coefs[n] * pow(log(TeeV), n);
+     }
+     Ks(i,j,k,Ecomp) = JfitA * exp(Janev_sum);    // 1/m-V-s
+   }
+#else
    if(EoN(i,j,k,0) < 1.0e-2) Ks(i,j,k,Ecomp) = 0.2580E+26;    // units 1/m-V-s
    else if(EoN(i,j,k,0) > 2.0e3) Ks(i,j,k,Ecomp) = 0.5156E+24;    // units 1/m-V-s
    else{
@@ -48,6 +76,7 @@ getKappaE(int i, int j, int k, int Ecomp,
      }
      Ks(i,j,k,Ecomp) = JfitA * exp(Janev_sum);    // 1/m-V-s
    }
+#endif
    // TODO REMOVE
    Ks(i,j,k,Ecomp) *= 1.0e-9;           // Convert to C/cm-erg-s
 
@@ -65,6 +94,9 @@ getDiffE(int i, int j, int k,
          amrex::Array4<const amrex::Real> const& rhoY,
          amrex::Array4<      amrex::Real> const& rhoD,
          amrex::Array4<const amrex::Real> const& EoN,
+#ifdef PELEC_USE_TWO_TEMP
+         amrex::Array4<const amrex::Real> const& Te,
+#endif
          const amrex::Real * mwt) noexcept
 {
   // ndeak note - calculates rho*diffusivity in units of (cm2/s)*(g/cm3)
@@ -77,6 +109,33 @@ getDiffE(int i, int j, int k,
       rho += rhoY(i,j,k,n);      // g/cm3
    }
 
+#ifdef PELEC_USE_TWO_TEMP
+   amrex::Real TeeV = Te(i,j,k,0) / 11604.51812;
+   // Truncate value for low and high electron temperatures
+   if(TeeV < 2.5e-2) rhoD(i,j,k,Ecomp) = 0.103E+25;     // 1/m-s
+   else if(TeeV > 18.0) rhoD(i,j,k,Ecomp) = 0.942E+25;   // 1/m-s
+   else{
+     // Perform JANEV fitting to calculate electron mobility based on E/N
+     double Jfit_coefs[] = {-1.57080706711061,
+                             0.328206580751563,
+                             0.118157576335441,
+                             0.0418210131675193,
+                            -0.0104639774039364,
+                            -0.00948800714914011,
+                            -0.000115379181169528,
+                             0.000597315536837015,
+                             6.84799993667713e-05};
+
+     double JfitA = 9.42e+24;     // Dimensional JANEV coefficient [1/m-s]
+     double Janev_sum = 0.0;                   // Dimensionless JANEV sum
+
+     // Calculate JANEV fit for mu*N
+     for(int n=0; n<9; n++){
+       Janev_sum += Jfit_coefs[n] * pow(log(TeeV), n);
+     }
+     rhoD(i,j,k,Ecomp) = JfitA * exp(Janev_sum);     // [1/m-s]
+   }
+#else
    // Truncate value for low and high reduced electric fields
    if(EoN(i,j,k,0) < 1.0e-2) rhoD(i,j,k,Ecomp) = 0.1170E+25;     // 1/m-s
    else if(EoN(i,j,k,0) > 2.0e3) rhoD(i,j,k,Ecomp) = 0.1036E+26;   // 1/m-s
@@ -101,6 +160,7 @@ getDiffE(int i, int j, int k,
      }
      rhoD(i,j,k,Ecomp) = JfitA * exp(Janev_sum);     // [1/m-s]
    }
+#endif
    rhoD(i,j,k,Ecomp) *= 1.0e-2;           // Convert to 1/cm-s
 
    amrex::Real ndens = 0.0;
