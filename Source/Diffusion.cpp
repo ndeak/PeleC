@@ -157,9 +157,6 @@ PeleC::getMOLSrcTerm(
   // Get the cc species transport properties
   ef_calc_transport(S, time); 
 
-  // Calculate implicit electron diffusive flux if needed (this will overwrite flux values later)
-  if(ef_use_nEDiffImp) nEDiffuseImplicit(time, dt, S);
-
   // Obtain potential BCRec to use later
   const amrex::BCRec& bcphiV = get_desc_lst()[State_Type].getBC(PhiV);
   const int* PhiVbc = bcphiV.data();
@@ -361,21 +358,6 @@ PeleC::getMOLSrcTerm(
 #endif
       );
 
-      // Overwrite the electron flux with the implicit solution
-      // FIXME: super broken
-      if(ef_use_nEDiffImp){
-        amrex::Print() << "Overwriting fluxes!\n";
-        std::array<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> DegnE_arr = {AMREX_D_DECL(DegradnE[0]->array(mfi), DegradnE[1]->array(mfi), DegradnE[2]->array(mfi))} ;
-        for(int dir = 0; dir < AMREX_SPACEDIM; dir++){
-          amrex::ParallelFor(
-            eboxes[dir], [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-             flx[dir](i,j,k,UFS+E_ID) = -1.0*DegnE_arr[dir](i,j,k);
-             // flx[dir](i,j,k,UFS+E_ID) = 0.0;
-          });
-
-        }
-      }
-
       // Compute flux divergence (1/Vol).Div(F.A)
       {
         BL_PROFILE("PeleC::pc_flux_div()");
@@ -414,6 +396,16 @@ PeleC::getMOLSrcTerm(
           setC(eboxes[dir], Xmom, Xmom + 3, flx[dir], 0.0);
         }
       }
+
+#ifdef PELEC_USE_PLASMA
+      // Turn off explicit electron diffusion if doing implicit solve, as this gets added later
+      if (ef_use_nEDiffImp) {
+        setC(cbox, UFS+E_ID, UFS+E_ID+1, Dterm, 0.0);
+        for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
+          setC(eboxes[dir], UFS+E_ID, UFS+E_ID+1, flx[dir], 0.0);
+        }
+      }
+#endif
 
 #ifdef PELEC_USE_EB
       // Set extensive flux at embedded boundary, potentially

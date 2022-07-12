@@ -41,7 +41,7 @@
   static int         ion_rate_type;           // Controls the ionization rate calculations used for photoionization (0 = upd. Kossyi, 1 = Morrow, 2 = BOLSIG+)
   static amrex::Real ef_electron_heating_pct;                // Percentage of electron energy that results in fast heating (treated as instantaneous)
   static int         ef_ambiDiff;                            // Use an ambipolar diffusion model for charged particle transport?
-  
+
   // Transport options
   static int         ef_constEleTransport;                   // Use constant electron mobility (and diffusivity, via Einsten relation)
   static amrex::Real ef_eleMobility;                         // (Normalized) constant electron mobility mu*N (1/V-m-s)  
@@ -118,7 +118,6 @@
   amrex::MultiFab     Qaux_ext;  
   std::array<const amrex::MultiFab* ,AMREX_SPACEDIM> Efield_edge;
   FluxBoxes gphi;
-  FluxBoxes DegnE;
   amrex::MultiFab** gradPhiV;
   amrex::MultiFab** DegradnE;
   amrex::MultiFab     PI_source;  
@@ -128,6 +127,11 @@
   amrex::MultiFab     De_cc_mf;
   amrex::MultiFab     joule_heating;  
   amrex::MultiFab     radiative_losses;  
+  amrex::MultiFab     nEDiff_forcing;
+#ifdef PELEC_USE_TWO_TEMP
+  amrex::MultiFab     UeleDiff_forcing;
+  amrex::MultiFab     Uele_state;
+#endif
 
   amrex::MultiFab     spec_2ndo_gradients;    // 2nd order gradients used in circuit model displacement current calculation
 
@@ -224,7 +228,16 @@
   // Implicit nE diffusion solve
   void nEDiffuseImplicit (amrex::Real time,
                 amrex::Real dt, 
-                const amrex::MultiFab & Sbord);
+                const amrex::MultiFab & Sbord,
+                      amrex::MultiFab & forcing);
+
+#ifdef PELEC_USE_TWO_TEMP
+  // Implicit nE diffusion solve
+  void UeleDiffuseImplicit (amrex::Real time,
+                amrex::Real dt, 
+                const amrex::MultiFab & Sbord,
+                      amrex::MultiFab & forcing);
+#endif
 
   // Photoionization helmholtz solve
   void solvePI (amrex::Real time,

@@ -108,6 +108,7 @@ PeleC::do_mol_advance(
   // Since there are several regridding and re-initialization steps during setup,
   // gap capacitance is not calculated until we begin the first time step
   // Note: we load in capacitance for cicuit file upon restart
+  // FIXME: Calculation not working currently
   // if(ef_circuit_model != 0 && step_num == 0 && level == 0) {
   //   int lidx = 0;
   //   while(lidx <= parent->finestLevel()) {
@@ -122,7 +123,7 @@ PeleC::do_mol_advance(
   if(ef_circuit_model == 1 || ef_semiImpEfield == 1 || (diffuse_temp == 0 && diffuse_enth == 0 && diffuse_spec == 0 && diffuse_vel == 0 && do_hydro == 0)){
     FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
 
-    // Need to fill in E/N at time t=n as this is used in transport property calculations
+    // Need to fill in E/N at time t=n as this is used in transport property calculations (unless using TT model)
     for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
        const amrex::Box& tbox = mfi.tilebox();
        const amrex::Box gbox = amrex::grow(tbox, ng);
@@ -178,10 +179,6 @@ PeleC::do_mol_advance(
     // Get the cc species transport properties
     ef_calc_transport(Sborder, time);
   }
-
-  // Move to initialization?
-  if(ef_circuit_model != 0 && ef_star_update > 0) amrex::Abort("Efield star-state update not currently compatible with circuit model");
-  // if(ef_circuit_model != 0 && ef_semiImpEfield != 0) amrex::Abort("Semi-implicit efield calculation not currently compatible with circuit model");
 
   // Calculate the flux component of the total current (needs to be called at each level)
   if(ef_circuit_model != 0) {
@@ -284,6 +281,20 @@ PeleC::do_mol_advance(
      MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
      nESolveImplicit(time,dt,I_R,Sborder,forcing_nE);
   }
+  if(ef_use_nEDiffImp) { 
+     // nE implicit diffusion solve
+     nEDiffuseImplicit(time, dt, Sborder, nEDiff_forcing);
+
+     // Add the implicit diffusion source to molSrc
+     amrex::MultiFab::Add(molSrc, nEDiff_forcing, 0, UFS+E_ID, 1, 0);
+  }
+#ifdef PELEC_USE_TWO_TEMP
+  // Uele implicit diffusion solve
+  UeleDiffuseImplicit(time, dt, Sborder, UeleDiff_forcing);
+
+  // Add the implicit diffusion source to molSrc
+  amrex::MultiFab::Add(molSrc, UeleDiff_forcing, 0, UFX+5, 1, 0);
+#endif
 #endif
 
   // Build other (neither spray nor diffusion) sources at t_old
@@ -333,31 +344,6 @@ PeleC::do_mol_advance(
     amrex::Print() << "... Computing MOL source term at t^{n+1} " << std::endl;
   }
 
-#ifdef PELEC_USE_PLASMA
-  if(ef_star_update >= 1){
-    setCurrVoltage(time+dt);
-
-    // Compute PhiV
-    solveEF( time+dt, dt, *lprobparm, Sborder );
-
-    // Calculate the reduced electric field strength
-    FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
-    for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-       const amrex::Box& tbox = mfi.tilebox();
-       const amrex::Box gbox = amrex::grow(tbox, ng);
-       const auto Efab = Efield.array(mfi);
-       const auto redEfab = redEfield.array(mfi);
-       const auto Sfab = Sborder.array(mfi);
-       amrex::ParallelFor(
-         gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-           amrex::Real ndens = 0.0;
-           for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
-           redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
-         });
-    }
-  }
-#endif
-
   FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
   flux_factor = mol_iters > 1 ? 0 : 1;
   if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
@@ -375,6 +361,20 @@ PeleC::do_mol_advance(
      MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
      nESolveImplicit(time,dt,I_R,Sborder,forcing_nE);
   }
+  if(ef_use_nEDiffImp) { 
+     // nE implicit diffusion solve
+     nEDiffuseImplicit(time, dt, Sborder, nEDiff_forcing);
+
+     // Add the implicit diffusion source to molSrc
+     amrex::MultiFab::Add(molSrc, nEDiff_forcing, 0, UFS+E_ID, 1, 0);
+  }
+#ifdef PELEC_USE_TWO_TEMP
+  // Uele implicit diffusion solve
+  UeleDiffuseImplicit(time, dt, Sborder, UeleDiff_forcing);
+
+  // Add the implicit diffusion source to molSrc
+  amrex::MultiFab::Add(molSrc, UeleDiff_forcing, 0, UFX+5, 1, 0);
+#endif
 #endif
 
   // Build other (neither spray nor diffusion) sources at t_new
@@ -427,33 +427,6 @@ PeleC::do_mol_advance(
           Sfab(i,j,k,Uele) = (Sfab(i,j,k,Uele) > 1.0e-20 ) ? Sfab(i,j,k,Uele) : (Sfab(i,j,k,Tele) >= Sfab(i,j,k,UTEMP)) ? (3.0/2.0)*kB*ne*Sfab(i,j,k,Tele) : (3.0/2.0)*kB*ne*Sfab(i,j,k,UTEMP);
           Sfab(i,j,k,Tele) = Sfab(i,j,k,Uele) * (2.0/3.0) * 1.0/(kB * ne);
         });
-  }
-#endif
-
-#ifdef PELEC_USE_PLASMA
-  if(ef_star_update >= 2){
-    setCurrVoltage(time+dt);
-
-    // Compute PhiV
-    solveEF( time+dt, dt, *lprobparm, Sborder );
-
-  // Need FillPatch'd Sborders array with U^** data for E/N update and in coupled system
-  
-    FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
-    // Calculate the reduced electric field strength
-    for (amrex::MFIter mfi(Sborder, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-       const amrex::Box& tbox = mfi.tilebox();
-       const amrex::Box gbox = amrex::grow(tbox, ng);
-       const auto Efab = Efield.array(mfi);
-       const auto redEfab = redEfield.array(mfi);
-       const auto Sfab = Sborder.array(mfi);
-       amrex::ParallelFor(
-         gbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-           amrex::Real ndens = 0.0;
-           for(int n=0; n<NUM_SPECIES; n++) ndens += Sfab(i,j,k,UFS+n) * (1.0/mwt[n]) * EFConst::Na;
-           redEfab(i,j,k) = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) / ndens * 1e-7 * 1e17; // Conversion erg/cm^2 -> V/cm^2 and V/cm^2 -> Td
-         });
-    }
   }
 #endif
 

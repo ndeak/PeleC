@@ -72,6 +72,10 @@ ifeq ($(USE_PLASMA), TRUE)
   CEXE_sources += nEDiffuseImplicit.cpp
 endif
 
+ifeq ($(USE_TWO_TEMP), TRUE)
+  CEXE_sources += UeleDiffuseImplicit.cpp
+endif
+
 ifeq ($(USE_PARTICLES), TRUE)
   CEXE_sources += Particle.cpp
 endif

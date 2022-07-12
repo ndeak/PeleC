@@ -139,6 +139,10 @@ void PeleC::plasma_define_data() {
    flux_current_mf.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); flux_current_mf.setVal(0.0);
    joule_heating.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); joule_heating.setVal(0.0);
    radiative_losses.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); radiative_losses.setVal(0.0);
+   if(ef_use_nEDiffImp) nEDiff_forcing.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); nEDiff_forcing.setVal(0.0); 
+#ifdef PELEC_USE_TWO_TEMP
+   UeleDiff_forcing.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); UeleDiff_forcing.setVal(0.0); 
+#endif
 
    // Intermediate MFs used in transport coef. calculations for NL system
    Ke_cc_mf.define(grids,dmap,1,numGrow(), amrex::MFInfo(), Factory()); Ke_cc_mf.setVal(0.0);
@@ -186,6 +190,15 @@ void PeleC::plasma_define_data() {
       }
    }
 
+#ifdef PELEC_USE_TWO_TEMP
+      // MFs needed for implicit Ue diffusion
+      diff_e.define(this);
+      De_ec = diff_e.get();
+      De_ec[0]->setVal(0.0);
+      De_ec[1]->setVal(0.0);
+      De_ec[2]->setVal(0.0);
+      Uele_state.define(grids, dmap, 1, 1);
+#else
    if(ef_use_NLsolve || ef_use_nEimplicit || ef_use_nEDiffImp){
       mob_e.define(this);
       Ke_ec = mob_e.get();
@@ -200,6 +213,7 @@ void PeleC::plasma_define_data() {
       nE_state.define(grids,dmap,1,2);
       nE_state_old.define(grids,dmap,1,2);
    }
+#endif
 }
 
 void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
@@ -278,6 +292,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   // Option to reduce electron diffusivity between pulses to allow for larger time step sizes
   amrex::Real eleDiff_factor = 1.0;
   if(ef_relax_eleDiff){
+    // FIXME: Trying to dynamically lower De based on pulse timing, not working
     // pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0)));
     // dfact = 5.0;
     // sfact = 1.0;
@@ -369,13 +384,19 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
                       mwt);
           }
           if(ef_use_nEDiffImp) {
-            getDiffE(i,j,k,0,useNL,eleDiff_factor,rhoY,De,redEfab,
+            getDiffE(i,j,k,0,1,eleDiff_factor,rhoY,De,redEfab,
 #ifdef PELEC_USE_TWO_TEMP
                     Tefab,
 #endif
                     mwt);
           }
         }
+#ifdef PELEC_USE_TWO_TEMP
+        // If not already filled in, get D_e for implicit Uele diffusion
+        if(!useNL && !ef_use_nEDiffImp) {
+          getDiffE(i,j,k,0,1,eleDiff_factor,rhoY,De,redEfab,Tefab,mwt);
+        }
+#endif
      });
      Real mwt[NUM_SPECIES];
      eos.molecular_weight(mwt);  // Return mwt in CGS
@@ -392,6 +413,35 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
      VisMF::Write(KSpec_old,"KappaSpec"+timetag+"_Lvl"+std::to_string(level));
   }
 
+#ifdef PELEC_USE_TWO_TEMP
+  // CC -> EC transport coeffs. Just need electron diffusivity for implicit Uele diffusion
+  const Box& domain = geom.Domain();
+  bool use_harmonic_avg = def_harm_avg_cen2edge ? true : false;
+  const BCRec& bcrec = get_desc_lst()[State_Type].getBC(nE);
+ #ifdef _OPENMP
+ #pragma omp parallel if (Gpu::notInLaunchRegion())
+ #endif
+  for (MFIter mfi(De_cc,TilingIfNotGPU()); mfi.isValid();++mfi)
+  {
+     for (int dir = 0; dir < AMREX_SPACEDIM; dir++)
+     {
+        const Box ebx = mfi.nodaltilebox(dir);
+        const Box& edomain = amrex::surroundingNodes(domain,dir);
+        const auto& diff_c  = De_cc.array(mfi);
+        const auto& diff_ed = De_ec[dir]->array(mfi);
+        const auto bc_lo = bcrec.lo(dir);
+        const auto bc_hi = bcrec.hi(dir);
+        amrex::ParallelFor(ebx, [dir, bc_lo, bc_hi, use_harmonic_avg, diff_c, diff_ed, edomain]
+        AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+           int idx[3] = {i,j,k};
+           bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && idx[dir] <= edomain.smallEnd(dir) );
+           bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && idx[dir] >= edomain.bigEnd(dir) );
+           cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, diff_c, diff_ed);
+        });
+     }
+  }
+#else
   if ( ef_use_NLsolve || ef_use_nEimplicit || ef_use_nEDiffImp) {
      // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
      // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
@@ -433,6 +483,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
          VisMF::Write(*Ke_ec[1],"KeEcY_Lvl"+std::to_string(level));
       }
   }
+#endif
 }
 
 // TODO: finish working on version of ef transport calc that can be folded more cleanly into Diffusion.cpp
