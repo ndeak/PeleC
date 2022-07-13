@@ -138,6 +138,22 @@ set_nE_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
     bc.setHi(dir, ne_bc[hi_bc[dir]]);
   }
 }
+
+#ifdef PELEC_USE_TWO_TEMP
+static int ue_bc[] =   {INT_DIR,      EXT_DIR,      FOEXTRAP, REFLECT_EVEN,
+                        REFLECT_EVEN, REFLECT_EVEN, EXT_DIR};
+
+static void
+set_Uele_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
+{
+  const int* lo_bc = phys_bc.lo();
+  const int* hi_bc = phys_bc.hi();
+  for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
+    bc.setLo(dir, ue_bc[lo_bc[dir]]);
+    bc.setHi(dir, ue_bc[hi_bc[dir]]);
+  }
+}
+#endif
 #endif
 
 void
@@ -427,10 +443,6 @@ PeleC::variableSetUp()
     set_scalar_bc(bc, phys_bc);
     bcs[cnt] = bc;
     name[cnt] = "rho_" + spec_names[i];
-#ifdef PELEC_USE_PLASMA
-    if (spec_names[i].compare("O2") == 0) O2_idx = i;
-    if (spec_names[i].compare("N2") == 0) N2_idx = i;
-#endif
   }
 
   // Get the auxiliary names from the network model.
@@ -468,7 +480,7 @@ PeleC::variableSetUp()
 #ifdef PELEC_USE_TWO_TEMP
   // Add mean electron energy
   cnt++;
-  set_scalar_bc(bc, phys_bc);
+  set_Uele_bc(bc, phys_bc);
   bcs[cnt] = bc;
   name[cnt] = "Uele";
   // Add electron temperature
@@ -771,26 +783,6 @@ PeleC::variableSetUp()
     derive_lst.addComponent("pmmserror", desc_lst, State_Type, Density, NVAR);
   }
 #endif
-
-  // Plasma derives
-#ifdef PELEC_USE_PLASMA
-//   derive_lst.add(
-//     "Efieldx", amrex::IndexType::TheCellType(), 1, pc_derEfieldx, grow_box_by_one);
-//   derive_lst.addComponent("Efieldx", desc_lst, State_Type, Density, NVAR);
-// 
-//   derive_lst.add(
-//     "Efieldy", amrex::IndexType::TheCellType(), 1, pc_derEfieldy, grow_box_by_one);
-//   derive_lst.addComponent("Efieldy", desc_lst, State_Type, Density, NVAR);
-// #if AMREX_SPACEDIM == 3
-//   derive_lst.add(
-//     "Efieldz", amrex::IndexType::TheCellType(), 1, pc_derEfieldz, grow_box_by_one);
-//   derive_lst.addComponent("Efieldz", desc_lst, State_Type, Density, NVAR);
-// #endif
-//   derive_lst.add(
-//     "redEfield", amrex::IndexType::TheCellType(), 1, pc_derredEfield, grow_box_by_one);
-//   derive_lst.addComponent("redEfield", desc_lst, State_Type, Density, NVAR);
-#endif
-
 
   // Problem-specific derives
   add_problem_derives<ProblemDerives>(derive_lst, desc_lst);

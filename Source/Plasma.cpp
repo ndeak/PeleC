@@ -210,7 +210,7 @@ void PeleC::plasma_define_data() {
       De_ec[0]->setVal(0.0);
       De_ec[1]->setVal(0.0);
       De_ec[2]->setVal(0.0);
-      nE_state.define(grids,dmap,1,2);
+      nE_state.define(grids,dmap,1,2); nE_state.setVal(0.0);
       nE_state_old.define(grids,dmap,1,2);
    }
 #endif
@@ -291,23 +291,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
 
   // Option to reduce electron diffusivity between pulses to allow for larger time step sizes
   amrex::Real eleDiff_factor = 1.0;
-  if(ef_relax_eleDiff){
-    // FIXME: Trying to dynamically lower De based on pulse timing, not working
-    // pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0)));
-    // dfact = 5.0;
-    // sfact = 1.0;
-    // amrex::Real pulse_dist=1.0e10;
-    // amrex::Real pulse_timing_tmp = 0.0;
-    // amrex::Real pfact = 0.0;
-    // for(int i=0; i<pulse_num; i++){
-    //   pulse_timing_tmp = pulse_timing + pfact*(1.0/pulse_freq);
-    //   pulse_dist = amrex::min<amrex::Real>(amrex::Math::abs(time - pulse_timing_tmp), pulse_dist);
-    //   pfact += 1.0;
-    // }
-    // eleDiff_factor = 1.0 / (1.0 + (10.0 - 1.0) * 0.5 * (1.0 + tanh((pulse_dist - dfact*pulse_sigma) / (sfact*pulse_sigma))));
-
-    eleDiff_factor = 0.1;
-  }
+  if(ef_relax_eleDiff)eleDiff_factor = 0.1;
 
   // Calculate a constant electron mobility given N*mu, and assuming atmospheric conditions
   // Handling of De is the same

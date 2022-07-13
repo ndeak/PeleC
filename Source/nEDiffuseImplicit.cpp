@@ -44,7 +44,7 @@ PeleC::nEDiffuseImplicit ( Real time,
 
   // Convert from mass to number density for purposes of solve
   Sborder.mult((1.0/me_g), 0, 1, 1);
-  nE_state.mult((1.0/me_g), 0, 1, 1);
+  nE_state.mult((1.0/me_g), 0, 1, 0);
 
   // Create MF aliases
   MultiFab nE_borders(Sborder, amrex::make_alias, 0, 1);
@@ -111,7 +111,7 @@ PeleC::nEDiffuseImplicit ( Real time,
 
   // relative and absolute tolerances for linear solve
   const Real tol_rel = ef_PoissonTol;
-  const Real tol_abs = std::max(std::max(nEresid.norm0(),nE_state.norm0()) * ef_PoissonTol * 1.0e1, 1.0e-5);
+  const Real tol_abs = std::max(nEresid.norm0() * ef_PoissonTol * 1.0e1, 1.0e-5);
 
   mlmg.setVerbose(ef_PoissonVerbose);
   mlmg.setMaxIter(1000);
