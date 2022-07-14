@@ -250,6 +250,19 @@ PeleC::do_mol_advance(
   FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
 #endif
   amrex::Real flux_factor = 0;
+
+  // If we are solving elecron num. and/or energy density implicitly, we first get the 
+  // implicit source term, then add it to MOLSrc in Diffusion.cpp so that redistribution
+  // can smooth out any issues around the EBs
+#ifdef PELEC_USE_PLASMA
+  if(ef_use_nEDiffImp) { 
+     nEDiffuseImplicit(time, dt, Sborder, nEDiff_forcing);
+  }
+#ifdef PELEC_USE_TWO_TEMP
+  UeleDiffuseImplicit(time, dt, Sborder, UeleDiff_forcing);
+#endif
+#endif
+
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
   if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
 
@@ -281,20 +294,6 @@ PeleC::do_mol_advance(
      MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
      nESolveImplicit(time,dt,I_R,Sborder,forcing_nE);
   }
-  if(ef_use_nEDiffImp) { 
-     // nE implicit diffusion solve
-     nEDiffuseImplicit(time, dt, Sborder, nEDiff_forcing);
-
-     // Add the implicit diffusion source to molSrc
-     amrex::MultiFab::Add(molSrc, nEDiff_forcing, 0, UFS+E_ID, 1, 0);
-  }
-#ifdef PELEC_USE_TWO_TEMP
-  // Uele implicit diffusion solve
-  UeleDiffuseImplicit(time, dt, Sborder, UeleDiff_forcing);
-
-  // Add the implicit diffusion source to molSrc
-  amrex::MultiFab::Add(molSrc, UeleDiff_forcing, 0, UFX+5, 1, 0);
-#endif
 #endif
 
   // Build other (neither spray nor diffusion) sources at t_old
@@ -346,6 +345,16 @@ PeleC::do_mol_advance(
 
   FillPatch(*this, Sborder, numGrow() + nGrowF, time + dt, State_Type, 0, NVAR);
   flux_factor = mol_iters > 1 ? 0 : 1;
+
+#ifdef PELEC_USE_PLASMA
+  if(ef_use_nEDiffImp) { 
+     nEDiffuseImplicit(time, dt, Sborder, nEDiff_forcing);
+  }
+#ifdef PELEC_USE_TWO_TEMP
+  UeleDiffuseImplicit(time, dt, Sborder, UeleDiff_forcing);
+#endif
+#endif
+
   if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
   if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
@@ -361,20 +370,6 @@ PeleC::do_mol_advance(
      MultiFab forcing_nE(molSrc,amrex::make_alias,UFX+1,1);
      nESolveImplicit(time,dt,I_R,Sborder,forcing_nE);
   }
-  if(ef_use_nEDiffImp) { 
-     // nE implicit diffusion solve
-     nEDiffuseImplicit(time, dt, Sborder, nEDiff_forcing);
-
-     // Add the implicit diffusion source to molSrc
-     amrex::MultiFab::Add(molSrc, nEDiff_forcing, 0, UFS+E_ID, 1, 0);
-  }
-#ifdef PELEC_USE_TWO_TEMP
-  // Uele implicit diffusion solve
-  UeleDiffuseImplicit(time, dt, Sborder, UeleDiff_forcing);
-
-  // Add the implicit diffusion source to molSrc
-  amrex::MultiFab::Add(molSrc, UeleDiff_forcing, 0, UFX+5, 1, 0);
-#endif
 #endif
 
   // Build other (neither spray nor diffusion) sources at t_new

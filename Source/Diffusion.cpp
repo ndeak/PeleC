@@ -706,6 +706,22 @@ PeleC::getMOLSrcTerm(
         }
       }
 
+      // Here is where we add on implicit electron number and energy density sources
+#ifdef PELEC_USE_PLASMA
+      auto const& nEDiff_arr = nEDiff_forcing.array(mfi);
+      amrex::ParallelFor(
+        vbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          Dterm(i,j,k,UFS+E_ID) += nEDiff_arr(i,j,k);
+      });
+#ifdef PELEC_USE_TWO_TEMP
+      auto const& UeleDiff_arr = UeleDiff_forcing.array(mfi);
+      amrex::ParallelFor(
+        vbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          Dterm(i,j,k,UFX+5) += UeleDiff_arr(i,j,k);
+      });
+#endif
+#endif
+
       // Extrapolate to GhostCells
       if (MOLSrcTerm.nGrow() > 0) {
         BL_PROFILE("PeleC::diffextrap()");

@@ -77,7 +77,6 @@ PeleC::UeleDiffuseImplicit ( Real time,
      Uele_crse.reset(new MultiFab(crselev.boxArray(), crselev.DistributionMap(), 1, 0));
      MultiFab& Coarse_State = (time == prev_time) ? crselev.get_old_data(State_Type) : crselev.get_new_data(State_Type);   
      MultiFab::Copy(*Uele_crse, Coarse_State,UFX+5,0,1,0);
-     Uele_crse->mult((1.0/me_g), 0, 1,0);
      UeleOp.setCoarseFineBC(Uele_crse.get(), crse_ratio[0]);
   }
 

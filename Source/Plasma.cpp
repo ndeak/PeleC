@@ -197,7 +197,7 @@ void PeleC::plasma_define_data() {
       De_ec[0]->setVal(0.0);
       De_ec[1]->setVal(0.0);
       De_ec[2]->setVal(0.0);
-      Uele_state.define(grids, dmap, 1, 1);
+      Uele_state.define(grids, dmap, 1, 1); Uele_state.setVal(0.0);
 #else
    if(ef_use_NLsolve || ef_use_nEimplicit || ef_use_nEDiffImp){
       mob_e.define(this);

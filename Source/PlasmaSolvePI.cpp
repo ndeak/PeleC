@@ -146,8 +146,8 @@ PeleC::solvePI ( Real time,
     
           // Convert mass to number density
           nEl = (useNL) ? rhoY_ar(i,j,k,UFX+1-UFS):rhoY_ar(i,j,k,0) / EFConst::me_cgs;
-          nO2 = rhoY_ar(i,j,k,O2_idx) * EFConst::Na / mwt[O2_idx];
-          nN2 = rhoY_ar(i,j,k,N2_idx) * EFConst::Na / mwt[N2_idx];
+          nO2 = rhoY_ar(i,j,k,O2_ID) * EFConst::Na / mwt[O2_ID];
+          nN2 = rhoY_ar(i,j,k,N2_ID) * EFConst::Na / mwt[N2_ID];
 
           // Calculate PI emission rate [1/cm3-s]
           if(nEl > 0.0){
