@@ -59,6 +59,9 @@ struct TaggingParm
 #ifdef PELEC_USE_TWO_TEMP
   amrex::Real Telegraderr = 1.0e10;
   int max_Telegrad_lev = 10;
+
+  amrex::Real Teleerr = 1.0e10;
+  int max_Tele_lev = 10;
 #endif
 #endif
 };

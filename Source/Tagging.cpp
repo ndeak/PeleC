@@ -59,6 +59,9 @@ PeleC::read_tagging_params()
 #ifdef PELEC_USE_TWO_TEMP
   pp.query("Telegraderr", tagging_parm->Telegraderr);
   pp.query("max_Telegrad_lev", tagging_parm->max_Telegrad_lev);
+
+  pp.query("Teleerr", tagging_parm->Teleerr);
+  pp.query("max_Tele_lev", tagging_parm->max_Tele_lev);
 #endif
 #endif
 }

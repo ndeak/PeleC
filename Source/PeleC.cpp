@@ -2081,13 +2081,22 @@ PeleC::errorEst(
           });
       }
 #ifdef PELEC_USE_TWO_TEMP
-      // Tagging reduced electric field gradient
+      // Tagging electron temperature gradient
       if (level < tagging_parm->max_Telegrad_lev) {
         const amrex::Real captured_Telegraderr = tagging_parm->Telegraderr;
         amrex::ParallelFor(
           tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             tag_graderror(
               i, j, k, tag_arr, tele_arr, captured_Telegraderr, tagval);
+          });
+      }
+
+      // Tagging high electron temperature
+      if (level < tagging_parm->max_Tele_lev) {
+        const amrex::Real captured_Teleerr = tagging_parm->Teleerr;
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_abserror(i, j, k, tag_arr, tele_arr, captured_Teleerr, tagval);
           });
       }
 #endif
