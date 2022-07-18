@@ -1185,7 +1185,8 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
   //    - CFL and diffusion stability criteria
   // Variables used in monitor file claculations
   
-  // TODO: species output a bit out of hand, should add way for user to specify desired species in input file rather than hard-coding
+  // FIXME: Monitor file output currently a total mess, basically currently hard-coding output for each mechanism being considered
+  // Should add way for user to specify desired species in input file rather than hard-coding
 
   amrex::Real NA = 6.0221409e23; // 1/mol
   const amrex::Real* dx = geom.CellSize();
@@ -1195,7 +1196,6 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
   amrex::Real flux_curr;
 
   if(pac_mechanism){
-
     // Sum variables
     int finest_level = parent->finestLevel();
     bool local_flag = true;
@@ -1295,6 +1295,83 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
       std::ofstream MonitorFile;
       MonitorFile.open(monitorFileName.c_str(), std::ios::out | std::ios::app);
       MonitorFile << time << "\t" << max_EN  << "\t" << max_Te  << "\t" << max_Tg  << "\t" << max_nE  << "\t" << max_nO  << "\t" << max_nOH  << "\t" << max_nH  << "\t" << max_nN2vib << "\t" << max_nN2ele  << "\t" << max_nO2ele  << "\t" << max_nO2p << "\t" << max_nN2p << "\t" << max_nO2m  << "\t" << max_nOm << "\t" << max_nCO  << "\t" << max_nCO2 << "\t "<< max_nC2H4 << "\t" << mO << "\t" << mOH << "\t" << mH << "\t" << mN2vib << "\t" << mN2ele << "\t" << mO2ele << "\t" << mO2p << "\t" << mN2p << "\t" << mO2m << "\t" << mOm << "\t" << mCO << "\t" << mCO2 << "\t" << mC2H4 << "\t" << tot_E << "\t" <<dt << std::endl;
+      MonitorFile.close();
+    }
+  }
+  else if(airTT_mechanism){
+    // Sum variables
+    int finest_level = parent->finestLevel();
+    bool local_flag = true;
+    amrex::Real mO = 0.0;
+    amrex::Real mN2vib = 0.0;
+    amrex::Real mN2ele = 0.0;
+    amrex::Real mO2ele = 0.0;
+    amrex::Real mO2p = 0.0;
+    amrex::Real mN2p = 0.0;
+    amrex::Real mO2m = 0.0;
+    amrex::Real mOm = 0.0;
+    amrex::Real tot_E = 0.0;
+
+    // Perform integrals over key quantities if at finest level
+    if(level == finest_level) {
+      for (int lev = 0; lev <= finest_level; lev++) {
+        PeleC& pc_lev = getLevel(lev);
+
+        mO += pc_lev.volWgtSum("rho_O", time, local_flag);
+        mN2vib += (pc_lev.volWgtSum("rho_N2(v1)", time, local_flag) + pc_lev.volWgtSum("rho_N2(v2)", time, local_flag) + pc_lev.volWgtSum("rho_N2(v3)", time, local_flag) + pc_lev.volWgtSum("rho_N2(v4)", time, local_flag) + pc_lev.volWgtSum("rho_N2(v5)", time, local_flag));
+        mN2ele += (pc_lev.volWgtSum("rho_N2(A3Sigma)", time, local_flag) + pc_lev.volWgtSum("rho_N2(B3Pi)", time, local_flag) + pc_lev.volWgtSum("rho_N2(C3Pi)", time, local_flag));
+        mO2ele += (pc_lev.volWgtSum("rho_O2(a1Delta)", time, local_flag) + pc_lev.volWgtSum("rho_O2(b1Sigma)", time, local_flag));
+        mO2p += pc_lev.volWgtSum("rho_O2+", time, local_flag);
+        mN2p += pc_lev.volWgtSum("rho_N2+", time, local_flag); 
+        mO2m += pc_lev.volWgtSum("rho_O2-", time, local_flag);
+        mOm += pc_lev.volWgtSum("rho_O-", time, local_flag);
+        tot_E += pc_lev.volWgtSum("rho_e", time, local_flag);
+      }
+
+      // Sum across processors
+      const int nfoo = 9;
+      amrex::Real foo[nfoo] = {mO, mN2vib, mN2ele, mO2ele, mO2p, mN2p, mO2m, mOm, tot_E};
+      amrex::ParallelDescriptor::ReduceRealSum(foo, nfoo, amrex::ParallelDescriptor::IOProcessorNumber());
+
+      // Reassign sum values
+      int i = 0;
+      mO = foo[i++];
+      mN2vib = foo[i++];
+      mN2ele = foo[i++];
+      mO2ele = foo[i++];
+      mO2p = foo[i++];
+      mN2p = foo[i++];
+      mO2m = foo[i++];
+      mOm = foo[i++];
+      tot_E = foo[i++];
+    }
+
+    amrex::Real max_EN = redEfield.max(0, 0, false);
+#ifdef PELEC_USE_TWO_TEMP
+    amrex::Real max_Te = S.max(UFX+6, 0, false); max_Te *= (1.0/11595.0);
+#else
+    amrex::Real max_Te; ExtrapTe(max_EN, &max_Te); max_Te *= (1.0/11595.0);
+#endif
+    amrex::Real max_Tg = S.max(UTEMP, 0, false);
+    amrex::Real max_nE = S.max(UFS+E_ID, 0, false) * (1.0/mwt[E_ID]) * NA;
+    amrex::Real max_nO = S.max(UFS+O_ID, 0, false) * (1.0/mwt[O_ID]) * NA;
+    amrex::Real max_nN2vib = S.max(UFS+N2v1_ID, 0, false)* (1.0/mwt[N2v1_ID]) * NA + S.max(UFS+N2v2_ID, 0, false)* (1.0/mwt[N2v2_ID]) * NA + S.max(UFS+N2v3_ID, 0, false)* (1.0/mwt[N2v3_ID]) * NA + S.max(UFS+N2v4_ID, 0, false)* (1.0/mwt[N2v4_ID]) * NA + S.max(UFS+N2v5_ID, 0, false)* (1.0/mwt[N2v5_ID]) * NA;
+    amrex::Real max_nN2ele = S.max(UFS+N2A3Sigma_ID, 0, false)* (1.0/mwt[N2A3Sigma_ID]) * NA + S.max(UFS+N2B3Pi_ID, 0, false)* (1.0/mwt[N2B3Pi_ID]) * NA + S.max(UFS+N2C3Pi_ID, 0, false)* (1.0/mwt[N2C3Pi_ID]) * NA;
+    amrex::Real max_nO2ele = S.max(UFS+O2a1Delta_ID, 0, false)* (1.0/mwt[O2a1Delta_ID]) * NA + S.max(UFS+O2b1Sigma_ID, 0, false)* (1.0/mwt[O2b1Sigma_ID]) * NA;
+    amrex::Real max_nO2p = S.max(UFS+O2p_ID, 0, false)* (1.0/mwt[O2p_ID]) * NA;
+    amrex::Real max_nN2p = S.max(UFS+N2p_ID, 0, false)* (1.0/mwt[N2p_ID]) * NA;
+    amrex::Real max_nO2m = S.max(UFS+O2n_ID, 0, false)* (1.0/mwt[O2n_ID]) * NA;
+    amrex::Real max_nOm = S.max(UFS+On_ID, 0, false)* (1.0/mwt[On_ID]) * NA;
+  
+    if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::string baseName = "MonitorFile_Level";
+      std::string datString = ".dat";
+      std::string intString = std::to_string(i);
+      std::string monitorFileName = (baseName + intString + datString);
+
+      std::ofstream MonitorFile;
+      MonitorFile.open(monitorFileName.c_str(), std::ios::out | std::ios::app);
+      MonitorFile << time << "\t" << max_EN  << "\t" << max_Te  << "\t" << max_Tg  << "\t" << max_nE  << "\t" << max_nO << "\t" << max_nN2vib << "\t" << max_nN2ele  << "\t" << max_nO2ele  << "\t" << max_nO2p << "\t" << max_nN2p << "\t" << max_nO2m  << "\t" << max_nOm << "\t" << mO << "\t" << mN2vib << "\t" << mN2ele << "\t" << mO2ele << "\t" << mO2p << "\t" << mN2p << "\t" << mO2m << "\t" << mOm << "\t" << tot_E << "\t" <<dt << std::endl;
       MonitorFile.close();
     }
   }
@@ -1407,6 +1484,8 @@ void PeleC::monitorFileSetup(int i){
     MonitorFile.open(monitorFileName.c_str(), std::ios::out);
     if(pac_mechanism){
       MonitorFile << "(1)time[s] \t (2)E/N[Td] \t (3)Te[eV] \t (4)Tgas[k] \t (5)nE[1/cm3] \t (6)nO[1/cm3] \t (7)nOH[1/cm3] \t (8)nH[1/cm3] \t (9)nN2vib[1/cm3] \t (10)nN2ele[1/cm3] \t (11)O2ele[1/cm3] \t (12)O2+[1/cm3] \t (13)N2+[1/cm3] \t (14)O2-[1/cm3] \t (15)O-[1/cm3] \t (16)nCO[1/cm3] \t (17)nCO2[1/cm3] \t (18)nC2H4[1/cm3] \t (19)mO[g] \t (20)mOH[g] \t (21)mH[g] \t (22)mN2vib[g] \t (23)mN2ele[g] \t (24)mO2ele[g] \t (25)mO2+[g] \t (26)mN2+[g] \t (27)mO2-[g] \t (28)mO-[g] \t (29)mCO[g] \t (30)mCO2[g] \t (31)mC2H4[g] \t (32)tot_E[erg] \t (33)dt[s]" << std::endl;
+    } else if(airTT_mechanism){
+      MonitorFile << "(1)time[s] \t (2)E/N[Td] \t (3)Te[eV] \t (4)Tgas[k] \t (5)nE[1/cm3] \t (6)nO[1/cm3] \t (7)nN2vib[1/cm3] \t (8)nN2ele[1/cm3] \t (9)O2ele[1/cm3] \t (10)O2+[1/cm3] \t (11)N2+[1/cm3] \t (12)O2-[1/cm3] \t (13)O-[1/cm3] \t (14)mO[g] \t (15)mN2vib[g] \t (16)mN2ele[g] \t (17)mO2ele[g] \t (18)mO2+[g] \t (19)mN2+[g] \t (20)mO2-[g] \t (21)mO-[g] \t (22)tot_E[erg] \t (23)dt[s]" << std::endl;
     }else{
       MonitorFile << "(1)time[s] \t (2)max_nE[1/cm3] \t (3)max_nO4+[1/cm3] \t (4)max_nO2-[1/cm3] \t (5)max_phiV[kV] \t (6)max_EN[Td] \t (7)flux_current[C/s] \t (8)disp_current[C/s] \t(9)Ddtodx2 \t (10)CFL \t (11)min_dielectric[s] \t (12)min_drift[s] \t (13)dt[s] \t (14)Tmax[K] \t (15)Temax[eV] \t (16)tot_E[erg] \t (17)mcations[g] \t (18)manions[g]" << std::endl;
     }

@@ -56,6 +56,10 @@ struct TaggingParm
   amrex::Real plasma_channel_bottom = 0.0;
 
   int pin_tip_lev = 0;
+#ifdef PELEC_USE_TWO_TEMP
+  amrex::Real Telegraderr = 1.0e10;
+  int max_Telegrad_lev = 10;
+#endif
 #endif
 };
 
@@ -163,8 +167,13 @@ tag_plasma_channel(
   char tagval) noexcept
 {
   // Tag in central pin to pin region (FIXME: hard code radius for time being...)
+  // amrex::Real r = sqrt((x-1.0)*(x-1.0) + (z-1.0)*(z-1.0));
+  // if (r < 0.1 && y > channel_bottom && y < channel_top)
+  // {
+  //   tag(i, j, k) = tagval;
+  // }
   amrex::Real r = sqrt((x-1.0)*(x-1.0) + (z-1.0)*(z-1.0));
-  if (r < 0.1 && y > channel_bottom && y < channel_top)
+  if (r < 0.06 && y > 0.125 && y < 0.375)
   {
     tag(i, j, k) = tagval;
   }

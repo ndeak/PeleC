@@ -77,7 +77,6 @@ getKappaE(int i, int j, int k, int Ecomp,
      Ks(i,j,k,Ecomp) = JfitA * exp(Janev_sum);    // 1/m-V-s
    }
 #endif
-   // TODO REMOVE
    Ks(i,j,k,Ecomp) *= 1.0e-9;           // Convert to C/cm-erg-s
 
    amrex::Real ndens = 0.0;

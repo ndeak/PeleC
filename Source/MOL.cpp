@@ -127,7 +127,8 @@ pc_compute_hyp_mol_flux(
           qtempl[R_Y + n] = qtempl[R_Y + n] / qtempl[R_RHO];
         }
 #ifdef PELEC_USE_TWO_TEMP
-          amrex::Real uelel = q(ii, jj, kk, QFX+5) + 0.5 * dq(ii, jj, kk, QFX+5);
+          // FIXME: Using first order Godunov until bug fix for Ue slope
+          amrex::Real uelel = q(ii, jj, kk, QFX+5) + 0.0 * dq(ii, jj, kk, QFX+5);
 #endif
 
         amrex::Real qtempr[5 + NUM_SPECIES] = {0.0};
@@ -153,7 +154,8 @@ pc_compute_hyp_mol_flux(
           qtempr[R_Y + n] = qtempr[R_Y + n] / qtempr[R_RHO];
         }
 #ifdef PELEC_USE_TWO_TEMP
-          amrex::Real ueler = q(i, j, k, QFX+5) - 0.5 * dq(i, j, k, QFX+5);
+          // FIXME: Using first order Godunov until bug fix for Ue slope
+          amrex::Real ueler = q(i, j, k, QFX+5) - 0.0 * dq(i, j, k, QFX+5);
 #endif
 
         const amrex::Real cavg =

@@ -143,6 +143,7 @@ amrex::Real PeleC::dfact = 0.0;
 amrex::Real PeleC::sfact = 0.0;
 int PeleC::pulse_num = 0;
 int PeleC::pac_mechanism = 0;
+int PeleC::airTT_mechanism = 0;
 int PeleC::ef_constEleTransport = 0;
 amrex::Real PeleC::ef_eleMobility = 0.0;
 amrex::Real PeleC::ef_eleDiffusivity = 0.0;
@@ -1814,7 +1815,11 @@ PeleC::errorEst(
 #ifdef PELEC_USE_PLASMA
       const auto redEfield_arr = redEfield.array(mfi);
       const auto ne_arr = S_data.array(mfi, UFS + E_ID);
+      // FIXME bad hard-coding
       const auto o4_arr = S_data.array(mfi, UFS + E_ID + 6);
+#ifdef PELEC_USE_TWO_TEMP
+      const auto tele_arr = S_data.array(mfi, UFX + 6);
+#endif
 #endif
 
       amrex::FArrayBox S_derData(datbox, 1);
@@ -2075,7 +2080,17 @@ PeleC::errorEst(
               i, j, k, x, y, z, tag_arr, tagval);
           });
       }
-
+#ifdef PELEC_USE_TWO_TEMP
+      // Tagging reduced electric field gradient
+      if (level < tagging_parm->max_Telegrad_lev) {
+        const amrex::Real captured_Telegraderr = tagging_parm->Telegraderr;
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_graderror(
+              i, j, k, tag_arr, tele_arr, captured_Telegraderr, tagval);
+          });
+      }
+#endif
 #endif
 
       // Problem specific tagging

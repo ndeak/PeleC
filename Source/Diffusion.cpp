@@ -708,17 +708,21 @@ PeleC::getMOLSrcTerm(
 
       // Here is where we add on implicit electron number and energy density sources
 #ifdef PELEC_USE_PLASMA
-      auto const& nEDiff_arr = nEDiff_forcing.array(mfi);
-      amrex::ParallelFor(
-        vbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          Dterm(i,j,k,UFS+E_ID) += nEDiff_arr(i,j,k);
-      });
+      if (ef_use_nEDiffImp) {
+        auto const& nEDiff_arr = nEDiff_forcing.array(mfi);
+        amrex::ParallelFor(
+          vbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            Dterm(i,j,k,UFS+E_ID) += nEDiff_arr(i,j,k);
+        });
+      }
 #ifdef PELEC_USE_TWO_TEMP
-      auto const& UeleDiff_arr = UeleDiff_forcing.array(mfi);
-      amrex::ParallelFor(
-        vbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          Dterm(i,j,k,UFX+5) += UeleDiff_arr(i,j,k);
-      });
+      if(diffuse_temp){
+        auto const& UeleDiff_arr = UeleDiff_forcing.array(mfi);
+        amrex::ParallelFor(
+          vbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            Dterm(i,j,k,UFX+5) += UeleDiff_arr(i,j,k);
+        });
+      }
 #endif
 #endif
 
@@ -743,6 +747,11 @@ PeleC::getMOLSrcTerm(
             pc_diffextrap(
               i, j, k, Dterm, mg, UEDEN, UEDEN + 1, AMREX_D_DECL(lx, ly, lz),
               AMREX_D_DECL(hx, hy, hz), dlo, dhi);
+#ifdef PELEC_USE_TWO_TEMP
+            pc_diffextrap(
+              i, j, k, Dterm, mg, UFX+5, UFX + 6, AMREX_D_DECL(lx, ly, lz),
+              AMREX_D_DECL(hx, hy, hz), dlo, dhi);
+#endif
           });
       }
 

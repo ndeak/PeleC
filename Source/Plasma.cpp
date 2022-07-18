@@ -80,6 +80,7 @@ PeleC::plasma_init()
     pp.query("Precond_SchurApprox",ef_PC_approx);
 
     pp.query("pac_mechanism", pac_mechanism);
+    pp.query("airTT_mechanism", airTT_mechanism);
     pp.query("constEleTransport", ef_constEleTransport);
     pp.query("eleMobility", ef_eleMobility);
     pp.query("eleDiffusivity", ef_eleDiffusivity);
@@ -198,6 +199,7 @@ void PeleC::plasma_define_data() {
       De_ec[1]->setVal(0.0);
       De_ec[2]->setVal(0.0);
       Uele_state.define(grids, dmap, 1, 1); Uele_state.setVal(0.0);
+      nE_state.define(grids,dmap,1,2); nE_state.setVal(0.0);
 #else
    if(ef_use_NLsolve || ef_use_nEimplicit || ef_use_nEDiffImp){
       mob_e.define(this);

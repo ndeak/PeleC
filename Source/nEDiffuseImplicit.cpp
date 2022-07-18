@@ -50,7 +50,7 @@ PeleC::nEDiffuseImplicit ( Real time,
   MultiFab nE_borders(Sborder, amrex::make_alias, 0, 1);
  
   // RHS MF
-  MultiFab nEresid(grids,dmap,1,0,MFInfo(),Factory());
+  MultiFab nEresid(grids,dmap,1,0,MFInfo(),Factory()); nEresid.setVal(0.0);
 
 #ifdef _OPENMP
 #pragma omp parallel
