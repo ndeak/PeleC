@@ -1,0 +1,160 @@
+# ------------------  INPUTS TO MAIN PROGRAM  -------------------
+max_step = 100000
+stop_time = 100.0
+
+# PROBLEM SIZE & GEOMETRY
+geometry.is_periodic =  0  0  0
+#geometry.is_periodic =  1  0  1
+geometry.coord_sys   =  0       # 0 => cart
+geometry.prob_lo     =  0    0    0 
+#geometry.prob_hi     =  0.125  2.0  0.125    # EB test case 1
+#amr.n_cell           =  8 128 8
+#geometry.prob_hi     =  0.0625  2.0  0.0625    # EB test case 1
+#amr.n_cell           =  8 256 8
+geometry.prob_hi     =  1.25  1.25  1.25    # EB test case 1
+amr.n_cell           =  64 64 64
+#geometry.prob_hi     =  0.0078125  1.0  0.0078125    # EB test case 1
+#amr.n_cell           =  8 1024 8
+
+# >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
+# Interior, UserBC, Symmetry, SlipWall, NoSlipWall
+# >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
+
+#pelec.lo_bc       =  "Interior" "SlipWall" "Interior"
+#pelec.hi_bc       =  "Interior" "SlipWall" "Interior"
+pelec.lo_bc       =  "Symmetry" "SlipWall" "Symmetry"
+pelec.hi_bc       =  "Symmetry" "SlipWall" "Symmetry"
+
+prob.p     = 1013250.0
+prob.T     = 300.0
+#prob.rho = 1.170338970405e-03
+prob.vx_in = 0.0
+prob.vy_in = 0.0
+prob.Re_L = 1.0
+prob.Pr = 0.7
+
+# Problem setup
+pelec.eb_boundary_T = 300.0
+pelec.eb_isothermal = 0
+pelec.chem_integrator = 2
+ode.implicit_solve = 1
+#ode.iverbose = 4
+ode.analytical_jacobian = 0
+cvode.solve_type = "dense"
+pelec.redistribution_type = "StateRedist"
+pelec.allow_negative_energy = 1
+pelec.allow_small_energy = 1
+#cvode.solve_type = "GMRES"
+
+# Plasma variables
+pelec.ion_bc_type = 1             # ion BC type (0 -> weak efield BCs, 1 -> strong efield BCs)
+pelec.zero_bc_flux = 0             # Set to 1 to ignore electron and ion fluxes at the electrode boundaries
+pelec.secondary_em_coef = 0.05    # secondary electron emission coefficient
+pelec.pulse_freq = 1000.0e3            # pulse frequency (Hz)
+pelec.pulse_fwhm = 10.0e-9             # pulse FWHM (s)
+pelec.pulse_peak = 18750.0e7          # peak potential of the driven electrode (erg/C)
+pelec.pulse_timing = 0.0          # timing of the first pulse peak (s)
+pelec.pulse_num = 1              # number of pulses
+pelec.pulse_dt = 1.0e-11           # dt around each pulse (s)
+ef.use_nonLinearSolve = 0     
+ef.Poisson_tol = 1.0e-12
+ef.noSpaceCharge = 0              # Solve Poisson problem without space charge effects
+ef.constVoltage = 1              # Use a constant applied (equal to the pulse_peak value)
+ef.do_photoionization = 0
+ef.use_nEDiffImp = 0
+
+# WHICH PHYSICS
+pelec.do_hydro = 1
+pelec.do_mol = 1
+pelec.do_react = 0
+pelec.diffuse_temp = 1
+pelec.diffuse_vel  = 1
+pelec.diffuse_spec = 1
+pelec.diffuse_enth = 1
+ef.semiImpEfield = 1
+ef.streamer_test = 1
+
+# TIME STEP CONTROL
+pelec.dt_cutoff      = 5.e-20  # level 0 timestep below which we halt
+pelec.cfl            = 0.3     # cfl number for hyperbolic system
+pelec.init_shrink    = 1.0    # scale back initial timestep
+pelec.change_max     = 1.05     # maximum increase in dt over successive steps
+#pelec.fixed_dt = 1.0e-12
+pelec.max_dt = 1.0e-11
+
+# DIAGNOSTICS & VERBOSITY
+pelec.sum_interval   = 1       # timesteps between computing mass
+pelec.v              = 1       # verbosity in PeleC cpp files
+amr.v                = 1       # verbosity in Amr.cpp
+ef.Poisson_verbose      = 0
+#amr.grid_log         = grdlog  # name of grid logging file
+
+# REFINEMENT / REGRIDDING
+amr.max_level       = 6       # maximum level number allowed
+amr.ref_ratio       = 2 2 2 2 # refinement ratio
+amr.regrid_int      = 2       # how often to regrid
+amr.blocking_factor = 8       # block factor in grid generation
+amr.max_grid_size   = 64 
+amr.subcycling_mode = None
+
+# TAGGING
+tagging.efielderr = 50
+tagging.max_efield_lev = 0
+tagging.negraderr = 1.0e-16
+tagging.max_negrad_lev = 0
+tagging.o4graderr = 3.0e-12
+tagging.max_o4grad_lev = 10
+tagging.efieldgraderr = 10.0
+tagging.max_efieldgrad_lev = 0
+tagging.max_vfracerr_lev = 8
+tagging.plasma_channel_lev = 0
+tagging.pin_tip_lev = 0
+
+# CHECKPOINT FILES
+amr.checkpoint_files_output = 0
+amr.check_file      = chk      # root name of checkpoint file
+amr.check_int       = 100       # number of timesteps between checkpoints
+
+# PLOTFILES
+amr.plot_files_output = 1
+amr.plot_file       = plt
+amr.plot_int        = 100
+#amr.derive_plot_vars=pressure x_velocity y_velocity z_velocity vfrac
+amr.derive_plot_vars = pressure
+amr.plot_vars  =  density Temp rho_E rho_e phiV nE Efieldx Efieldy Efieldz
+pelec.plot_massfrac = false
+pelec.plot_vfrac = true
+pelec.plot_rhoy = false
+ef.plot_numdens = true
+pelec.monitor_file = true
+ef.pac_mechanism = 0          # 0 for air, 1 for original PAC mechanism, 2 for PAC mechanism with negative ions
+
+# EB TEST CASE 1 (PLATE TO PLATE, ALIGNED W X-Z PLANE)
+eb2.use_eb2 = 1
+eb2.geom_type = all_regular
+ebd.boundary_grad_stencil_type = 0
+
+# EB TEST CASE 1 (PLATE TO PLATE, ALIGNED W X-Z PLANE)
+# eb2.use_eb2 = 1
+# eb2.geom_type = boxes
+# boxes.num_boxes = 2
+# boxes.box_0_lo = -1.0 -1.0 -1.0
+# boxes.box_0_hi = 2.0 0.501953125 2.0
+# boxes.box_1_lo = -1.0 1.501953125 -1.0
+# boxes.box_1_hi = 2.0 3.0 2.0
+# ebd.boundary_grad_stencil_type = 0
+
+# EB TEST CASE 1 (PLATE TO PLATE, ALIGNED W X-Z PLANE)
+# eb2.use_eb2 = 1
+# eb2.geom_type = boxes
+# boxes.num_boxes = 2
+# boxes.box_0_lo = -1.0 -1.0 -1.0
+# boxes.box_0_hi = 2.0 0.501 2.0
+# boxes.box_1_lo = -1.0 1.501 -1.0
+# boxes.box_1_hi = 2.0 3.0 2.0
+# ebd.boundary_grad_stencil_type = 0
+
+#fabarray.mfiter_tile_size = 1024 1024 1024
+amrex.fpe_trap_invalid = 1
+amrex.fpe_trap_zero = 1
+amrex.fpe_trap_overflow = 1
