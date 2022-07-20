@@ -440,6 +440,15 @@ PeleC::do_mol_advance(
 #endif
 #endif
 
+    // If we are doing the streamer test, zero out A/D forcing term for heavy species
+    if(streamer_test){
+      for(int n = 0; n<NUM_SPECIES; n++){
+        if(n != E_ID){
+          molSrc.mult(0.0, UFS+n, 1, 0);  
+        }
+      }
+    }
+
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
     react_state(time, dt, false, &molSrc);
   }
@@ -459,16 +468,6 @@ PeleC::do_mol_advance(
 
   computeTemp(S_new, 0);
   if(ef_use_NLsolve || ef_use_nEimplicit) S_new.setVal(0.0, UFS+E_ID, 1);
-
-  // // floor negative electron number density values after reactive update
-  //  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-  //     const amrex::Box& tbox = mfi.tilebox();
-  //     const auto Sfab = S_new.array(mfi);
-  //     amrex::ParallelFor(
-  //       tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-  //         if(Sfab(i,j,k,UFS+E_ID) < 0.0) Sfab(i,j,k,UFS+E_ID) = 1.0e-35;
-  //       });
-  //  }
 
 #ifdef PELEC_USE_REACTIONS
   if (do_react == 1) {
@@ -498,6 +497,23 @@ PeleC::do_mol_advance(
   set_body_state(S_new);
 #endif
 
+  // If we are doing the streamer test, should ensure there are no changes
+  // in any of the bulk flow properties (density, pressure, temperature, etc.)
+  if(streamer_test){
+    for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& tbox = mfi.growntilebox();
+      const auto Snew = S_new.array(mfi);
+      const auto Sold = S_old.array(mfi);
+      amrex::ParallelFor(
+        tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          // Looping over conserved flow state variables
+          for(int n=0; n<8; n++){
+            Snew(i,j,k,n) = Sold(i,j,k,n);
+          }
+      });
+    }
+  }
+  
   // ndead addition - add to monitor file
   if(monitor_file){
     writeMonitorFile(S_new, mwt, dt, time, level);

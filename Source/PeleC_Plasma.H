@@ -42,6 +42,7 @@
   static int         ion_rate_type;           // Controls the ionization rate calculations used for photoionization (0 = upd. Kossyi, 1 = Morrow, 2 = BOLSIG+)
   static amrex::Real ef_electron_heating_pct;                // Percentage of electron energy that results in fast heating (treated as instantaneous)
   static int         ef_ambiDiff;                            // Use an ambipolar diffusion model for charged particle transport?
+  static int         streamer_test;                          // Use model from "Comparison of six simulation codesfor positive streamers in air"
 
   // Transport options
   static int         ef_constEleTransport;                   // Use constant electron mobility (and diffusivity, via Einsten relation)

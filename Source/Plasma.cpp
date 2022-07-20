@@ -86,6 +86,8 @@ PeleC::plasma_init()
     pp.query("eleDiffusivity", ef_eleDiffusivity);
     pp.query("relax_eleDiff", ef_relax_eleDiff);
 
+    pp.query("streamer_test", streamer_test);
+
     pp.query("plot_numdens", plot_numdens);
 
     pp.query("circuit_model", ef_circuit_model);
@@ -316,6 +318,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
   {
      const amrex::Box& gbox = mfi.growntilebox();
      auto const& rho_ar = S.array(mfi,0);
+     auto const& Sfab = S.array(mfi,0);
      auto const& rhoY = S.array(mfi,UFS);
      auto const& T    = Q_ext.array(mfi,QTEMP);
      auto const& rhoD = coeffs_old.array(mfi,dComp_rhoD);
@@ -328,7 +331,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
 #endif
      Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
      int useNL   = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
-     amrex::ParallelFor(gbox, [rhoY, T, eleDiff_factor, Ks, rho_ar, rhoD, Ke, De, useNL, 
+     amrex::ParallelFor(gbox, [rhoY, T, eleDiff_factor, Ks, rho_ar, Sfab, rhoD, Ke, De, useNL, 
 #ifdef PELEC_USE_TWO_TEMP
                               Tefab,
 #endif
@@ -383,6 +386,14 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
           getDiffE(i,j,k,0,1,eleDiff_factor,rhoY,De,redEfab,Tefab,mwt);
         }
 #endif
+        // Overwrite electron transport coefficients at the end - not very efficient
+        if(streamer_test){
+          // Efield magnitude (V/m)
+          amrex::Real Emag = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) * 1.0e-5;
+          // Calculate electron transport coeffs using model from test case
+          Ks(i,j,k,E_ID) = 2.3987 * pow(Emag,-0.26) * 1.0e-3;       // converting from m2/V-s  --> cm2-C/erg-s
+          rhoD(i,j,k,E_ID) = 4.3628e-3 * pow(Emag, 0.22) * 1.0e4 * Sfab(i,j,k,0);   // converting from m2/s --> cm2/s --> g/cm-s
+        }
      });
      Real mwt[NUM_SPECIES];
      eos.molecular_weight(mwt);  // Return mwt in CGS

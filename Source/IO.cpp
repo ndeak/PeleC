@@ -1354,14 +1354,14 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
 #endif
     amrex::Real max_Tg = S.max(UTEMP, 0, false);
     amrex::Real max_nE = S.max(UFS+E_ID, 0, false) * (1.0/mwt[E_ID]) * NA;
-    amrex::Real max_nO = S.max(UFS+O_ID, 0, false) * (1.0/mwt[O_ID]) * NA;
-    amrex::Real max_nN2vib = S.max(UFS+N2v1_ID, 0, false)* (1.0/mwt[N2v1_ID]) * NA + S.max(UFS+N2v2_ID, 0, false)* (1.0/mwt[N2v2_ID]) * NA + S.max(UFS+N2v3_ID, 0, false)* (1.0/mwt[N2v3_ID]) * NA + S.max(UFS+N2v4_ID, 0, false)* (1.0/mwt[N2v4_ID]) * NA + S.max(UFS+N2v5_ID, 0, false)* (1.0/mwt[N2v5_ID]) * NA;
-    amrex::Real max_nN2ele = S.max(UFS+N2A3Sigma_ID, 0, false)* (1.0/mwt[N2A3Sigma_ID]) * NA + S.max(UFS+N2B3Pi_ID, 0, false)* (1.0/mwt[N2B3Pi_ID]) * NA + S.max(UFS+N2C3Pi_ID, 0, false)* (1.0/mwt[N2C3Pi_ID]) * NA;
-    amrex::Real max_nO2ele = S.max(UFS+O2a1Delta_ID, 0, false)* (1.0/mwt[O2a1Delta_ID]) * NA + S.max(UFS+O2b1Sigma_ID, 0, false)* (1.0/mwt[O2b1Sigma_ID]) * NA;
-    amrex::Real max_nO2p = S.max(UFS+O2p_ID, 0, false)* (1.0/mwt[O2p_ID]) * NA;
-    amrex::Real max_nN2p = S.max(UFS+N2p_ID, 0, false)* (1.0/mwt[N2p_ID]) * NA;
-    amrex::Real max_nO2m = S.max(UFS+O2n_ID, 0, false)* (1.0/mwt[O2n_ID]) * NA;
-    amrex::Real max_nOm = S.max(UFS+On_ID, 0, false)* (1.0/mwt[On_ID]) * NA;
+    amrex::Real max_nO = S.max(UFS+1, 0, false) * (1.0/mwt[1]) * NA;
+    amrex::Real max_nN2vib = S.max(UFS+4, 0, false)* (1.0/mwt[4]) * NA + S.max(UFS+5, 0, false)* (1.0/mwt[5]) * NA + S.max(UFS+6, 0, false)* (1.0/mwt[6]) * NA + S.max(UFS+7, 0, false)* (1.0/mwt[7]) * NA + S.max(UFS+8, 0, false)* (1.0/mwt[8]) * NA;
+    amrex::Real max_nN2ele = S.max(UFS+9, 0, false)* (1.0/mwt[9]) * NA + S.max(UFS+10, 0, false)* (1.0/mwt[10]) * NA + S.max(UFS+11, 0, false)* (1.0/mwt[11]) * NA;
+    amrex::Real max_nO2ele = S.max(UFS+13, 0, false)* (1.0/mwt[13]) * NA + S.max(UFS+14, 0, false)* (1.0/mwt[14]) * NA;
+    amrex::Real max_nO2p = S.max(UFS+15, 0, false)* (1.0/mwt[15]) * NA;
+    amrex::Real max_nN2p = S.max(UFS+12, 0, false)* (1.0/mwt[12]) * NA;
+    amrex::Real max_nO2m = S.max(UFS+19, 0, false)* (1.0/mwt[19]) * NA;
+    amrex::Real max_nOm = S.max(UFS+20, 0, false)* (1.0/mwt[20]) * NA;
   
     if (amrex::ParallelDescriptor::IOProcessor()) {
       std::string baseName = "MonitorFile_Level";
@@ -1382,25 +1382,27 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
     amrex::Real mcations = 0.0;
     amrex::Real manions = 0.0;
     amrex::Real tot_E = 0.0;
-    if(level == finest_level) {
-      for (int lev = 0; lev <= finest_level; lev++) {
-        PeleC& pc_lev = getLevel(lev);
+    if(!streamer_test){
+      if(level == finest_level) {
+        for (int lev = 0; lev <= finest_level; lev++) {
+          PeleC& pc_lev = getLevel(lev);
 
-        mcations += (pc_lev.volWgtSum("rho_O2+", time, local_flag) + pc_lev.volWgtSum("rho_N2+", time, local_flag) + pc_lev.volWgtSum("rho_O4+", time, local_flag) + pc_lev.volWgtSum("rho_N4+", time, local_flag) + pc_lev.volWgtSum("rho_O2pN2", time, local_flag));
-        manions += pc_lev.volWgtSum("rho_O2-", time, local_flag);
-        tot_E += pc_lev.volWgtSum("rho_e", time, local_flag);
+          mcations += (pc_lev.volWgtSum("rho_O2+", time, local_flag) + pc_lev.volWgtSum("rho_N2+", time, local_flag) + pc_lev.volWgtSum("rho_O4+", time, local_flag) + pc_lev.volWgtSum("rho_N4+", time, local_flag) + pc_lev.volWgtSum("rho_O2pN2", time, local_flag));
+          manions += pc_lev.volWgtSum("rho_O2-", time, local_flag);
+          tot_E += pc_lev.volWgtSum("rho_e", time, local_flag);
+        }
+
+        // Sum across processors
+        const int nfoo = 3;
+        amrex::Real foo[nfoo] = {mcations, manions, tot_E};
+        amrex::ParallelDescriptor::ReduceRealSum(foo, nfoo, amrex::ParallelDescriptor::IOProcessorNumber());
+
+        // Reassign sum values
+        int i = 0;
+        mcations = foo[i++];
+        manions = foo[i++];
+        tot_E = foo[i++];
       }
-
-      // Sum across processors
-      const int nfoo = 3;
-      amrex::Real foo[nfoo] = {mcations, manions, tot_E};
-      amrex::ParallelDescriptor::ReduceRealSum(foo, nfoo, amrex::ParallelDescriptor::IOProcessorNumber());
-
-      // Reassign sum values
-      int i = 0;
-      mcations = foo[i++];
-      manions = foo[i++];
-      tot_E = foo[i++];
     }
 
     if(ef_use_NLsolve || ef_use_nEimplicit){
@@ -1412,10 +1414,16 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
       max_nE = S.max(UFS + E_ID, 0, false) * (1.0/mwt[E_ID]) * NA;
     }
     amrex::Real max_Tg = S.max(UTEMP, 0, false);
-    amrex::Real min_nO4p = S.min(UFS + 6, 0, false) * (1.0/mwt[6]) * NA;
-    amrex::Real max_nO4p = S.max(UFS + 6, 0, false) * (1.0/mwt[6]) * NA;
-    amrex::Real min_nO2m = S.min(UFS + 9, 0, false) * (1.0/mwt[9]) * NA;
-    amrex::Real max_nO2m = S.max(UFS + 9, 0, false) * (1.0/mwt[9]) * NA;
+    amrex::Real min_nO4p = S.min(UFS + 3, 0, false) * (1.0/mwt[3]) * NA;
+    amrex::Real max_nO4p = S.max(UFS + 3, 0, false) * (1.0/mwt[3]) * NA;
+    amrex::Real min_nO2m = 0.0;
+    amrex::Real max_nO2m = 0.0;
+    if(!streamer_test){
+      min_nO4p = S.min(UFS + 6, 0, false) * (1.0/mwt[6]) * NA;
+      max_nO4p = S.max(UFS + 6, 0, false) * (1.0/mwt[6]) * NA;
+      min_nO2m = S.min(UFS + 9, 0, false) * (1.0/mwt[9]) * NA;
+      max_nO2m = S.max(UFS + 9, 0, false) * (1.0/mwt[9]) * NA;
+    }
     amrex::Real min_phiV = S.min(UFX, 0, false) * 1.0e-10;
     amrex::Real max_phiV = S.max(UFX, 0, false) * 1.0e-10;
     amrex::Real min_EN = redEfield.min(0, 0, false);

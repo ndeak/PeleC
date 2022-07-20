@@ -111,6 +111,7 @@ int PeleC::ef_sigmoid_pulse = 0;
 int PeleC::ef_ambiDiff = 0;
 int PeleC::ef_use_joule_heating = 1;
 int PeleC::ef_use_radiative_losses = 0;
+int PeleC::streamer_test = 0;
 amrex::Real PeleC::ef_pulse_delay = 3.0e-9;
 amrex::Real PeleC::ef_pulse_rise = 5.0e-9;
 amrex::Real PeleC::ef_pulse_plateau = 12.0e-9;
@@ -1813,12 +1814,13 @@ PeleC::errorEst(
       const auto vfrac_arr = vfrac.array(mfi);
 #endif
 #ifdef PELEC_USE_PLASMA
+      int ionIdx = 6;
+      if(streamer_test) ionIdx = 3;
       const auto redEfield_arr = redEfield.array(mfi);
       const auto ne_arr = S_data.array(mfi, UFS + E_ID);
-      // FIXME bad hard-coding
       const auto o4_arr = S_data.array(mfi, UFS + E_ID + 6);
 #ifdef PELEC_USE_TWO_TEMP
-      const auto tele_arr = S_data.array(mfi, UFX + 6);
+      const auto tele_arr = S_data.array(mfi, UFX + ionIdx);
 #endif
 #endif
 
