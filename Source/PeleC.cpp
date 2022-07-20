@@ -1818,9 +1818,9 @@ PeleC::errorEst(
       if(streamer_test) ionIdx = 3;
       const auto redEfield_arr = redEfield.array(mfi);
       const auto ne_arr = S_data.array(mfi, UFS + E_ID);
-      const auto o4_arr = S_data.array(mfi, UFS + E_ID + 6);
+      const auto o4_arr = S_data.array(mfi, UFS + E_ID + ionIdx);
 #ifdef PELEC_USE_TWO_TEMP
-      const auto tele_arr = S_data.array(mfi, UFX + ionIdx);
+      const auto tele_arr = S_data.array(mfi, UFX + 6);
 #endif
 #endif
 
