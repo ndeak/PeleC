@@ -6,6 +6,7 @@
 
 static constexpr amrex::Real small_vel = 1.e-10;
 
+#ifdef PELEC_USE_PLASMA
 AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void
@@ -406,4 +407,5 @@ cen2edg_upwind_cpp(int i, int j, int k,
    }
 }
 
+#endif
 #endif

@@ -380,10 +380,12 @@ PeleC::variableSetUp()
   amrex::Vector<amrex::BCRec> react_bcs(NUM_SPECIES + 1);
   amrex::Vector<std::string> react_name(NUM_SPECIES + 1);
 #endif
+#ifdef PELEC_USE_REACTIONS
   desc_lst.addDescriptor(
     Reactions_Type, amrex::IndexType::TheCellType(),
     amrex::StateDescriptor::Point, 0, react_num, interp,
     state_data_extrap, store_in_checkpoint);
+#endif
 
   amrex::BCRec bc;
   cnt = 0;

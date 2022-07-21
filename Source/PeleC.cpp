@@ -805,7 +805,11 @@ PeleC::initData()
     const ProbParmDevice* lprobparm = d_prob_parm_device;
 
     amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      pc_initdata(i, j, k, useNL, sfab, geomdata, *lprobparm);
+      pc_initdata(i, j, k, 
+#ifdef PELEC_USE_PLASMA
+                  useNL, 
+#endif
+                  sfab, geomdata, *lprobparm);
       // Verify that the sum of (rho Y)_i = rho at every cell
       pc_check_initial_species(i, j, k, sfab);
     });
@@ -1110,12 +1114,16 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
         estdt_vdif, amrex::min<amrex::Real>(estdt_tdif, estdt_edif)));
 
     amrex::ParallelDescriptor::ReduceRealMin(estdt_hydro);
+#ifdef PELEC_USE_PLASMA
     if(ef_use_nEimplicit){
       estdt_hydro *= 10.0;
     }
     else{
       estdt_hydro *= cfl;
     }
+#else
+      estdt_hydro *= cfl;
+#endif
 
     // if (verbose) {
       amrex::Print() << "...estimated hydro-limited timestep at level " << level
@@ -1131,7 +1139,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 
     // Determine if this is more restrictive than the maximum timestep limiting
-    if (estdt_hydro < estdt && !ef_use_NLsolve) {
+    if (estdt_hydro < estdt) {
       limiter = "hydro";
       estdt = estdt_hydro;
     }
@@ -1497,6 +1505,7 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
     sum_integrated_quantities();
   }
 
+#ifdef PELEC_USE_PLASMA
   // Set up Monitor file Headers
   if(monitor_file){
     int nlevs = parent->maxLevel() + 1;
@@ -1518,6 +1527,7 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
   if(ef_circuit_load_data){
     ef_loadCircuitData(parent->cumTime());
   }
+#endif
 }
 
 int

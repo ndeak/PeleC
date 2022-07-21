@@ -142,7 +142,8 @@ void PeleC::plasma_define_data() {
    flux_current_mf.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); flux_current_mf.setVal(0.0);
    joule_heating.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); joule_heating.setVal(0.0);
    radiative_losses.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); radiative_losses.setVal(0.0);
-   if(ef_use_nEDiffImp) nEDiff_forcing.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); nEDiff_forcing.setVal(0.0); 
+   // if(ef_use_nEDiffImp) nEDiff_forcing.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); nEDiff_forcing.setVal(0.0); 
+   nEDiff_forcing.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); nEDiff_forcing.setVal(0.0); 
 #ifdef PELEC_USE_TWO_TEMP
    UeleDiff_forcing.define(grids, dmap, 1, 1, amrex::MFInfo(), Factory()); UeleDiff_forcing.setVal(0.0); 
 #endif
@@ -391,7 +392,7 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
           // Efield magnitude (V/m)
           amrex::Real Emag = std::sqrt( AMREX_D_TERM (Sfab(i,j,k,UFX+2)*Sfab(i,j,k,UFX+2), + Sfab(i,j,k,UFX+3)*Sfab(i,j,k,UFX+3), + Sfab(i,j,k,UFX+4)*Sfab(i,j,k,UFX+4))) * 1.0e-5;
           // Calculate electron transport coeffs using model from test case
-          Ks(i,j,k,E_ID) = 2.3987 * pow(Emag,-0.26) * 1.0e-3;       // converting from m2/V-s  --> cm2-C/erg-s
+          Ks(i,j,k,E_ID) = -2.3987 * pow(Emag,-0.26) * 1.0e-3;       // converting from m2/V-s  --> cm2-C/erg-s
           rhoD(i,j,k,E_ID) = 4.3628e-3 * pow(Emag, 0.22) * 1.0e4 * Sfab(i,j,k,0);   // converting from m2/s --> cm2/s --> g/cm-s
         }
      });

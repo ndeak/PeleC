@@ -1174,6 +1174,7 @@ void PeleC::writeDebugPlotFile(const amrex::Vector<const amrex::MultiFab*> &a_MF
                                   names, Geoms, 0.0, istep, RefRatios);
 }
 
+#ifdef PELEC_USE_PLASMA
 void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::Real dt, amrex::Real time, int i){
 
   // ndeak addition - create monitor files for each level
@@ -1526,3 +1527,4 @@ void PeleC::circuitFileSetup(){
     CircuitFile.close();
   }
 }
+#endif

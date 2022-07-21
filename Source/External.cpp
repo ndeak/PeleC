@@ -61,6 +61,7 @@ PeleC::fill_ext_source(
   // TODO: should be updated to account for use of ambipolar diffusion model
   // (not doing for now since JH is negligible during interpulse period)
 
+#ifdef PELEC_USE_PLASMA
   amrex::Real prev_time = state[State_Type].prevTime();
   amrex::Real elemChrg = 1.60217662e-19;     //Coulomb per charge
   amrex::Real me_g = 9.10938356e-28;         // electron mass (g)
@@ -207,5 +208,6 @@ PeleC::fill_ext_source(
         // if(i == 1 && j == 1 && k == 1) printf("JOULE HEATING SRC IS %.6e, Eden = %.6e, Eint = %.6e, lterm = %.6e, sterm = %.6e\n", Farr(i,j,k,Eden), S_arr(i,j,k,Eden), S_arr(i,j,k,Eint), K_cc(i,j,k,E_ID) * (E_cc(i,j,k,0)*E_cc(i,j,k,0) + E_cc(i,j,k,1)*E_cc(i,j,k,1) + E_cc(i,j,k,2)*E_cc(i,j,k,2)), elemChrg * S_arr(i,j,k,UFS+E_ID));
     });
   }
-  
+#endif  
+
 }

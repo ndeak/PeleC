@@ -245,7 +245,6 @@ PeleC::do_mol_advance(
     amrex::Print() << "... Computing MOL source term at t^{n} " << std::endl;
   }
 
-  if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
 #ifndef PELEC_USE_PLASMA
   FillPatch(*this, Sborder, numGrow() + nGrowF, time, State_Type, 0, NVAR);
 #endif
@@ -264,8 +263,8 @@ PeleC::do_mol_advance(
 #endif
 
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
-  if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
 
+#ifdef PELEC_USE_PLASMA
   // Calculate the cel-centered dielectric relaxation timescales
   // FIXME: why did I put this here..?
   for (amrex::MFIter mfi(KSpec_old, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
@@ -282,6 +281,7 @@ PeleC::do_mol_advance(
           diele_fab(i,j,k) = amrex::Math::abs(EFConst::eps0_cgs / (EFConst::elemCharge * mu_E * ne_val));
        });
   }
+#endif
 
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
@@ -355,9 +355,7 @@ PeleC::do_mol_advance(
 #endif
 #endif
 
-  if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
   getMOLSrcTerm(Sborder, molSrc, time, dt, flux_factor);
-  if(ef_use_NLsolve || ef_use_nEimplicit) Sborder.setVal(0.0, UFS+E_ID, 1);
 
 #ifdef PELEC_USE_PLASMA
   if (ef_use_NLsolve) {
@@ -440,6 +438,7 @@ PeleC::do_mol_advance(
 #endif
 #endif
 
+#ifdef PELEC_USE_PLASMA
     // If we are doing the streamer test, zero out A/D forcing term for heavy species
     if(streamer_test){
       for(int n = 0; n<NUM_SPECIES; n++){
@@ -448,12 +447,14 @@ PeleC::do_mol_advance(
         }
       }
     }
+#endif
 
     // Compute I_R and U^{n+1} = U^n + dt*(F_{AD} + I_R)
     react_state(time, dt, false, &molSrc);
   }
 #endif
 
+#ifdef PELEC_USE_PLASMA
   // floor negative electron number density values after reactive update
   for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& tbox = mfi.growntilebox();
@@ -464,10 +465,9 @@ PeleC::do_mol_advance(
           if(Sfab(i,j,k,UFX+1) < 0.0) Sfab(i,j,k,UFX+1) = 1.0e-10;
         });
   }
-
+#endif
 
   computeTemp(S_new, 0);
-  if(ef_use_NLsolve || ef_use_nEimplicit) S_new.setVal(0.0, UFS+E_ID, 1);
 
 #ifdef PELEC_USE_REACTIONS
   if (do_react == 1) {
@@ -497,6 +497,7 @@ PeleC::do_mol_advance(
   set_body_state(S_new);
 #endif
 
+#ifdef PELEC_USE_PLASMA
   // If we are doing the streamer test, should ensure there are no changes
   // in any of the bulk flow properties (density, pressure, temperature, etc.)
   if(streamer_test){
@@ -507,13 +508,13 @@ PeleC::do_mol_advance(
       amrex::ParallelFor(
         tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
           // Looping over conserved flow state variables
-          for(int n=0; n<8; n++){
+          for(int n=0; n<7; n++){
             Snew(i,j,k,n) = Sold(i,j,k,n);
           }
       });
     }
   }
-  
+
   // ndead addition - add to monitor file
   if(monitor_file){
     writeMonitorFile(S_new, mwt, dt, time, level);
@@ -521,6 +522,7 @@ PeleC::do_mol_advance(
 
   // Only write down circuit data at finest level
   if(ef_circuit_model && level == parent->finestLevel()) writeCircuitFile(time, step_num);
+#endif  
 
   return dt;
 }

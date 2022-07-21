@@ -70,6 +70,7 @@ struct SpeciesEnergyFlux
     const amrex::Real dlnp =
       dpdx / (0.5 * (q(i, j, k, QPRES) + q(im, jm, km, QPRES)));
 
+#ifdef PELEC_USE_PLASMA
     amrex::Real beta; 
     amrex::Real beta_denom = 0.0;
     amrex::Real flx_zero[NUM_SPECIES];
@@ -86,6 +87,7 @@ struct SpeciesEnergyFlux
         }
       }
     }
+#endif
 
     for (int ns = 0; ns < NUM_SPECIES; ++ns) {
       const amrex::Real Xface = 0.5 * (mole1[ns] + mole2[ns]);
@@ -94,13 +96,18 @@ struct SpeciesEnergyFlux
       const amrex::Real dXdx = dxinv * (mole1[ns] - mole2[ns]);
       const amrex::Real dYdx = dxinv * (mass1[ns] - mass2[ns]);
       amrex::Real Vd = 0.0;
+#ifdef PELEC_USE_PLASMA
       if(ns == E_ID){
         Vd = -coef[dComp_rhoD + ns] * (dYdx);
       }
       else{
         Vd = -coef[dComp_rhoD + ns] * (dXdx + (Xface - Yface) * dlnp);
       }
+#else
+        Vd = -coef[dComp_rhoD + ns] * (dXdx + (Xface - Yface) * dlnp);
+#endif
     
+#ifdef PELEC_USE_PLASMA
       if(use_ambiDiff && beta_denom != 0.0 && chrg[ns] != 0){
         amrex::Real Xtmp = (Xface >= 0.0) ? Xface:0.0;
         amrex::Real beta = chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * amrex::Math::abs(Xtmp) / beta_denom;
@@ -114,6 +121,7 @@ struct SpeciesEnergyFlux
         }
         Vd = ((1.0 - beta) * flx_zero[ns] - beta * tmp_sum);
       }
+#endif
       flx(i, j, k, UFS + ns) = Vd;
       Vc += Vd;
 #ifdef PELEC_USE_TWO_TEMP
