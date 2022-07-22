@@ -246,7 +246,6 @@ pc_compute_hyp_mol_flux(
         amrex::Real ndens = 0.0;
         amrex::Real kB = 1.380649e-16; // cm^2.g.s^-2/K
         amrex::Real NA = 6.0221409e23; // 1/mol
-        amrex::Real Ttemp = 300.0;    // TODO remove hard code
         double EoN, Te;
         amrex::Real mwt[NUM_SPECIES];
         auto eos = pele::physics::PhysicsType::eos();
@@ -361,7 +360,7 @@ pc_compute_hyp_mol_flux(
                     }
                     if(n != E_ID && K_cc(i,j,k,n) != 0){
                       if(ion_bc_type == 0){
-                        flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5) * area[dir](i, j, k);
+                        flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*q(i,j,k,QTEMP)) / ((mwt[n]/NA) * constants::PI()) ,0.5) * area[dir](i, j, k);
                       }
                       else if(ion_bc_type == 1){
                         if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) > 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) < 0)){
@@ -409,7 +408,7 @@ pc_compute_hyp_mol_flux(
                   }
                   if(n != E_ID && K_cc(i,j,k,n) != 0){
                     if(ion_bc_type == 0){
-                      flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5) * area[dir](i, j, k);
+                      flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*q(ii,jj,kk,QTEMP)) / ((mwt[n]/NA) * constants::PI()) ,0.5) * area[dir](i, j, k);
                     }
                     else if(ion_bc_type == 1){
                       if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) < 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) > 0)){
@@ -530,7 +529,6 @@ pc_compute_hyp_mol_flux(
       amrex::Real ndens = 0.0;
       amrex::Real kB = 1.380649e-16; // erg/K
       amrex::Real NA = 6.0221409e23; // 1/mol
-      amrex::Real Ttemp = 300.0;      // TODO remove hard code
       double EoN, Te;
       amrex::Real mwt[NUM_SPECIES];
       auto eos = pele::physics::PhysicsType::eos();
@@ -563,7 +561,7 @@ pc_compute_hyp_mol_flux(
                 }
                 if(n != E_ID && K_cc(i,j,k,n) != 0){
                   if(ion_bc_type == 0){
-                    flux_tmp[UFS + n] = -0.5 * q(i,j,k,QRHO) * q(i,j,k,QFS + n) * pow( (8.0*kB*Ttemp) / ((mwt[n]/NA) * constants::PI()) ,0.5);
+                    flux_tmp[UFS + n] = -0.5 * q(i,j,k,QRHO) * q(i,j,k,QFS + n) * pow( (8.0*kB*q(i,j,k,QTEMP)) / ((mwt[n]/NA) * constants::PI()) ,0.5);
                   }
                   else if(ion_bc_type == 1){
                     if((K_cc(i,j,k,n) < 0 && Enorm > 0) || (K_cc(i,j,k,n) > 0 && Enorm < 0)){
