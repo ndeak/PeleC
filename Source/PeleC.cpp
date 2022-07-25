@@ -2074,8 +2074,10 @@ PeleC::errorEst(
             amrex::Real z = problo[2] + (k + 0.5)*dx[2];
             amrex::Real pchannel_top = tagging_parm->plasma_channel_top;
             amrex::Real pchannel_bottom = tagging_parm->plasma_channel_bottom;
+            amrex::Real pchannel_r0 = tagging_parm->plasma_channel_r0;
+            amrex::Real pchannel_rmax = tagging_parm->plasma_channel_rmax;
             tag_plasma_channel(
-              i, j, k, x, y, z, pchannel_top, pchannel_bottom, tag_arr, tagval);
+              i, j, k, x, y, z, pchannel_top, pchannel_bottom, pchannel_r0, pchannel_rmax, tag_arr, tagval);
           });
       }
 

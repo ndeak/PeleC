@@ -52,8 +52,10 @@ struct TaggingParm
   int max_efieldgrad_lev = 10;
 
   int plasma_channel_lev = 0;
-  amrex::Real plasma_channel_top = 0.0;
-  amrex::Real plasma_channel_bottom = 0.0;
+  amrex::Real plasma_channel_top = 0.375;
+  amrex::Real plasma_channel_bottom = 0.125;
+  amrex::Real plasma_channel_r0 = 1.0;
+  amrex::Real plasma_channel_rmax = 0.1;
 
   int pin_tip_lev = 0;
 #ifdef PELEC_USE_TWO_TEMP
@@ -166,20 +168,21 @@ tag_plasma_channel(
   amrex::Real z, 
   amrex::Real channel_top,
   amrex::Real channel_bottom,
+  amrex::Real channel_r0,
+  amrex::Real channel_rmax,
   amrex::Array4<char> const& tag,
   char tagval) noexcept
 {
-  // Tag in central pin to pin region (FIXME: hard code radius for time being...)
-  // amrex::Real r = sqrt((x-1.0)*(x-1.0) + (z-1.0)*(z-1.0));
-  // if (r < 0.1 && y > channel_bottom && y < channel_top)
-  // {
-  //   tag(i, j, k) = tagval;
-  // }
-  amrex::Real r = sqrt((x-1.0)*(x-1.0) + (z-1.0)*(z-1.0));
-  if (r < 0.06 && y > 0.125 && y < 0.375)
+  amrex::Real r = sqrt((x-channel_r0)*(x-channel_r0) + (z-channel_r0)*(z-channel_r0));
+  if (r < channel_rmax && y > channel_bottom && y < channel_top)
   {
     tag(i, j, k) = tagval;
   }
+  // amrex::Real r = sqrt((x-1.0)*(x-1.0) + (z-1.0)*(z-1.0));
+  // if (r < 0.15 && y > 0.125 && y < 0.375)
+  // {
+  //   tag(i, j, k) = tagval;
+  // }
 }
 
 AMREX_GPU_DEVICE

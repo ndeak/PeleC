@@ -55,6 +55,8 @@ PeleC::read_tagging_params()
   pp.query("plasma_channel_lev", tagging_parm->plasma_channel_lev);
   pp.query("plasma_channel_top", tagging_parm->plasma_channel_top);
   pp.query("plasma_channel_bottom", tagging_parm->plasma_channel_bottom);
+  pp.query("plasma_channel_r0", tagging_parm->plasma_channel_r0);
+  pp.query("plasma_channel_rmax", tagging_parm->plasma_channel_rmax);
   pp.query("pin_tip_lev", tagging_parm->pin_tip_lev);
 #ifdef PELEC_USE_TWO_TEMP
   pp.query("Telegraderr", tagging_parm->Telegraderr);
