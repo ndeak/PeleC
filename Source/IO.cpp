@@ -1192,9 +1192,9 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
   amrex::Real NA = 6.0221409e23; // 1/mol
   const amrex::Real* dx = geom.CellSize();
 
-  amrex::Real min_nE;
-  amrex::Real max_nE;
-  amrex::Real flux_curr;
+  amrex::Real min_nE = 0.0;
+  amrex::Real max_nE = 0.0;
+  amrex::Real flux_curr = 0.0;
 
   if(pac_mechanism){
     // Sum variables
