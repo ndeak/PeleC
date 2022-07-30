@@ -137,7 +137,9 @@ void pc_compute_hyp_mol_flux(
   const amrex::Real secondary_em_coef,
   const amrex::Real electron_emit_const,
   const int ef_do_drift,
-  const int ef_ambiDiff
+  const int ef_ambiDiff,
+  const int ef_use_SG,
+  const amrex::Array4<amrex::Real>& coe_cc
 #endif
 #ifdef PELEC_USE_EB
   ,

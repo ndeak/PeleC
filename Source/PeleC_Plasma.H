@@ -43,6 +43,7 @@
   static amrex::Real ef_electron_heating_pct;                // Percentage of electron energy that results in fast heating (treated as instantaneous)
   static int         ef_ambiDiff;                            // Use an ambipolar diffusion model for charged particle transport?
   static int         streamer_test;                          // Use model from "Comparison of six simulation codesfor positive streamers in air"
+  static int         ef_use_SG;                              // Use Scharfetter-Gummel scheme (1 for original, 2 for modified)
 
   // Transport options
   static int         ef_constEleTransport;                   // Use constant electron mobility (and diffusivity, via Einsten relation)

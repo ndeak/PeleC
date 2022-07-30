@@ -399,7 +399,8 @@ PeleC::getMOLSrcTerm(
 
 #ifdef PELEC_USE_PLASMA
       // Turn off explicit electron diffusion if doing implicit solve, as this gets added later
-      if (ef_use_nEDiffImp) {
+      // Also remove diffusion is using Scharfetter-Gummel scheme
+      if (ef_use_nEDiffImp || ef_use_SG) {
         setC(cbox, UFS+E_ID, UFS+E_ID+1, Dterm, 0.0);
         for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
           setC(eboxes[dir], UFS+E_ID, UFS+E_ID+1, flx[dir], 0.0);
@@ -488,7 +489,7 @@ PeleC::getMOLSrcTerm(
             cbox, qar, qauxar, flx, area_arr, dx, plm_iorder
 #ifdef PELEC_USE_PLASMA
             ,
-            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, ionFlux_eb_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, zero_bc_grad, ef_use_NLsolve, secondary_em_coef, electron_emit_const, ef_do_drift, ef_ambiDiff
+            sar, K_cc, E_cc, drift_cc, eon, E_edge_arr, ionFlux_arr, ionFlux_eb_arr, PhiVbc, geom, do_harmonic, ion_bc_type, zero_bc_flux, zero_bc_grad, ef_use_NLsolve, secondary_em_coef, electron_emit_const, ef_do_drift, ef_ambiDiff, ef_use_SG, coe_cc
 #endif
 #ifdef PELEC_USE_EB
             ,

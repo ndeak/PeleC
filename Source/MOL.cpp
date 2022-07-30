@@ -38,7 +38,9 @@ pc_compute_hyp_mol_flux(
   const amrex::Real secondary_em_coef,
   const amrex::Real electron_emit_const,
   const int ef_do_drift,
-  const int ef_ambiDiff
+  const int ef_ambiDiff,
+  const int ef_use_SG,
+  const amrex::Array4<amrex::Real>& coe_cc
 #endif
 #ifdef PELEC_USE_EB
   ,
@@ -309,6 +311,20 @@ pc_compute_hyp_mol_flux(
           // amrex::Real rhoetot = regd + 0.5 * tmp5 * (tmp0 * tmp0 + tmp1 * tmp1 + tmp2 * tmp2);
           // flux_tmp[UEDEN] = tmp0 * (rhoetot + tmp3); 
           // flux_tmp[UEINT] = tmp0 * regd;
+
+          // Overwrite electron flux with SG model if needed
+          // See Nguyen et al., High-order Scharfetter-Gummel-based schemes and applications to gas discharge modeling (2022)
+          if(ef_use_SG){
+            const amrex::Real* dx = geom.CellSize();
+            amrex::Real De = 0.5 * (coe_cc(i,j,k,dComp_rhoD + E_ID)/q(i, j, k, QRHO) + coe_cc(ii,jj,kk,dComp_rhoD + E_ID)/q(ii, jj, kk, QRHO));
+            amrex::Real alpha = (De > 0.0) ? c[E_ID] * dx[dir] * E_edge[dir](i,j,k) / De : 0.0;
+            amrex::Real B1 = (alpha != 0.0) ? alpha / (exp(alpha) - 1.0) : 0.0;
+            amrex::Real B2 = (alpha != 0.0) ? -alpha / (exp(-alpha) - 1.0) : 0.0;
+            amrex::Real me_k = q(ii, jj, kk, QFS + E_ID) * q(ii, jj, kk, QRHO); 
+            amrex::Real me_k1 = q(i, j, k, QFS + E_ID) * q(i, j, k, QRHO); 
+            flux_tmp[UFS+E_ID] = De / dx[dir] * (B1*me_k - B2*me_k1);
+          }
+
 #ifdef PELEC_USE_TWO_TEMP
           flux_tmp[UFX + 5] = (ustar + drift_tmp[E_ID] > 0.0) ? (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * uelel : (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * ueler;
           flux_tmp[UFX + 5] = (ustar + drift_tmp[E_ID] == 0.0)? (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * 0.5 * (uelel + ueler) : flux_tmp[UFX + 5];

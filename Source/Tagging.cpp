@@ -46,6 +46,9 @@ PeleC::read_tagging_params()
   pp.query("negraderr", tagging_parm->negraderr);
   pp.query("max_negrad_lev", tagging_parm->max_negrad_lev);
 
+  pp.query("neerr", tagging_parm->neerr);
+  pp.query("max_ne_lev", tagging_parm->max_ne_lev);
+
   pp.query("o4graderr", tagging_parm->o4graderr);
   pp.query("max_o4grad_lev", tagging_parm->max_o4grad_lev);
 

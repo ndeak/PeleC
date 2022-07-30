@@ -112,6 +112,7 @@ int PeleC::ef_ambiDiff = 0;
 int PeleC::ef_use_joule_heating = 1;
 int PeleC::ef_use_radiative_losses = 0;
 int PeleC::streamer_test = 0;
+int PeleC::ef_use_SG = 0;
 amrex::Real PeleC::ef_pulse_delay = 3.0e-9;
 amrex::Real PeleC::ef_pulse_rise = 5.0e-9;
 amrex::Real PeleC::ef_pulse_plateau = 12.0e-9;
@@ -2030,6 +2031,15 @@ PeleC::errorEst(
         amrex::ParallelFor(
           tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             tag_abserror(i, j, k, tag_arr, redEfield_arr, captured_efielderr, tagval);
+          });
+      }
+
+      // Tagging electron mass density level
+      if (level < tagging_parm->max_ne_lev) {
+        const amrex::Real captured_neerr = tagging_parm->neerr;
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_abserror(i, j, k, tag_arr, ne_arr, captured_neerr, tagval);
           });
       }
   
