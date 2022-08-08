@@ -362,7 +362,6 @@ pc_compute_hyp_mol_flux(
                 if(zero_bc_grad == 1){
                   flx[dir](i,j,k,UFS+n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
 #ifdef PELEC_USE_TWO_TEMP
-                  // TODO: Should there be a factor of 5/3 for this?
                   if(n == E_ID) flx[dir](i,j,k,UFX+5) = (5.0/3.0) * ueler * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
 #endif
                 }
@@ -414,7 +413,6 @@ pc_compute_hyp_mol_flux(
                 if(zero_bc_grad == 1){
                   flx[dir](i,j,k,UFS+n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
 #ifdef PELEC_USE_TWO_TEMP
-                  // TODO: Should there be a factor of 5/3 for this?
                   if(n == E_ID) flx[dir](i,j,k,UFX+5) = (5.0/3.0) * uelel * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
 #endif
                 }
@@ -606,6 +604,9 @@ pc_compute_hyp_mol_flux(
         if(!zero_bc_grad) flux_tmp[UFS + E_ID] -= 2.0 * secondary_em_coef * ionFlux * EFConst::me_cgs;
         // flux_tmp is directed into the EB, so positive values imply electrode losses, and vice versa
         for(int n = 0; n<NUM_SPECIES; n++) flux_tmp[UFS + n] *= -1.0;
+#ifdef PELEC_USE_TWO_TEMP
+        flux_tmp[UFX+5] *= -1.0;
+#endif
       }
 #endif
   

@@ -1026,12 +1026,13 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
             AMREX_D_DECL(dx1, dx2, dx3));
         });
-#ifdef PELEC_USE_TWO_TEMP
-      // Adjust by factor of 3/5 when including electron energy
-      estdt_hydro = amrex::min<amrex::Real>((3.0/5.0) * estdt_hydro, dt);
-#else
+// FIXME: do we need to adjust the cfl-limited time step size to account for the 5/3 electron energy factor?
+// #ifdef PELEC_USE_TWO_TEMP
+//       // Adjust by factor of 3/5 when including electron energy
+//       estdt_hydro = amrex::min<amrex::Real>( estdt_hydro, (3.0/5.0) * dt);
+// #else
       estdt_hydro = amrex::min<amrex::Real>(estdt_hydro, dt);
-#endif
+// #endif
     }
 
     if (diffuse_vel) {
