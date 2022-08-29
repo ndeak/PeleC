@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH -N 2
+#SBATCH -n 112
+#SBATCH -o myjob.%j.out
+#SBATCH -J PeleCPostProc
+#SBATCH -p development
+#SBATCH -A CTS21022
+#SBATCH -t 02:00:00
+
+module load gcc matlab
+
+module list
+pwd
+date
+
+#mpirun -np 111 /work2/04361/ndeak/stampede2/amrex-combustion/amrex/Tools/Plotfile//fextract.gnu.MPI.ex -s //work2/04361/ndeak/frontera/forked_PeleC/PeleC/Exec/pin-to-pin/6lev-300K-1atm-1phi-parabolicPinsFP-1p25mmh-50um-2p5mm-sigmoidPulse-12kVanode-2nsdt-2nsrt-1nspt-1MHz-PAC55MorrowIonCappedNegIonUpd-zeroGradBC/postproc-data/anode_radial_Data_05968.dat -c 3 -f 6 -d 0 -x 1 -y 0.325 -z 1 -v 'n(E) n(N2+) n(O2+) n(O2-) n(O-) n(O) n(OH) n(H) n(CO) n(CO2) n(H2O) n(C2H4) n(N2(v1)) n(N2(v2)) n(N2(v3)) n(N2(v4)) n(N2(v5)) n(N2(A3Sigma)) n(N2(B3Pi)) n(N2(C3Pi)) n(O2(a1Delta)) n(O2(b1Sigma)) n(O(1D)) pressure Temp phiV Efieldx Efieldy Efieldz' -e /scratch1/04361/ndeak/RERUN-pelec_data-6lev-300K-1atm-1phi-parabolicPinsFP-1p25mmh-50um-2p5mm-sigmoidPulse-12kVanode-2nsdt-2nsrt-1nspt-PAC55MorrowIonCappedNegIonUpd-zeroGradBC/plt05968
+
+matlab -nodesktop -nodisplay -nosplash < postprocess.m
+#matlab -nodisplay < postprocess.m
