@@ -27,6 +27,9 @@ namespace EFConst
 void 
 PeleC::plasma_init() 
 {
+
+    BL_PROFILE("PeleC::plasma_init()");
+
     amrex::Print() << " Init PLASMA solve options \n";
 
     // Params defaults
@@ -117,6 +120,8 @@ PeleC::plasma_init()
 }
 
 void PeleC::plasma_define_data() {
+
+   BL_PROFILE("PeleC::plasma_define_data()");
 
    // Define vector of PI source MFs so coarse BC data is available
    // if(level == 0){
@@ -225,6 +230,8 @@ void PeleC::plasma_define_data() {
 void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
                                   MultiFab &a_phiv,
                                   MultiFab *grad_phiV[AMREX_SPACEDIM]) {
+
+   BL_PROFILE("PeleC::ef_calcGradPhiV()");
 
    // Set-up Poisson operator
    LPInfo info;
@@ -561,6 +568,8 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
 void PeleC::ef_set_PoissonBC(std::array<LinOpBCType,AMREX_SPACEDIM> &mlmg_lobc,
                              std::array<LinOpBCType,AMREX_SPACEDIM> &mlmg_hibc) {
 
+    BL_PROFILE("PeleC::ef_set_PoissonBC()");
+
     const BCRec& bc = get_desc_lst()[State_Type].getBC(PhiV);
 
     for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
@@ -617,6 +626,8 @@ void PeleC::ef_set_PoissonBC(std::array<LinOpBCType,AMREX_SPACEDIM> &mlmg_lobc,
 // Setup BC conditions for linear Poisson solve on PhiV. Directly copied from the diffusion one ...
 void PeleC::ef_set_neBC(std::array<LinOpBCType,AMREX_SPACEDIM> &mlmg_lobc,
                         std::array<LinOpBCType,AMREX_SPACEDIM> &mlmg_hibc) {
+
+    BL_PROFILE("PeleC::ef_set_neBC()");
 
     const BCRec& bc = get_desc_lst()[State_Type].getBC(nE);
 
@@ -675,6 +686,8 @@ void PeleC::ef_set_neBC(std::array<LinOpBCType,AMREX_SPACEDIM> &mlmg_lobc,
 void PeleC::setBCPhiV(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
                       std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_hi) {
 
+   BL_PROFILE("PeleC::setBCPhiV()");
+
    const BCRec& bc = get_desc_lst()[State_Type].getBC(PhiV);
 
    for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
@@ -722,6 +735,8 @@ void PeleC::setBCPhiV(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
 void PeleC::setBCPI(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
                       std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_hi) {
 
+   BL_PROFILE("PeleC::setBCPI()");
+
    const BCRec& bc = get_desc_lst()[State_Type].getBC(PhiV);
 
    for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
@@ -767,6 +782,9 @@ void PeleC::setBCPI(std::array<LinOpBCType,AMREX_SPACEDIM> &linOp_bc_lo,
 
 // Set the voltage at a given time
 void PeleC::setCurrVoltage(Real time) {
+
+  BL_PROFILE("PeleC::setCurrVoltage()");
+
   amrex::Real pulse_sigma = pulse_fwhm / (2.0 * sqrt(2.0*log(2.0)));     // Pulse sigma
   amrex::Real pulse_time_tmp;
 

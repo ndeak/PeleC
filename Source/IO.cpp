@@ -1177,6 +1177,8 @@ void PeleC::writeDebugPlotFile(const amrex::Vector<const amrex::MultiFab*> &a_MF
 #ifdef PELEC_USE_PLASMA
 void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::Real dt, amrex::Real time, int i){
 
+  BL_PROFILE("PeleC::writeMonitorFile()");
+
   // ndeak addition - create monitor files for each level
   // Monitor file should output the following
   //    - Min and max n_E, n_O4+, n_O2-

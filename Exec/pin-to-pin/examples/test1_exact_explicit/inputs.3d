@@ -49,6 +49,7 @@ pelec.allow_small_energy = 1
 # Plasma variables
 pelec.ion_bc_type = 1             # ion BC type (0 -> weak efield BCs, 1 -> strong efield BCs)
 pelec.zero_bc_flux = 0             # Set to 1 to ignore electron and ion fluxes at the electrode boundaries
+pelec.zero_bc_grad = 1            # attempt to impose 0 gradient BCs at all electrode surfaces for charged particles
 pelec.secondary_em_coef = 0.05    # secondary electron emission coefficient
 pelec.pulse_freq = 1000.0e3            # pulse frequency (Hz)
 pelec.pulse_fwhm = 10.0e-9             # pulse FWHM (s)
@@ -57,21 +58,21 @@ pelec.pulse_timing = 0.0          # timing of the first pulse peak (s)
 pelec.pulse_num = 1              # number of pulses
 pelec.pulse_dt = 1.0e-11           # dt around each pulse (s)
 ef.use_nonLinearSolve = 0     
-ef.Poisson_tol = 1.0e-12
+ef.Poisson_tol = 1.0e-10
 ef.noSpaceCharge = 0              # Solve Poisson problem without space charge effects
 ef.constVoltage = 1              # Use a constant applied (equal to the pulse_peak value)
 ef.do_photoionization = 0
-ef.use_nEDiffImp = 0
+ef.use_nEDiffImp = 1
 
 # WHICH PHYSICS
 pelec.do_hydro = 1
 pelec.do_mol = 1
-pelec.do_react = 0
+pelec.do_react = 1
 pelec.diffuse_temp = 1
 pelec.diffuse_vel  = 1
 pelec.diffuse_spec = 1
 pelec.diffuse_enth = 1
-ef.semiImpEfield = 1
+ef.semiImpEfield = 0
 ef.streamer_test = 1
 
 # TIME STEP CONTROL
@@ -80,7 +81,7 @@ pelec.cfl            = 0.3     # cfl number for hyperbolic system
 pelec.init_shrink    = 1.0    # scale back initial timestep
 pelec.change_max     = 1.05     # maximum increase in dt over successive steps
 #pelec.fixed_dt = 1.0e-12
-pelec.max_dt = 1.0e-11
+pelec.max_dt = 1.0e-12
 
 # DIAGNOSTICS & VERBOSITY
 pelec.sum_interval   = 1       # timesteps between computing mass
@@ -90,7 +91,7 @@ ef.Poisson_verbose      = 0
 #amr.grid_log         = grdlog  # name of grid logging file
 
 # REFINEMENT / REGRIDDING
-amr.max_level       = 6       # maximum level number allowed
+amr.max_level       = 7       # maximum level number allowed
 amr.ref_ratio       = 2 2 2 2 # refinement ratio
 amr.regrid_int      = 2       # how often to regrid
 amr.blocking_factor = 8       # block factor in grid generation
@@ -98,11 +99,11 @@ amr.max_grid_size   = 64
 amr.subcycling_mode = None
 
 # TAGGING
-tagging.efielderr = 50
-tagging.max_efield_lev = 0
+tagging.efielderr = 300
+tagging.max_efield_lev = 6
 tagging.negraderr = 1.0e-16
 tagging.max_negrad_lev = 0
-tagging.o4graderr = 3.0e-12
+tagging.o4graderr = 1.0e-10
 tagging.max_o4grad_lev = 10
 tagging.efieldgraderr = 10.0
 tagging.max_efieldgrad_lev = 0
@@ -111,14 +112,14 @@ tagging.plasma_channel_lev = 0
 tagging.pin_tip_lev = 0
 
 # CHECKPOINT FILES
-amr.checkpoint_files_output = 0
+amr.checkpoint_files_output = 1
 amr.check_file      = chk      # root name of checkpoint file
-amr.check_int       = 100       # number of timesteps between checkpoints
+amr.check_per        = 0.5e-9
 
 # PLOTFILES
 amr.plot_files_output = 1
 amr.plot_file       = plt
-amr.plot_int        = 100
+amr.plot_per        = 1.0e-9
 #amr.derive_plot_vars=pressure x_velocity y_velocity z_velocity vfrac
 amr.derive_plot_vars = pressure
 amr.plot_vars  =  density Temp rho_E rho_e phiV nE Efieldx Efieldy Efieldz

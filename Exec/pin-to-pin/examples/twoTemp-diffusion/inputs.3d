@@ -1,6 +1,6 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
-max_step = 10
-stop_time = 1.0e-8
+max_step = 1000000
+stop_time = 1.0e-6
 
 # PROBLEM SIZE & GEOMETRY
 geometry.is_periodic =  0  1  0
@@ -43,7 +43,7 @@ pelec.pulse_peak = 0.0e7        # peak potential of the driven electrode (erg/C)
 #pelec.pulse_peak = 0.0        # peak potential of the driven electrode (erg/C)
 pelec.pulse_timing = 10.0e-9          # timing of the first pulse peak (s)
 pelec.pulse_num = 3              # number of pulses
-pelec.pulse_dt = 1.0e-12         # dt around each pulse (s)
+pelec.pulse_dt = 1.0e-11         # dt around each pulse (s)
 ef.use_nonLinearSolve = 0       
 ef.sigmoid_pulse = 1         # Use sigmoid pulse with rise time = fwhm
 ef.pulse_delay = 2.0e-9
@@ -51,7 +51,7 @@ ef.pulse_rise = 2.0e-9
 ef.pulse_plateau = 1.0e-9
 
 # WHICH PHYSICS
-pelec.do_hydro = 0
+pelec.do_hydro = 1
 pelec.do_mol = 1
 pelec.do_react = 0
 pelec.diffuse_temp = 0
@@ -67,6 +67,7 @@ ef.semiImpEfield = 1
 ef.ion_rate_type = 1
 pelec.add_ext_src = 0           # turns on joule heating
 ef.relax_eleDiff = 0
+# ef.use_nEDiffImp = 1
 
 # TRANSPORT (constant values consistent w E/N ~ 200 Td)
 # ef.constEleTransport = 1        # Use constant electron mobility (and diffusivity, via Einsten relation)
@@ -78,7 +79,7 @@ pelec.dt_cutoff      = 5.e-20  # level 0 timestep below which we halt
 pelec.cfl            = 0.27     # cfl number for hyperbolic system
 pelec.init_shrink    = 0.8    # scale back initial timestep
 pelec.change_max     = 1.05     # maximum increase in dt over successive steps
-pelec.fixed_dt = 1.0e-12
+pelec.fixed_dt = 1.0e-10
 #pelec.max_dt = 1.0e-13
 
 # DIAGNOSTICS & VERBOSITY
@@ -88,7 +89,7 @@ amr.v                = 1       # verbosity in Amr.cpp
 #amr.grid_log         = grdlog  # name of grid logging file
 
 # REFINEMENT / REGRIDDING
-amr.max_level       = 1       # maximum level number allowed
+amr.max_level       = 3       # maximum level number allowed
 amr.ref_ratio       = 2 2 2 2 # refinement ratio
 amr.regrid_int      = 2       # how often to regrid
 amr.blocking_factor = 8       # block factor in grid generation
@@ -119,9 +120,9 @@ amr.check_per       = 1.0e-8       # amount of time between checkpoints
 
 # PLOTFILES
 amr.plot_files_output = 1
-amr.plot_file       = plt
+amr.plot_file       = alt_plt
 #amr.plot_int        = 100
-amr.plot_per        = 1.0e-9
+amr.plot_per        = 1.0e-8
 amr.derive_plot_vars = pressure
 amr.plot_vars  =  density Temp rho_E rho_e phiV nE Efieldx Efieldy Efieldz Uele Tele
 pelec.plot_massfrac = false

@@ -2101,8 +2101,13 @@ PeleC::errorEst(
             amrex::Real x = problo[0] + (i + 0.5)*dx[0];
             amrex::Real y = problo[1] + (j + 0.5)*dx[1];
             amrex::Real z = problo[2] + (k + 0.5)*dx[2];
+            amrex::Real pchannel_top = tagging_parm->plasma_channel_top;
+            amrex::Real pchannel_bottom = tagging_parm->plasma_channel_bottom;
+            amrex::Real pchannel_r0 = tagging_parm->plasma_channel_r0;
+            amrex::Real tipr = tagging_parm->pin_tip_rad;
+            amrex::Real tiph = tagging_parm->pin_tip_h;
             tag_pin_tips(
-              i, j, k, x, y, z, tag_arr, tagval);
+              i, j, k, x, y, z, pchannel_top, pchannel_bottom, pchannel_r0, tipr, tiph, tag_arr, tagval);
           });
       }
 #ifdef PELEC_USE_TWO_TEMP

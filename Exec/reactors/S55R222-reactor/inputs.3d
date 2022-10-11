@@ -1,6 +1,6 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
 max_step = 100000
-stop_time = 100.0
+stop_time = 1.0e-6
 
 # PROBLEM SIZE & GEOMETRY
 geometry.is_periodic =  1 0  1
@@ -27,20 +27,27 @@ ode.implicit_solve = 1
 ode.analytical_jacobian = 0
 #cvode.solve_type = "dense"
 cvode.solve_type = "GMRES"
+pelec.allow_negative_energy = 1
+pelec.allow_small_energy = 1
+pelec.add_ext_src = 1
 
 # Plasma variables
 pelec.ion_bc_type = 1             # ion BC type (0 -> weak efield BCs, 1 -> strong efield BCs)
 pelec.secondary_em_coef = 0.05    # secondary electron emission coefficient
 pelec.pulse_freq = 1000.0e3            # pulse frequency (Hz)
-pelec.pulse_fwhm = 15.0e-9             # pulse FWHM (s)
-pelec.pulse_peak = -14000.0e7        # peak potential of the driven electrode (erg/C)
+pelec.pulse_fwhm = 10.0e-9             # pulse FWHM (s)
+pelec.pulse_peak = 20000.0e7        # peak potential of the driven electrode (erg/C)
 #pelec.pulse_peak = 0.0        # peak potential of the driven electrode (erg/C)
 pelec.pulse_timing = 10.0e-9          # timing of the first pulse peak (s)
 #pelec.pulse_timing = 0.0e-9          # timing of the first pulse peak (s)
-pelec.pulse_num = 2              # number of pulses
+pelec.pulse_num = 5              # number of pulses
 pelec.pulse_dt = 1.0e-12           # dt around each pulse (s)
 ef.use_nonLinearSolve = 0       
 ef.constVoltage = 0              # Use a constant applied (equal to the pulse_peak value)
+ef.sigmoid_pulse = 1
+ef.pulse_delay = 2.0e-9
+ef.pulse_rise = 2.0e-9
+ef.pulse_plateau = 1.0e-9
 
 # WHICH PHYSICS
 pelec.do_hydro = 0
@@ -79,16 +86,20 @@ amr.subcycling_mode = None
 # CHECKPOINT FILES
 amr.checkpoint_files_output = 1
 amr.check_file      = chk      # root name of checkpoint file
-amr.check_int       = 1000       # number of timesteps between checkpoints
+amr.check_per       = 1.0e-6       # amount of time between checkpoints
 
 # PLOTFILES
 amr.plot_files_output = 0
 amr.plot_file       = plt
-amr.plot_int        = 100
-amr.derive_plot_vars=ALL
-pelec.plot_massfrac = true
+amr.plot_per        = 1.0e-9
+amr.derive_plot_vars = pressure
+amr.plot_vars  =  density Temp rho_E rho_e phiV nE Efieldx Efieldy Efieldz
+pelec.plot_massfrac = false
+pelec.plot_vfrac = true
+pelec.plot_rhoy = false
+ef.plot_numdens = true
 pelec.monitor_file = true
-ef.pac_mechanism = true
+ef.pac_mechanism = 1            # 1 for original PAC mechanism, 2 for PAC mechanism with negative ions
 
 prob.p = 1013250.0
 prob.rho = 0.0011719
@@ -98,6 +109,11 @@ prob.Re_L = 1.0
 prob.Pr = 0.7
 #prob.phiV_bottom = 24463.e7
 prob.phiV_bottom = 12231.e7
+
+# Cylindrical pin-to-pin geometry
+eb2.use_eb2 = 1
+eb2.geom_type = all_regular
+ebd.boundary_grad_stencil_type = 0
 
 #fabarray.mfiter_tile_size = 1024 1024 1024
 amrex.fpe_trap_invalid = 1

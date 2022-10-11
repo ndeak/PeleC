@@ -47,6 +47,46 @@ struct PhiVFill
     }
 };
 
+struct neFill
+{
+  ProbParmDevice const* lprobparm;
+
+  AMREX_GPU_HOST
+  constexpr neFill(ProbParmDevice const* d_prob_parm)
+    : lprobparm(d_prob_parm)
+  {
+  }
+    AMREX_GPU_DEVICE
+    void operator() (const amrex::IntVect& iv, amrex::Array4<amrex::Real> const& dest,
+                     const int dcomp, const int numcomp,
+                     amrex::GeometryData const& geom, const amrex::Real time,
+                     const amrex::BCRec* bcr, const int bcomp,
+                     const int orig_comp) const
+    {
+       const int* domlo = geom.Domain().loVect();
+       const int* domhi = geom.Domain().hiVect();
+       const amrex::Real* dx = geom.CellSize();
+       const amrex::Real x[AMREX_SPACEDIM] = {AMREX_D_DECL(
+         domlo[0] + (iv[0] + 0.5) * dx[0], domlo[1] + (iv[1] + 0.5) * dx[1],
+         domlo[2] + (iv[2] + 0.5) * dx[2])};
+       const int* bc = bcr->data();
+
+       amrex::Real s_int[NVAR] = {0.0};
+       amrex::Real s_ext[NVAR] = {0.0};
+
+       for (int idir = 0; idir < AMREX_SPACEDIM; idir++) {
+          if ((bc[idir] == amrex::BCType::ext_dir) and (iv[idir] < domlo[idir])) {
+             bcnormal(x, s_int, s_ext, idir, +1, time, geom, *lprobparm);
+             dest(iv, dcomp) = s_ext[UFS+E_ID];
+          }
+          if ((bc[idir + AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[idir] > domhi[idir])) {
+             bcnormal(x, s_int, s_ext, idir, -1, time, geom, *lprobparm);
+             dest(iv, dcomp) = s_ext[UFS+E_ID];
+          }
+       }
+    }
+};
+
 struct nEFill
 {
   ProbParmDevice const* lprobparm;

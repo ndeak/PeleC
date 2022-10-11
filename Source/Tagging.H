@@ -61,6 +61,8 @@ struct TaggingParm
   amrex::Real plasma_channel_rmax = 0.1;
 
   int pin_tip_lev = 0;
+  amrex::Real pin_tip_rad = 0.05;
+  amrex::Real pin_tip_h = 0.1;
 #ifdef PELEC_USE_TWO_TEMP
   amrex::Real Telegraderr = 1.0e10;
   int max_Telegrad_lev = 10;
@@ -198,12 +200,17 @@ tag_pin_tips(
   amrex::Real x,
   amrex::Real y,
   amrex::Real z, 
+  amrex::Real channel_top,
+  amrex::Real channel_bottom,
+  amrex::Real channel_r0,
+  amrex::Real pin_tip_rad,
+  amrex::Real pin_tip_h,
   amrex::Array4<char> const& tag,
   char tagval) noexcept
 {
   // Tag pin tip region (hard code for time being)
-  amrex::Real r = sqrt((x-0.25)*(x-0.25) + (z-0.25)*(z-0.25));
-  if (r < 0.01 && ((y > 0.095 && y < 0.105) || (y > 0.395 && y < 0.405)) )
+  amrex::Real r = sqrt((x-channel_r0)*(x-channel_r0) + (z-channel_r0)*(z-channel_r0));
+  if (r < pin_tip_rad && ( (y > channel_bottom-0.005 && y < channel_bottom + pin_tip_h - 0.005) || (y > channel_top-pin_tip_h+0.005 && y < channel_top+0.005)) )
   {
     tag(i, j, k) = tagval;
   }

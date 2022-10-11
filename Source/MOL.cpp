@@ -279,6 +279,7 @@ pc_compute_hyp_mol_flux(
                 ? tmp5 * (tmp0 + drift_tmp[n]) * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
                 : flux_tmp[UFS + n];
 
+            // FIXME: We should not be modifying the momentum flux in this way 
             flux_tmp[f_idx[0]] +=
               (ustar + drift_tmp[n] == 0.0)
                 ? tmp5 * pow((tmp0 + drift_tmp[n]), 2) * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
@@ -300,6 +301,7 @@ pc_compute_hyp_mol_flux(
           // TODO: do the velocity components that are not orthogonal to the cell 
           // face also need to be updated with appropriate drift components?
           // flux_tmp[f_idx[0]] +=  flux_tmp[URHO] * tmp0 + tmp3;
+          // FIXME: We should not be modifying the momentum flux in this way 
           flux_tmp[f_idx[0]] +=  tmp3;
           flux_tmp[f_idx[1]] = flux_tmp[URHO] * tmp1;
           flux_tmp[f_idx[2]] = flux_tmp[URHO] * tmp2;

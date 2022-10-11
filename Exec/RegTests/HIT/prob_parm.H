@@ -9,21 +9,14 @@ struct ProbParmDevice
 {
   bool binfmt = false;
   bool restart = false;
-  amrex::Real lambda0 = 0.5;
-  amrex::Real reynolds_lambda0 = 100.0;
-  amrex::Real mach_t0 = 0.1;
-  amrex::Real prandtl = 0.71;
   int inres = 0;
   amrex::Real uin_norm = 1.0;
   amrex::Real L_x = 0.0;
   amrex::Real L_y = 0.0;
   amrex::Real L_z = 0.0;
   amrex::Real Linput = 0.0;
-  amrex::Real k0 = 0.0;
   amrex::Real rho0 = 0.0;
-  amrex::Real urms0 = 0.0;
-  amrex::Real tau = 0.0;
-  amrex::Real p0 = 1.013e6; // [erg cm^-3]
+  amrex::Real p = 1.013e6; // [erg cm^-3]
   amrex::Real T0 = 300.0;
   amrex::Real eint0 = 0.0;
   amrex::Real* d_xinput = nullptr;
@@ -32,10 +25,9 @@ struct ProbParmDevice
   amrex::Real* d_winput = nullptr;
   amrex::Real* d_xarray = nullptr;
   amrex::Real* d_xdiff = nullptr;
-  amrex::Real forcing_u0 = 0.0;
-  amrex::Real forcing_v0 = 0.0;
-  amrex::Real forcing_w0 = 0.0;
-  amrex::Real forcing_force = 0.0;
+  amrex::Real PhiV_top = 0.0;
+  amrex::Real PhiV_bottom = 0.0;
+  amrex::GpuArray<amrex::Real, NUM_SPECIES> massfrac = {{1.0}};
 };
 
 struct ProbParmHost

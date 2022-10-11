@@ -12,7 +12,7 @@ MEM_PROFILE = FALSE
 USE_GPROF = FALSE
 
 # Performance
-USE_MPI = FALSE
+USE_MPI = TRUE
 USE_OMP = FALSE
 USE_CUDA = FALSE
 USE_HIP = FALSE
@@ -24,12 +24,17 @@ FSANITIZER = FALSE
 THREAD_SANITIZER = FALSE
 
 # PeleC
-USE_REACT = FALSE
-USE_FORCING = TRUE
-USE_EB = FALSE
-Eos_Model := GammaLaw
-Transport_Model := Constant
-Chemistry_Model := Null
+USE_REACT = TRUE
+USE_SUNDIALS_PP = TRUE
+USE_ARKODE_PP = FALSE
+USE_CVODE_PP = TRUE
+USE_PLASMA = TRUE
+USE_FORCING = FALSE
+USE_EB = TRUE
+Eos_Model := Fuego
+Reactor_dir := Fuego/CPU/cvode
+Transport_Model := Simple
+Chemistry_Model := PlasmaAir-temp
 
 # GNU Make
 Bpack := ./Make.package

@@ -53,6 +53,8 @@ PeleC::fill_ext_source(
   int ng)
 {
 
+  BL_PROFILE("PeleC::get_JH()");
+
   // Joule heating of the gas due to the movement of ions
   // Option to include portion of electron heating as well to mimic fast heating
   // Source term calculated as S_{jh} = - e \sum_k z_k \Gamma_k . E
