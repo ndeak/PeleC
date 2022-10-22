@@ -1,8 +1,6 @@
 #include <PeleC.H>
 #include <AMReX_MLABecLaplacian.H>
-#ifdef AMREX_USE_EB
 #include <AMReX_MLEBABecLap.H>
-#endif
 #include <Plasma_K.H>
 #include <PlasmaBCFill.H>
 #include <Plasma.H>
@@ -133,36 +131,32 @@ PeleC::solveEF ( Real time,
       vol *= geom.CellSize()[dir];
     }
 
-    for (MFIter mfi(chargeDistrib,true); mfi.isValid(); ++mfi)
-    {   
-        const Box& bx = mfi.tilebox();
-        const auto& chrg_ar = chargeDistrib.array(mfi);
-        const auto& sec_x_ar = spec_edge_mfs[0]->array(mfi);
-        const auto& sec_y_ar = spec_edge_mfs[1]->array(mfi);
-        const auto& sec_z_ar = spec_edge_mfs[2]->array(mfi);
-#ifdef PELEC_USE_EB
-        const auto& vf = vfrac.array(mfi);
-#endif
-        const amrex::Real volinv = 1.0 / vol;
-        Real        factor = -1.0 * EFConst::elemCharge / ( EFConst::eps0_cgs  * EFConst::epsr);
-        amrex::ParallelFor(bx,
-        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-        {
-          for(int n = 0; n<NUM_SPECIES; n++){
+    if(diffuse_spec){
+      for (MFIter mfi(chargeDistrib,true); mfi.isValid(); ++mfi)
+      {   
+          const Box& bx = mfi.tilebox();
+          const auto& chrg_ar = chargeDistrib.array(mfi);
+          const auto& sec_x_ar = spec_edge_mfs[0]->array(mfi);
+          const auto& sec_y_ar = spec_edge_mfs[1]->array(mfi);
+          const auto& sec_z_ar = spec_edge_mfs[2]->array(mfi);
+          const auto& vf = vfrac.array(mfi);
+          const amrex::Real volinv = 1.0 / vol;
+          Real        factor = -1.0 * EFConst::elemCharge / ( EFConst::eps0_cgs  * EFConst::epsr);
+          amrex::ParallelFor(bx,
+          [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+          {
+            for(int n = 0; n<NUM_SPECIES; n++){
 
-#ifdef PELEC_USE_EB
-            const amrex::Real kappa_inv = 1.0 / amrex::max<amrex::Real>(vf(i,j,k), 1.0e-12);
-#else
-            const amrex::Real kappa_inv = 1.0;
-#endif
-            amrex::Real difftemp =
-              -(AMREX_D_TERM(
-                sec_x_ar(i+1,j,k,n) - sec_x_ar(i,j,k,n), +sec_y_ar(i,j+1,k,n) - sec_y_ar(i,j,k,n),
-                +sec_z_ar(i,j,k+1,n) - sec_z_ar(i,j,k,n)))  * volinv * kappa_inv;;
+              const amrex::Real kappa_inv = (eb_in_domain) ? 1.0 / amrex::max<amrex::Real>(vf(i,j,k), 1.0e-12):1.0;
+              amrex::Real difftemp =
+                -(AMREX_D_TERM(
+                  sec_x_ar(i+1,j,k,n) - sec_x_ar(i,j,k,n), +sec_y_ar(i,j+1,k,n) - sec_y_ar(i,j,k,n),
+                  +sec_z_ar(i,j,k+1,n) - sec_z_ar(i,j,k,n)))  * volinv * kappa_inv;;
 
-             chrg_ar(i,j,k) -= factor * dt * zk_num[n] * difftemp;
-          }
-        }); 
+               chrg_ar(i,j,k) -= factor * dt * zk_num[n] * difftemp;
+            }
+          }); 
+      }
     }
   }
 
@@ -179,12 +173,8 @@ PeleC::solveEF ( Real time,
    info.setMetricTerm(false);
 
 // Linear operator (EB aware if need be)
-#ifdef AMREX_USE_EB
     const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
     MLEBABecLap poissonOP({geom}, {grids}, {dmap}, info, {ebf});
-#else
-    MLABecLaplacian poissonOP({geom}, {grids}, {dmap}, info);
-#endif
 
    poissonOP.setMaxOrder(2);
 
@@ -220,7 +210,7 @@ PeleC::solveEF ( Real time,
   
        // TODO: may be more concise to use FluxBoxes, cellcenter_to_face, and MutliFab Mutliply utility functions...
        //       going with uglier approach for now
-       if(ef_semiImpEfield == 1 && ef_noSpaceCharge == 0){
+       if(ef_semiImpEfield == 1 && ef_noSpaceCharge == 0 && ef_do_drift){
           for (MFIter mfi(bcoef[idim],true); mfi.isValid(); ++mfi)
           {   
               const Box& bx = mfi.tilebox();
@@ -267,7 +257,6 @@ PeleC::solveEF ( Real time,
    // set Dirichlet BC for EB
 	// TODO : for now set upper y-dir half to X and lower y-dir to 0
 	//        will have to find a better way to specify EB dirich values 
-#ifdef AMREX_USE_EB
    MultiFab phiV_BC(grids, dmap, 1, 0, MFInfo(), Factory());
    MultiFab beta(grids, dmap, 1, 0, MFInfo(), Factory());
    beta.setVal(1.0);
@@ -318,7 +307,6 @@ PeleC::solveEF ( Real time,
    // }
 
    poissonOP.setEBDirichlet(0,phiV_BC,beta);
-#endif
 
 // If need be, visualize the charge distribution.    
 //   VisMF::Write(phiV_BC,"EBDirichPhiV_"+std::to_string(level));
@@ -386,11 +374,7 @@ PeleC::solveEF ( Real time,
    // By default they are scaled by (EB area/uncut cell face area) 
 
    Efield_edge = {AMREX_D_DECL(gradPhiV[0], gradPhiV[1], gradPhiV[2])};
-#ifdef PELEC_USE_EB
    EB_average_face_to_cellcenter(Efield, 0, Efield_edge);
-#else
-   average_face_to_cellcenter(Efield, 0, Efield_edge);
-#endif
 
   // Copy Efield cell-center values into State variable MF for plotting (TODO : probably better way to do this...)
   for (amrex::MFIter mfi(Ucurr, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
@@ -454,12 +438,8 @@ PeleC::gapCapacitance (Real time)
    info.setMetricTerm(false);
 
 // Linear operator (EB aware if need be)
-#ifdef AMREX_USE_EB
     const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
     MLEBABecLap poissonOP({geom}, {grids}, {dmap}, info, {ebf});
-#else
-    MLABecLaplacian poissonOP({geom}, {grids}, {dmap}, info);
-#endif
 
    poissonOP.setMaxOrder(2);
 
@@ -500,7 +480,6 @@ PeleC::gapCapacitance (Real time)
    // set Dirichlet BC for EB
 	// TODO : for now set upper y-dir half to X and lower y-dir to 0
 	//        will have to find a better way to specify EB dirich values 
-#ifdef AMREX_USE_EB
    MultiFab phiV_BC(grids, dmap, 1, 0, MFInfo(), Factory());
    MultiFab beta(grids, dmap, 1, 0, MFInfo(), Factory());
    beta.setVal(1.0);
@@ -529,7 +508,6 @@ PeleC::gapCapacitance (Real time)
    }
 
    poissonOP.setEBDirichlet(0,phiV_BC,beta);
-#endif
 
 /////////////////////////////////////   
 // Setup a MG solver
@@ -578,11 +556,7 @@ PeleC::gapCapacitance (Real time)
    // By default they are scaled by (EB area/uncut cell face area) 
 
    Efield_edge = {AMREX_D_DECL(gradPhiV[0], gradPhiV[1], gradPhiV[2])};
-#ifdef PELEC_USE_EB
    EB_average_face_to_cellcenter(Efield_L_p2, 0, Efield_edge);
-#else
-   average_face_to_cellcenter(Efield_L_p2, 0, Efield_edge);
-#endif
 
   // Dotting Efield with itself before performing integration
   for (amrex::MFIter mfi(Efield_L_p2, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {

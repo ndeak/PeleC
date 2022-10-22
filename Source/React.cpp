@@ -1,7 +1,33 @@
-#include "React.H"
 #ifdef PELEC_USE_PLASMA
 #include <Plasma.H>
 #endif
+#include <AMReX_FArrayBox.H>
+
+#include "IndexDefines.H"
+#include "PelePhysics.H"
+#include "PeleC.H"
+
+void
+PeleC::set_typical_values_chem()
+{
+  if (use_typical_vals_chem_usr) {
+    reactor->set_typ_vals_ode(typical_values_chem_usr);
+  } else {
+    const amrex::MultiFab& S_new = get_new_data(State_Type);
+    amrex::Real minTemp = S_new.min(UTEMP);
+    amrex::Real maxTemp = S_new.max(UTEMP);
+    amrex::Vector<amrex::Real> typical_values_chem(NUM_SPECIES + 1, 1e-10);
+
+    for (int sp = 0; sp < NUM_SPECIES; sp++) {
+      amrex::Real rhoYs_min = S_new.min(UFS + sp);
+      amrex::Real rhoYs_max = S_new.max(UFS + sp);
+      typical_values_chem[sp] = amrex::max<amrex::Real>(
+        0.5 * (rhoYs_min + rhoYs_max), typical_rhoY_val_min);
+    }
+    typical_values_chem[NUM_SPECIES] = 0.5 * (minTemp + maxTemp);
+    reactor->set_typ_vals_ode(typical_values_chem);
+  }
+}
 
 void
 PeleC::react_state(
@@ -17,7 +43,7 @@ PeleC::react_state(
 
   AMREX_ASSERT(do_react == 1);
 
-  if (verbose && amrex::ParallelDescriptor::IOProcessor()) {
+  if ((verbose != 0) && amrex::ParallelDescriptor::IOProcessor()) {
     if (react_init) {
       amrex::Print() << "... Initializing reactions, using interval dt = " << dt
                      << std::endl;
@@ -65,7 +91,7 @@ PeleC::react_state(
     }
 
     // S_new = S_old + dt*(non reacting source terms)
-    amrex::MultiFab& S_old = get_old_data(State_Type);
+    const amrex::MultiFab& S_old = get_old_data(State_Type);
     amrex::MultiFab::Copy(S_new, S_old, 0, 0, NVAR, ng);
     amrex::MultiFab::Saxpy(S_new, dt, *non_react_src, 0, 0, NVAR, ng);
   }
@@ -91,7 +117,7 @@ PeleC::react_state(
   dummyMask.setVal(1);
 
   if (!react_init) {
-    amrex::MultiFab& S_old = get_old_data(State_Type);
+    const amrex::MultiFab& S_old = get_old_data(State_Type);
     amrex::MultiFab::Copy(STemp, S_old, UFS, 0, NUM_SPECIES, STemp.nGrow());
     amrex::MultiFab::Copy(STemp, S_old, UTEMP, NUM_SPECIES, 1, STemp.nGrow());
     amrex::MultiFab::Copy(
@@ -111,11 +137,9 @@ PeleC::react_state(
   amrex::MultiFab::Copy(
     extsrc_rY, *non_react_src, UFS, 0, NUM_SPECIES, STemp.nGrow());
 
-#ifdef PELEC_USE_EB
   auto const& fact =
     dynamic_cast<amrex::EBFArrayBoxFactory const&>(S_new.Factory());
   auto const& flags = fact.getMultiEBCellFlagFab();
-#endif
 
 #ifdef PELEC_USE_PLASMA
           amrex::Real mwt[NUM_SPECIES] = {0.0};
@@ -123,7 +147,7 @@ PeleC::react_state(
           eos.molecular_weight(mwt);
 #endif
 
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
   {
@@ -147,11 +171,8 @@ PeleC::react_state(
 
       // only update beyond first step
       // TODO: Update here? Or just get reaction source?
-      const int do_update = react_init ? 0 : 1;
+      const bool do_update = !react_init;
 
-      const int captured_clean_massfrac = clean_massfrac;
-
-#ifdef PELEC_USE_EB
       const auto& flag_fab = flags[mfi];
       amrex::FabType typ = flag_fab.getType(bx);
       if (typ == amrex::FabType::covered) {
@@ -162,192 +183,157 @@ PeleC::react_state(
         }
         continue;
       }
-      if (typ == amrex::FabType::singlevalued || typ == amrex::FabType::regular)
-#endif
-      {
-        if (chem_integrator == 1) {
-          // for rk64 we set minimum, maximum and guess
-          // number of sub-iterations
-#ifdef PELEC_USE_PLASMA
-          if (ef_use_NLsolve || ef_use_nEimplicit) {
-             amrex::Abort("Explicit chemistry not implemented with non-linear solve");
-          }
-#endif
-          const int nsubsteps_min = adaptrk_nsubsteps_min;
-          const int nsubsteps_max = adaptrk_nsubsteps_max;
-          const int nsubsteps_guess = adaptrk_nsubsteps_guess;
+      if (
+        (typ == amrex::FabType::singlevalued) ||
+        (typ == amrex::FabType::regular)) {
+        amrex::Real wt =
+          amrex::ParallelDescriptor::second(); // timing for each fab
 
-          // for rk64 we set the error tolerance
-          const amrex::Real errtol = adaptrk_errtol;
+        amrex::Real current_time = 0.0;
 
-          amrex::ParallelFor(
-            bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-              pc_expl_reactions(
-                i, j, k, sold_arr, snew_arr, nonrs_arr, I_R
-#ifdef PELEC_USE_PLASMA
-                , eon, pi_source
-#endif
-                , dt, nsubsteps_min,
-                nsubsteps_max, nsubsteps_guess, errtol, do_update,
-                captured_clean_massfrac);
-            });
-        } else if (chem_integrator == 2) {
-          amrex::Real wt =
-            amrex::ParallelDescriptor::second(); // timing for each fab
-
-          amrex::Real current_time = 0.0;
-
-          auto const& rhoY = STemp.array(mfi);
-          auto const& T = STemp.array(mfi, NUM_SPECIES);
-          auto const& rhoE = STemp.array(mfi, NUM_SPECIES + 1);
-          auto const& frcExt = extsrc_rY.array(mfi);
-          auto const& frcEExt = extsrc_rE.array(mfi);
+        auto const& rhoY = STemp.array(mfi);
+        auto const& T = STemp.array(mfi, NUM_SPECIES);
+        auto const& rhoE = STemp.array(mfi, NUM_SPECIES + 1);
+        auto const& frcExt = extsrc_rY.array(mfi);
+        auto const& frcEExt = extsrc_rE.array(mfi);
 #ifdef PELEC_USE_TWO_TEMP
-          auto const& Ue = STemp.array(mfi, NUM_SPECIES + 2);
-          auto const& frcUeleExt = extsrc_Uele.array(mfi);
+        auto const& Ue = STemp.array(mfi, NUM_SPECIES + 2);
+        auto const& frcUeleExt = extsrc_Uele.array(mfi);
 #endif
-          auto const& mask = dummyMask.array(mfi);
-          auto const& fc = fctCount.array(mfi);
+        auto const& mask = dummyMask.array(mfi);
+        auto const& fc = fctCount.array(mfi);
 
-          amrex::ParallelFor(
-            bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-              // work on old state
-              amrex::Real rhou = sold_arr(i, j, k, UMX);
-              amrex::Real rhov = sold_arr(i, j, k, UMY);
-              amrex::Real rhow = sold_arr(i, j, k, UMZ);
-              amrex::Real rho_old = sold_arr(i, j, k, URHO);
-              amrex::Real rhoInv = 1.0 / rho_old;
+        amrex::ParallelFor(
+          bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            // work on old state
+            amrex::Real rhou = sold_arr(i, j, k, UMX);
+            amrex::Real rhov = sold_arr(i, j, k, UMY);
+            amrex::Real rhow = sold_arr(i, j, k, UMZ);
+            amrex::Real rho_old = sold_arr(i, j, k, URHO);
+            amrex::Real rhoInv = 1.0 / rho_old;
 
-              amrex::Real e_old =
-                (sold_arr(i, j, k, UEDEN) // total energy
-                 -
-                 0.5 * (rhou * rhou + rhov * rhov + rhow * rhow) * rhoInv) // KE
-                * rhoInv;
+            amrex::Real e_old =
+              (sold_arr(i, j, k, UEDEN) // total energy
+               - 0.5 * (rhou * rhou + rhov * rhov + rhow * rhow) * rhoInv) // KE
+              * rhoInv;
 
-              // work on new state
-              rhou = snew_arr(i, j, k, UMX);
-              rhov = snew_arr(i, j, k, UMY);
-              rhow = snew_arr(i, j, k, UMZ);
-              rhoInv = 1.0 / snew_arr(i, j, k, URHO);
+            // work on new state
+            rhou = snew_arr(i, j, k, UMX);
+            rhov = snew_arr(i, j, k, UMY);
+            rhow = snew_arr(i, j, k, UMZ);
+            rhoInv = 1.0 / snew_arr(i, j, k, URHO);
 
-              amrex::Real rhoedot_ext =
-                (snew_arr(i, j, k, UEDEN) // new total energy
-                 - 0.5 * (rhou * rhou + rhov * rhov + rhow * rhow) *
-                     rhoInv // new KE
-                 - rho_old * e_old) /
-                dt;
+            amrex::Real rhoedot_ext =
+              (snew_arr(i, j, k, UEDEN) // new total energy
+               - 0.5 * (rhou * rhou + rhov * rhov + rhow * rhow) *
+                   rhoInv // new KE
+               - rho_old * e_old) /
+              dt;
 
 #ifdef PELEC_USE_PLASMA
-              // If using the NL solver, copy nE to rhoE, and copy/convert forcing term (1/cm3 -> g/cm3)
-              if(ef_use_NLsolve || ef_use_nEimplicit){
-                rhoY(i,j,k,E_ID) = sold_arr(i, j, k, UFX+1) / EFConst::Na * mwt[E_ID];
-                frcExt(i,j,k,E_ID) = nonrs_arr(i, j, k, UFX + 1) / EFConst::Na * mwt[E_ID];
-              } 
+            // If using the NL solver, copy nE to rhoE, and copy/convert forcing term (1/cm3 -> g/cm3)
+            if(ef_use_NLsolve || ef_use_nEimplicit){
+              rhoY(i,j,k,E_ID) = sold_arr(i, j, k, UFX+1) / EFConst::Na * mwt[E_ID];
+              frcExt(i,j,k,E_ID) = nonrs_arr(i, j, k, UFX + 1) / EFConst::Na * mwt[E_ID];
+            } 
 #endif
 
-              frcEExt(i, j, k) = rhoedot_ext;
+            frcEExt(i, j, k) = rhoedot_ext;
 #ifdef PELEC_USE_TWO_TEMP
-              frcUeleExt(i, j, k) = (snew_arr(i, j, k,Uele) - sold_arr(i, j, k,Uele)) / dt;              
+            frcUeleExt(i, j, k) = (snew_arr(i, j, k,Uele) - sold_arr(i, j, k,Uele)) / dt;              
 #endif
+          });
 
-              if (captured_clean_massfrac == 1) {
-                clip_normalize_rYarr(i, j, k, sold_arr, rhoY);
-              }
-            });
-
-          const int reactor_type = 1;
-          react(
-            bx, rhoY, frcExt, T, rhoE, frcEExt, 
+        reactor->react(
+          bx, rhoY, frcExt, T, rhoE, frcEExt, 
 #ifdef PELEC_USE_TWO_TEMP
-            Ue, frcUeleExt,
+          Ue, frcUeleExt,
 #endif
-            fc, mask, dt, current_time,
-            reactor_type
+          fc, mask, dt, current_time
 #ifdef PELEC_USE_PLASMA
-            , eon, pi_source
+          , 
+          eon, pi_source
 #endif
 #ifdef AMREX_USE_GPU
-            ,
-            amrex::Gpu::gpuStream()
+          ,
+          amrex::Gpu::gpuStream()
 #endif
-          );
+        );
 
-          amrex::Gpu::Device::streamSynchronize();
+        amrex::Gpu::Device::streamSynchronize();
 
-          // unpack data
-          amrex::ParallelFor(
-            bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-              // work on old state
-              amrex::Real rhou = sold_arr(i, j, k, UMX);
-              amrex::Real rhov = sold_arr(i, j, k, UMY);
-              amrex::Real rhow = sold_arr(i, j, k, UMZ);
-              amrex::Real rho_old = sold_arr(i, j, k, URHO);
-              amrex::Real rhoInv = 1.0 / rho_old;
+        // unpack data
+        amrex::ParallelFor(
+          bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            // work on old state
+            amrex::Real rhou = sold_arr(i, j, k, UMX);
+            amrex::Real rhov = sold_arr(i, j, k, UMY);
+            amrex::Real rhow = sold_arr(i, j, k, UMZ);
+            amrex::Real rho_old = sold_arr(i, j, k, URHO);
+            amrex::Real rhoInv = 1.0 / rho_old;
 
-              amrex::Real e_old =
-                (sold_arr(i, j, k, UEDEN) // old total energy
-                 -
-                 0.5 * (rhou * rhou + rhov * rhov + rhow * rhow) * rhoInv) // KE
-                * rhoInv;
+            amrex::Real e_old =
+              (sold_arr(i, j, k, UEDEN) // old total energy
+               - 0.5 * (rhou * rhou + rhov * rhov + rhow * rhow) * rhoInv) // KE
+              * rhoInv;
 
-              rhou = snew_arr(i, j, k, UMX);
-              rhov = snew_arr(i, j, k, UMY);
-              rhow = snew_arr(i, j, k, UMZ);
-              rhoInv = 1.0 / snew_arr(i, j, k, URHO);
+            rhou = snew_arr(i, j, k, UMX);
+            rhov = snew_arr(i, j, k, UMY);
+            rhow = snew_arr(i, j, k, UMZ);
+            rhoInv = 1.0 / snew_arr(i, j, k, URHO);
 
-              amrex::Real rhoedot_ext =
-                (snew_arr(i, j, k, UEDEN) // new total energy
-                 -
-                 0.5 * (rhou * rhou + rhov * rhov + rhow * rhow) * rhoInv // KE
-                 - rho_old * e_old) // old internal energy
-                / dt;
+            amrex::Real rhoedot_ext =
+              (snew_arr(i, j, k, UEDEN) // new total energy
+               - 0.5 * (rhou * rhou + rhov * rhov + rhow * rhow) * rhoInv // KE
+               - rho_old * e_old) // old internal energy
+              / dt;
 
-              amrex::Real umnew =
-                sold_arr(i, j, k, UMX) + dt * nonrs_arr(i, j, k, UMX);
-              amrex::Real vmnew =
-                sold_arr(i, j, k, UMY) + dt * nonrs_arr(i, j, k, UMY);
-              amrex::Real wmnew =
-                sold_arr(i, j, k, UMZ) + dt * nonrs_arr(i, j, k, UMZ);
+            amrex::Real umnew =
+              sold_arr(i, j, k, UMX) + dt * nonrs_arr(i, j, k, UMX);
+            amrex::Real vmnew =
+              sold_arr(i, j, k, UMY) + dt * nonrs_arr(i, j, k, UMY);
+            amrex::Real wmnew =
+              sold_arr(i, j, k, UMZ) + dt * nonrs_arr(i, j, k, UMZ);
 
-              // get new rho
-              amrex::Real rhonew = 0.0;
+            // get new rho
+            amrex::Real rhonew = 0.0;
+
+            for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+              rhonew += rhoY(i, j, k, nsp);
+            }
+
+            if (do_update) {
+              snew_arr(i, j, k, URHO) = rhonew;
+              snew_arr(i, j, k, UMX) = umnew;
+              snew_arr(i, j, k, UMY) = vmnew;
+              snew_arr(i, j, k, UMZ) = wmnew;
 
               for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                rhonew += rhoY(i, j, k, nsp);
+                snew_arr(i, j, k, UFS + nsp) = rhoY(i, j, k, nsp);
               }
-
-              if (do_update) {
-                snew_arr(i, j, k, URHO) = rhonew;
-                snew_arr(i, j, k, UMX) = umnew;
-                snew_arr(i, j, k, UMY) = vmnew;
-                snew_arr(i, j, k, UMZ) = wmnew;
-
-                for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                  snew_arr(i, j, k, UFS + nsp) = rhoY(i, j, k, nsp);
-                }
-                snew_arr(i, j, k, UTEMP) = T(i, j, k);
+              snew_arr(i, j, k, UTEMP) = T(i, j, k);
 
 #ifdef PELEC_USE_TWO_TEMP
-                // We need to replace snew ei with the internal energy that cvode returns,
-                // which includes energy gained/lost via collisions w electrons
-                snew_arr(i, j, k, UEINT) = rhoE(i,j,k);
-                // Also need to use new electron energy (Te is recomputed in Advance directly after reactions)
-                snew_arr(i, j, k, Uele) = Ue(i,j,k);
+              // We need to replace snew ei with the internal energy that cvode returns,
+              // which includes energy gained/lost via collisions w electrons
+              snew_arr(i, j, k, UEINT) = rhoE(i,j,k);
+              // Also need to use new electron energy (Te is recomputed in Advance directly after reactions)
+              snew_arr(i, j, k, Uele) = Ue(i,j,k);
 #else
-                snew_arr(i, j, k, UEINT) = rho_old * e_old + dt * rhoedot_ext;
+              snew_arr(i, j, k, UEINT) = rho_old * e_old + dt * rhoedot_ext;
 #endif
-                snew_arr(i, j, k, UEDEN) =
-                  snew_arr(i, j, k, UEINT) +
-                  0.5 * (umnew * umnew + vmnew * vmnew + wmnew * wmnew) /
-                    rhonew;
-              }
 
-              for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
-                I_R(i, j, k, nsp) = (rhoY(i, j, k, nsp)              // new rhoy
-                                     - sold_arr(i, j, k, UFS + nsp)) // old rhoy
-                                      / dt -
-                                    nonrs_arr(i, j, k, UFS + nsp);
-              }
+              snew_arr(i, j, k, UEDEN) =
+                snew_arr(i, j, k, UEINT) +
+                0.5 * (umnew * umnew + vmnew * vmnew + wmnew * wmnew) / rhonew;
+            }
+
+            for (int nsp = 0; nsp < NUM_SPECIES; nsp++) {
+              I_R(i, j, k, nsp) = (rhoY(i, j, k, nsp)              // new rhoy
+                                   - sold_arr(i, j, k, UFS + nsp)) // old rhoy
+                                    / dt -
+                                  nonrs_arr(i, j, k, UFS + nsp);
+            }
 
 #ifdef PELEC_USE_TWO_TEMP
                 // Time lagged reactive source term should be constructed using 
@@ -378,8 +364,6 @@ PeleC::react_state(
             get_new_data(Work_Estimate_Type)[mfi].plus<amrex::RunOn::Device>(
               wt, vbox);
           }
-        } else {
-          amrex::Abort("chem_integrator must be equal to 1 or 2");
         }
 
         // update heat release
@@ -418,7 +402,7 @@ PeleC::react_state(
 #endif
           });
       }
-    }
+  //  }
   }
 
   if (ng > 0) {
@@ -429,16 +413,10 @@ PeleC::react_state(
     const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
     amrex::Real run_time = amrex::ParallelDescriptor::second() - strt_time;
 
-#ifdef AMREX_LAZY
-    Lazy::QueueReduction([=]() mutable {
-#endif
-      amrex::ParallelDescriptor::ReduceRealMax(run_time, IOProc);
+    amrex::ParallelDescriptor::ReduceRealMax(run_time, IOProc);
 
-      if (amrex::ParallelDescriptor::IOProcessor()) {
-        amrex::Print() << "PeleC::react_state() time = " << run_time << "\n";
-      }
-#ifdef AMREX_LAZY
-    });
-#endif
+    if (amrex::ParallelDescriptor::IOProcessor()) {
+      amrex::Print() << "PeleC::react_state() time = " << run_time << "\n";
+    }
   }
 }

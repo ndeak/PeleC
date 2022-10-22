@@ -7,11 +7,6 @@
 using namespace MASA;
 #endif
 
-#if defined(PELEC_USE_REACTIONS) && defined(AMREX_USE_GPU) && \
-  defined(USE_SUNDIALS_PP)
-#include <AMReX_SUNMemory.H>
-#endif
-
 #include "Transport.H"
 #include "PeleC.H"
 #include "Derive.H"
@@ -22,8 +17,6 @@ ProbParmDevice* PeleC::d_prob_parm_device = nullptr;
 ProbParmDevice* PeleC::h_prob_parm_device = nullptr;
 ProbParmHost* PeleC::prob_parm_host = nullptr;
 TaggingParm* PeleC::tagging_parm = nullptr;
-PassMap* PeleC::d_pass_map = nullptr;
-PassMap* PeleC::h_pass_map = nullptr;
 
 // Components are:
 // Interior, Inflow, Outflow,  Symmetry,     SlipWall,     NoSlipWall, UserBC
@@ -36,22 +29,9 @@ static int norm_vel_bc[] = {INT_DIR,     EXT_DIR,     FOEXTRAP, REFLECT_ODD,
 static int tang_vel_bc[] = {INT_DIR,      EXT_DIR,     FOEXTRAP, REFLECT_EVEN,
                             REFLECT_EVEN, REFLECT_ODD, EXT_DIR};
 
-#ifdef PELEC_USE_REACTIONS
 static int react_src_bc[] = {INT_DIR,      REFLECT_EVEN, REFLECT_EVEN,
                              REFLECT_EVEN, REFLECT_EVEN, REFLECT_EVEN,
                              REFLECT_EVEN};
-#endif
-
-static amrex::Box
-the_same_box(const amrex::Box& b)
-{
-  return b;
-}
-static amrex::Box
-grow_box_by_one(const amrex::Box& b)
-{
-  return amrex::grow(b, 1);
-}
 
 static void
 set_scalar_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
@@ -86,7 +66,6 @@ set_y_vel_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
     , bc.setLo(2, tang_vel_bc[lo_bc[2]]); bc.setHi(2, tang_vel_bc[hi_bc[2]]););
 }
 
-#ifdef PELEC_USE_REACTIONS
 static void
 set_react_src_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
 {
@@ -97,7 +76,6 @@ set_react_src_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
     bc.setHi(dir, react_src_bc[hi_bc[dir]]);
   }
 }
-#endif
 
 static void
 set_z_vel_bc(amrex::BCRec& bc, const amrex::BCRec& phys_bc)
@@ -172,6 +150,8 @@ PeleC::variableSetUp()
     const char* pelec_hash = amrex::buildInfoGetGitHash(1);
     const char* amrex_hash = amrex::buildInfoGetGitHash(2);
     const char* pelephysics_hash = amrex::buildInfoGetGitHash(3);
+    const char* amrexhydro_hash = amrex::buildInfoGetGitHash(4);
+    const char* sundials_hash = amrex::buildInfoGetGitHash(5);
     const char* buildgithash = amrex::buildInfoGetBuildGitHash();
     const char* buildgitname = amrex::buildInfoGetBuildGitName();
 
@@ -185,6 +165,12 @@ PeleC::variableSetUp()
     if (strlen(pelephysics_hash) > 0) {
       amrex::Print() << "PelePhysics git hash: " << pelephysics_hash << "\n";
     }
+    if (strlen(amrexhydro_hash) > 0) {
+      amrex::Print() << "AMReX-Hydro git hash: " << amrexhydro_hash << "\n";
+    }
+    if (strlen(sundials_hash) > 0) {
+      amrex::Print() << "SUNDIALS git hash: " << sundials_hash << "\n";
+    }
     if (strlen(buildgithash) > 0) {
       amrex::Print() << buildgitname << " git hash: " << buildgithash << "\n";
     }
@@ -197,44 +183,14 @@ PeleC::variableSetUp()
   prob_parm_host = new ProbParmHost{};
   h_prob_parm_device = new ProbParmDevice{};
   tagging_parm = new TaggingParm{};
-  h_pass_map = new PassMap{};
   d_prob_parm_device = static_cast<ProbParmDevice*>(
     amrex::The_Arena()->alloc(sizeof(ProbParmDevice)));
-  d_pass_map =
-    static_cast<PassMap*>(amrex::The_Arena()->alloc(sizeof(PassMap)));
   trans_parms.allocate();
+  turb_inflow.init(amrex::DefaultGeometry());
 
   // Get options, set phys_bc
   eb_in_domain = ebInDomain();
   read_params();
-
-#ifdef PELEC_USE_REACTIONS
-#if defined(AMREX_USE_GPU) && defined(USE_SUNDIALS_PP)
-  amrex::sundials::MemoryHelper::Initialize();
-#endif
-
-  if (chem_integrator == 1) {
-    amrex::Print() << "Using built-in RK64 chemistry integrator from pelec\n";
-  } else if (chem_integrator == 2) {
-#ifdef USE_SUNDIALS_PP
-    amrex::Print() << "Using sundials chemistry integrator from pelephysics\n";
-#else
-    amrex::Print() << "Using rk64 chemistry integrator from pelephysics\n";
-#endif
-  } else {
-    amrex::Abort("Invalid chem_integrator choice.");
-  }
-
-  // Initialize the reactor
-  if (do_react == 1) {
-    init_reactor();
-  }
-#endif
-
-  init_pass_map(h_pass_map);
-
-  amrex::Gpu::copy(
-    amrex::Gpu::hostToDevice, h_pass_map, h_pass_map + 1, d_pass_map);
 
 #ifdef PELEC_USE_MASA
   if (do_mms) {
@@ -258,15 +214,9 @@ PeleC::variableSetUp()
   Eint = cnt++;
   Temp = cnt++;
 
-#ifdef NUM_ADV
-  NumAdv = NUM_ADV;
-#else
-  NumAdv = 0;
-#endif
-
-  if (NumAdv > 0) {
+  if (NUM_ADV > 0) {
     FirstAdv = cnt;
-    cnt += NumAdv;
+    cnt += NUM_ADV;
   }
 
   // int dm = AMREX_SPACEDIM;
@@ -281,17 +231,13 @@ PeleC::variableSetUp()
     cnt += NUM_AUX;
   }
 
-  // NVAR = cnt;
+  if (NUM_LIN > 0) {
+    FirstLin = cnt;
+    cnt += NUM_LIN;
+  }
 
-#ifdef AMREX_PARTICLES
-  // Set index locations for particle state vector
-  pstateVel = 0;
-  pstateT = pstateVel + AMREX_SPACEDIM;
-  pstateDia = pstateT + 1;
-  pstateRho = pstateDia + 1;
-  pstateY = pstateRho + 1;
-  pstateNum = pstateY + SPRAY_FUEL_NUM;
-#endif
+  // NUM_LIN variables are will be added by the specific models
+  // NVAR = cnt;
 
   // const amrex::Real run_strt = amrex::ParallelDescriptor::second() ;
   // Real run_stop = ParallelDescriptor::second() - run_strt;
@@ -321,71 +267,62 @@ PeleC::variableSetUp()
 
   // int coord_type = amrex::DefaultGeometry().Coord();
 
-  amrex::Vector<amrex::Real> center(AMREX_SPACEDIM, 0.0);
-  amrex::ParmParse ppc("pelec");
-  ppc.queryarr("center", center, 0, AMREX_SPACEDIM);
-
-  amrex::Interpolater* interp;
+  amrex::MFInterpolater* interp;
 
   if (state_interp_order == 0) {
-    interp = &amrex::pc_interp;
+    interp = &amrex::mf_pc_interp;
   } else {
     if (lin_limit_state_interp == 1) {
-      interp = &amrex::lincc_interp;
+      interp = &amrex::mf_lincc_interp;
     } else {
-      interp = &amrex::cell_cons_interp;
+      interp = &amrex::mf_cell_cons_interp;
     }
   }
 
-#ifdef PELEC_USE_EB
   // Decide from input whether eb interp is needed for FillPatch operations
-  if ((eb_in_domain) and (state_interp_order != 0)) {
-    interp = &amrex::eb_cell_cons_interp;
+  if (eb_in_domain && (state_interp_order != 0)) {
+    if (lin_limit_state_interp == 1) {
+      interp = &amrex::eb_mf_lincc_interp;
+    } else {
+      interp = &amrex::eb_mf_cell_cons_interp;
+    }
   }
-#endif
 
   // Note that the default is state_data_extrap = false,
   // store_in_checkpoint = true.  We only need to put these in
   // explicitly if we want to do something different,
   // like not store the state data in a checkpoint directory
   bool state_data_extrap = false;
-  bool store_in_checkpoint;
+  bool store_in_checkpoint = true;
 
   int ngrow_state = state_nghost;
   AMREX_ASSERT(ngrow_state >= 0);
 
-  store_in_checkpoint = true;
   desc_lst.addDescriptor(
     State_Type, amrex::IndexType::TheCellType(), amrex::StateDescriptor::Point,
     ngrow_state, NVAR, interp, state_data_extrap, store_in_checkpoint);
 
   // Components 0:Numspec-1 are rho.omega_i
   // Component NUM_SPECIES is rho.edot = (rho.eout-rho.ein)
-  amrex::Vector<amrex::BCRec> bcs(NVAR);
-  amrex::Vector<std::string> name(NVAR);
-
   store_in_checkpoint = true;
-#ifdef PELEC_USE_PLASMA
   int react_num = NUM_SPECIES+2;
+#ifdef PELEC_USE_PLASMA
   if(ef_use_NLsolve || ef_use_nEimplicit){
     react_num += 1;
   }
 #ifdef PELEC_USE_TWO_TEMP
   react_num += 1;
 #endif
-  amrex::Vector<amrex::BCRec> react_bcs(react_num);
-  amrex::Vector<std::string> react_name(react_num);
-#else
-  int react_num = NUM_SPECIES+1;
-  amrex::Vector<amrex::BCRec> react_bcs(NUM_SPECIES + 1);
-  amrex::Vector<std::string> react_name(NUM_SPECIES + 1);
 #endif
-#ifdef PELEC_USE_REACTIONS
+  store_in_checkpoint = do_react;
   desc_lst.addDescriptor(
     Reactions_Type, amrex::IndexType::TheCellType(),
     amrex::StateDescriptor::Point, 0, react_num, interp,
     state_data_extrap, store_in_checkpoint);
-#endif
+  amrex::Vector<amrex::BCRec> bcs(NVAR);
+  amrex::Vector<std::string> name(NVAR);
+  amrex::Vector<amrex::BCRec> react_bcs(react_num);
+  amrex::Vector<std::string> react_name(react_num);
 
   amrex::BCRec bc;
   cnt = 0;
@@ -417,9 +354,9 @@ PeleC::variableSetUp()
   bcs[cnt] = bc;
   name[cnt] = "Temp";
 
-  for (int i = 0; i < NumAdv; ++i) {
+  for (int i = 0; i < NUM_ADV; ++i) {
     char buf[64];
-    sprintf(buf, "adv_%d", i);
+    sprintf(buf, "rho_adv_%d", i);
     cnt++;
     set_scalar_bc(bc, phys_bc);
     bcs[cnt] = bc;
@@ -427,10 +364,8 @@ PeleC::variableSetUp()
   }
 
   // Get the species names from the network model
-  // Set it for Null mechanism let it be overwritten for others
-  spec_names.resize(1);
-  spec_names[0] = "Null";
-  CKSYMS_STR(spec_names);
+  pele::physics::eos::speciesNames<pele::physics::PhysicsType::eos_type>(
+    spec_names);
 
   if (amrex::ParallelDescriptor::IOProcessor()) {
     amrex::Print() << NUM_SPECIES << " Species: " << std::endl;
@@ -541,7 +476,6 @@ PeleC::variableSetUp()
 
   desc_lst.setComponent(State_Type, Density, name, bcs, bndryfunc1);
 
-#ifdef PELEC_USE_REACTIONS
   for (int i = 0; i < NUM_SPECIES; ++i) {
     set_react_src_bc(bc, phys_bc);
     react_bcs[i] = bc;
@@ -572,80 +506,90 @@ PeleC::variableSetUp()
   bndryfunc2.setRunOnGPU(true);
 
   desc_lst.setComponent(Reactions_Type, 0, react_name, react_bcs, bndryfunc2);
-#endif
 
-  if (do_react_load_balance || do_mol_load_balance) {
-    desc_lst.addDescriptor(
-      Work_Estimate_Type, amrex::IndexType::TheCellType(),
-      amrex::StateDescriptor::Point, 0, 1, &amrex::pc_interp);
-    // Because we use piecewise constant interpolation, we do not use bc and
-    // BndryFunc.
-    desc_lst.setComponent(
-      Work_Estimate_Type, 0, "WorkEstimate", bc,
-      amrex::StateDescriptor::BndryFunc(pc_nullfill));
-  }
+  const bool workest_store_in_checkpoint = false;
+  const bool workest_data_extrap = false;
+  desc_lst.addDescriptor(
+    Work_Estimate_Type, amrex::IndexType::TheCellType(),
+    amrex::StateDescriptor::Point, 0, 1, &amrex::pc_interp, workest_data_extrap,
+    workest_store_in_checkpoint);
+  // Because we use piecewise constant interpolation, we do not use bc and
+  // BndryFunc.
+  desc_lst.setComponent(
+    Work_Estimate_Type, 0, "WorkEstimate", bc,
+    amrex::StateDescriptor::BndryFunc(pc_nullfill));
 
   num_state_type = desc_lst.size();
+
+  // Get the level at which EB is generated
+  eb_max_lvl_gen = getEBMaxLevel();
 
   // DEFINE DERIVED QUANTITIES
 
   // Pressure
   derive_lst.add(
-    "pressure", amrex::IndexType::TheCellType(), 1, pc_derpres, the_same_box);
+    "pressure", amrex::IndexType::TheCellType(), 1, pc_derpres,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("pressure", desc_lst, State_Type, Density, NVAR);
 
   // Kinetic energy
   derive_lst.add(
-    "kineng", amrex::IndexType::TheCellType(), 1, pc_derkineng, the_same_box);
+    "kineng", amrex::IndexType::TheCellType(), 1, pc_derkineng,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("kineng", desc_lst, State_Type, Density, NVAR);
 
   // Enstrophy
   derive_lst.add(
     "enstrophy", amrex::IndexType::TheCellType(), 1, pc_derenstrophy,
-    grow_box_by_one);
+    amrex::DeriveRec::GrowBoxByOne);
   derive_lst.addComponent("enstrophy", desc_lst, State_Type, Density, NVAR);
 
   // Sound speed (c)
   derive_lst.add(
     "soundspeed", amrex::IndexType::TheCellType(), 1, pc_dersoundspeed,
-    the_same_box);
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("soundspeed", desc_lst, State_Type, Density, NVAR);
 
   // Mach number(M)
   derive_lst.add(
     "MachNumber", amrex::IndexType::TheCellType(), 1, pc_dermachnumber,
-    the_same_box);
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("MachNumber", desc_lst, State_Type, Density, NVAR);
 
   // Entropy (S)
   derive_lst.add(
-    "entropy", amrex::IndexType::TheCellType(), 1, pc_derentropy, the_same_box);
+    "entropy", amrex::IndexType::TheCellType(), 1, pc_derentropy,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("entropy", desc_lst, State_Type, Density, NVAR);
 
   // Vorticity
   derive_lst.add(
     "magvort", amrex::IndexType::TheCellType(), 1, pc_dermagvort,
-    grow_box_by_one);
+    amrex::DeriveRec::GrowBoxByOne);
   derive_lst.addComponent("magvort", desc_lst, State_Type, Density, NVAR);
 
   // Div(u)
   derive_lst.add(
-    "divu", amrex::IndexType::TheCellType(), 1, pc_derdivu, grow_box_by_one);
+    "divu", amrex::IndexType::TheCellType(), 1, pc_derdivu,
+    amrex::DeriveRec::GrowBoxByOne);
   derive_lst.addComponent("divu", desc_lst, State_Type, Density, NVAR);
 
   // Internal energy as derived from rho*E, part of the state
   derive_lst.add(
-    "eint_E", amrex::IndexType::TheCellType(), 1, pc_dereint1, the_same_box);
+    "eint_E", amrex::IndexType::TheCellType(), 1, pc_dereint1,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("eint_E", desc_lst, State_Type, Density, NVAR);
 
   // Internal energy as derived from rho*e, part of the state
   derive_lst.add(
-    "eint_e", amrex::IndexType::TheCellType(), 1, pc_dereint2, the_same_box);
+    "eint_e", amrex::IndexType::TheCellType(), 1, pc_dereint2,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("eint_e", desc_lst, State_Type, Density, NVAR);
 
   // Log(density)
   derive_lst.add(
-    "logden", amrex::IndexType::TheCellType(), 1, pc_derlogden, the_same_box);
+    "logden", amrex::IndexType::TheCellType(), 1, pc_derlogden,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("logden", desc_lst, State_Type, Density, NVAR);
 
   // Y from rhoY
@@ -656,7 +600,7 @@ PeleC::variableSetUp()
 
   derive_lst.add(
     "massfrac", amrex::IndexType::TheCellType(), NUM_SPECIES,
-    var_names_massfrac, pc_derspec, the_same_box);
+    var_names_massfrac, pc_derspec, amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("massfrac", desc_lst, State_Type, Density, NVAR);
 
 #ifdef PELEC_USE_PLASMA
@@ -666,9 +610,21 @@ PeleC::variableSetUp()
   }
   derive_lst.add(
     "numdens", amrex::IndexType::TheCellType(), NUM_SPECIES,
-    var_names_numdens, pc_derspecn, the_same_box);
+    var_names_numdens, pc_derspecn, amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("numdens", desc_lst, State_Type, Density, NVAR);
 #endif
+
+  // adv from rho_adv
+  amrex::Vector<std::string> var_names_adv(NUM_ADV);
+  for (int i = 0; i < NUM_ADV; i++) {
+    var_names_adv[i] = "adv_" + std::to_string(i);
+  }
+
+  derive_lst.add(
+    "adv", amrex::IndexType::TheCellType(), NUM_ADV, var_names_adv, pc_deradv,
+    amrex::DeriveRec::TheSameBox);
+  derive_lst.addComponent("adv", desc_lst, State_Type, Density, NVAR);
+
   // Species mole fractions
   amrex::Vector<std::string> var_names_molefrac(NUM_SPECIES);
   for (int i = 0; i < NUM_SPECIES; i++) {
@@ -677,40 +633,39 @@ PeleC::variableSetUp()
 
   derive_lst.add(
     "molefrac", amrex::IndexType::TheCellType(), NUM_SPECIES,
-    var_names_molefrac, pc_dermolefrac, the_same_box);
+    var_names_molefrac, pc_dermolefrac, amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("molefrac", desc_lst, State_Type, Density, NVAR);
 
   // Velocities
   derive_lst.add(
-    "x_velocity", amrex::IndexType::TheCellType(), 1, pc_dervelx, the_same_box);
+    "x_velocity", amrex::IndexType::TheCellType(), 1, pc_dervelx,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("x_velocity", desc_lst, State_Type, Density, NVAR);
 
   derive_lst.add(
-    "y_velocity", amrex::IndexType::TheCellType(), 1, pc_dervely, the_same_box);
+    "y_velocity", amrex::IndexType::TheCellType(), 1, pc_dervely,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("y_velocity", desc_lst, State_Type, Density, NVAR);
 
   derive_lst.add(
-    "z_velocity", amrex::IndexType::TheCellType(), 1, pc_dervelz, the_same_box);
+    "z_velocity", amrex::IndexType::TheCellType(), 1, pc_dervelz,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("z_velocity", desc_lst, State_Type, Density, NVAR);
 
   derive_lst.add(
-    "magvel", amrex::IndexType::TheCellType(), 1, pc_dermagvel, the_same_box);
+    "magvel", amrex::IndexType::TheCellType(), 1, pc_dermagvel,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("magvel", desc_lst, State_Type, Density, NVAR);
 
   derive_lst.add(
     "radvel", amrex::IndexType::TheCellType(), 1, pc_derradialvel,
-    the_same_box);
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("radvel", desc_lst, State_Type, Density, NVAR);
 
   derive_lst.add(
-    "magmom", amrex::IndexType::TheCellType(), 1, pc_dermagmom, the_same_box);
+    "magmom", amrex::IndexType::TheCellType(), 1, pc_dermagmom,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("magmom", desc_lst, State_Type, Density, NVAR);
-
-#ifdef PELEC_USE_EB
-  // A dummy
-  derive_lst.add(
-    "vfrac", amrex::IndexType::TheCellType(), 1, pc_dermagvel, the_same_box);
-#endif
 
 #ifdef AMREX_PARTICLES
   // We want a derived type that corresponds to the number of particles
@@ -718,41 +673,71 @@ PeleC::variableSetUp()
   // purposes. We'll actually set the values in writePlotFile().
   derive_lst.add(
     "particle_count", amrex::IndexType::TheCellType(), 1, pc_dernull,
-    the_same_box);
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("particle_count", desc_lst, State_Type, Density, 1);
 
   derive_lst.add(
     "total_particle_count", amrex::IndexType::TheCellType(), 1, pc_dernull,
-    the_same_box);
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent(
     "total_particle_count", desc_lst, State_Type, Density, 1);
 
   derive_lst.add(
     "particle_density", amrex::IndexType::TheCellType(), 1, pc_dernull,
-    the_same_box);
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("particle_density", desc_lst, State_Type, Density, 1);
 #endif
 
   derive_lst.add(
-    "cp", amrex::IndexType::TheCellType(), 1, pc_dercp, the_same_box);
+    "cp", amrex::IndexType::TheCellType(), 1, pc_dercp,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("cp", desc_lst, State_Type, Density, NVAR);
 
   derive_lst.add(
-    "cv", amrex::IndexType::TheCellType(), 1, pc_dercv, the_same_box);
+    "cv", amrex::IndexType::TheCellType(), 1, pc_dercv,
+    amrex::DeriveRec::TheSameBox);
   derive_lst.addComponent("cv", desc_lst, State_Type, Density, NVAR);
+
+  derive_lst.add(
+    "viscosity", amrex::IndexType::TheCellType(), 1, pc_derviscosity,
+    amrex::DeriveRec::TheSameBox);
+  derive_lst.addComponent("viscosity", desc_lst, State_Type, Density, NVAR);
+
+  derive_lst.add(
+    "bulk_viscosity", amrex::IndexType::TheCellType(), 1, pc_derbulkviscosity,
+    amrex::DeriveRec::TheSameBox);
+  derive_lst.addComponent(
+    "bulk_viscosity", desc_lst, State_Type, Density, NVAR);
+
+  derive_lst.add(
+    "conductivity", amrex::IndexType::TheCellType(), 1, pc_derconductivity,
+    amrex::DeriveRec::TheSameBox);
+  derive_lst.addComponent("conductivity", desc_lst, State_Type, Density, NVAR);
+
+  amrex::Vector<std::string> var_names_diffusivity(NUM_SPECIES);
+  for (int i = 0; i < NUM_SPECIES; i++) {
+    var_names_diffusivity[i] = "D(" + spec_names[i] + ")";
+  }
+  derive_lst.add(
+    "diffusivity", amrex::IndexType::TheCellType(), NUM_SPECIES,
+    var_names_diffusivity, pc_derdiffusivity, amrex::DeriveRec::TheSameBox);
+  derive_lst.addComponent("diffusivity", desc_lst, State_Type, Density, NVAR);
 
   // LES coefficients
   if (do_les) {
     derive_lst.add(
-      "C_s2", amrex::IndexType::TheCellType(), 1, pc_dernull, the_same_box);
+      "C_s2", amrex::IndexType::TheCellType(), 1, pc_dernull,
+      amrex::DeriveRec::TheSameBox);
     derive_lst.addComponent("C_s2", desc_lst, State_Type, Density, 1);
 
     derive_lst.add(
-      "C_I", amrex::IndexType::TheCellType(), 1, pc_dernull, the_same_box);
+      "C_I", amrex::IndexType::TheCellType(), 1, pc_dernull,
+      amrex::DeriveRec::TheSameBox);
     derive_lst.addComponent("C_I", desc_lst, State_Type, Density, 1);
 
     derive_lst.add(
-      "Pr_T", amrex::IndexType::TheCellType(), 1, pc_dernull, the_same_box);
+      "Pr_T", amrex::IndexType::TheCellType(), 1, pc_dernull,
+      amrex::DeriveRec::TheSameBox);
     derive_lst.addComponent("Pr_T", desc_lst, State_Type, Density, 1);
   }
 
@@ -761,27 +746,27 @@ PeleC::variableSetUp()
   if (do_mms) {
     derive_lst.add(
       "rhommserror", amrex::IndexType::TheCellType(), 1, pc_derrhommserror,
-      the_same_box);
+      amrex::DeriveRec::TheSameBox);
     derive_lst.addComponent("rhommserror", desc_lst, State_Type, Density, NVAR);
 
     derive_lst.add(
       "ummserror", amrex::IndexType::TheCellType(), 1, pc_derummserror,
-      the_same_box);
+      amrex::DeriveRec::TheSameBox);
     derive_lst.addComponent("ummserror", desc_lst, State_Type, Density, NVAR);
 
     derive_lst.add(
       "vmmserror", amrex::IndexType::TheCellType(), 1, pc_dervmmserror,
-      the_same_box);
+      amrex::DeriveRec::TheSameBox);
     derive_lst.addComponent("vmmserror", desc_lst, State_Type, Density, NVAR);
 
     derive_lst.add(
       "wmmserror", amrex::IndexType::TheCellType(), 1, pc_derwmmserror,
-      the_same_box);
+      amrex::DeriveRec::TheSameBox);
     derive_lst.addComponent("wmmserror", desc_lst, State_Type, Density, NVAR);
 
     derive_lst.add(
       "pmmserror", amrex::IndexType::TheCellType(), 1, pc_derpmmserror,
-      the_same_box);
+      amrex::DeriveRec::TheSameBox);
     derive_lst.addComponent("pmmserror", desc_lst, State_Type, Density, NVAR);
   }
 #endif
@@ -803,24 +788,14 @@ PeleC::variableCleanUp()
 
   desc_lst.clear();
 
-#ifdef PELEC_USE_REACTIONS
-  if (do_react == 1) {
-    close_reactor();
-  }
-#endif
-
   clear_prob();
 
-#ifdef PELEC_USE_EB
   eb_initialized = false;
-#endif
 
   delete prob_parm_host;
   delete tagging_parm;
   delete h_prob_parm_device;
-  delete h_pass_map;
   amrex::The_Arena()->free(d_prob_parm_device);
-  amrex::The_Arena()->free(d_pass_map);
   trans_parms.deallocate();
 }
 
@@ -832,20 +807,18 @@ PeleC::set_active_sources()
   }
 
   // optional external source
-  if (add_ext_src == 1) {
+  if (add_ext_src) {
     src_list.push_back(ext_src);
   }
 
   // optional forcing source
-  if (add_forcing_src == 1) {
+  if (add_forcing_src) {
     src_list.push_back(forcing_src);
   }
 
-#ifdef AMREX_PARTICLES
   if (do_spray_particles) {
     src_list.push_back(spray_src);
   }
-#endif
 
   // optional LES source
   if (do_les) {

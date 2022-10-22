@@ -1,5 +1,5 @@
-#ifndef _PROB_H_
-#define _PROB_H_
+#ifndef PROB_H
+#define PROB_H
 
 #include <AMReX_Print.H>
 #include <AMReX_Geometry.H>
@@ -16,7 +16,6 @@
 #include "Tagging.H"
 #include "ProblemDerive.H"
 #include "prob_parm.H"
-#include "Forcing.H"
 #include "Utilities.H"
 
 AMREX_GPU_DEVICE

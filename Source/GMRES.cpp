@@ -13,10 +13,8 @@ GMRESSolver::define(PeleC* a_level,
                     const int a_KrylovSize, 
                     const int a_nComp,
                     const int a_nGrow
-#ifdef PELEC_USE_EB
                   , const amrex::MFInfo& info,
                     const amrex::FabFactory<amrex::FArrayBox>& factory
-#endif
               )
 {
    BL_PROFILE("GMRESSolver::define()");
@@ -31,7 +29,6 @@ GMRESSolver::define(PeleC* a_level,
 
 // Build krylov base memory
    KspBase.resize(m_krylovSize+1);
-#ifdef PELEC_USE_EB
    for (int n = 0; n <= m_krylovSize ; ++n) {
       KspBase[n].define(m_grids,m_dmap,m_nComp,m_nGrow,info,factory);
    }
@@ -39,15 +36,6 @@ GMRESSolver::define(PeleC* a_level,
 // Work MultiFabs
    Ax.define(m_grids,m_dmap,m_nComp,m_nGrow,info,factory);
    res.define(m_grids,m_dmap,m_nComp,m_nGrow,info,factory);
-#else
-   for (int n = 0; n <= m_krylovSize ; ++n) {
-      KspBase[n].define(m_grids,m_dmap,m_nComp,m_nGrow);
-   }
-
-// Work MultiFabs
-   Ax.define(m_grids,m_dmap,m_nComp,m_nGrow);
-   res.define(m_grids,m_dmap,m_nComp,m_nGrow);
-#endif
 
 // Work Reals
    H.resize(m_krylovSize+1);
@@ -239,11 +227,9 @@ void
 GMRESSolver::gramSchmidtOrtho(const int iter, Vector<MultiFab>& Base)
 {
 
-#ifdef PELEC_USE_EB
     auto const& fact =
       dynamic_cast<amrex::EBFArrayBoxFactory const&>(Base[iter].Factory());
     auto const& flags = fact.getMultiEBCellFlagFab();
-#endif
 
     for ( int row = 0; row <= iter; ++row ) {
       Real Hsum = 0.0;
@@ -254,23 +240,15 @@ GMRESSolver::gramSchmidtOrtho(const int iter, Vector<MultiFab>& Base)
           const Box& bx = mfi.growntilebox(nghost);
           auto const& comp1_ar  = Base[iter+1].const_array(mfi,n);
           auto const& comp2_ar  = Base[row].const_array(mfi,n);
-#ifdef PELEC_USE_EB
           auto flag_arr = flags.const_array(mfi);
-#endif
           amrex::ParallelFor(bx, [comp1_ar, comp2_ar, &Hsum
-#ifdef PELEC_USE_EB
                               , flag_arr
-#endif
                                         ]
           AMREX_GPU_DEVICE (int i, int j, int k) noexcept
           {
-#ifdef PELEC_USE_EB
             if(!flag_arr(i,j,k).isCovered()){
-#endif
               Hsum += comp1_ar(i,j,k) * comp2_ar(i,j,k);
-#ifdef PELEC_USE_EB
             }
-#endif
           });
         }
       }
@@ -288,23 +266,15 @@ GMRESSolver::gramSchmidtOrtho(const int iter, Vector<MultiFab>& Base)
             const Box& bx = mfi.growntilebox(nghost);
             auto const& comp1_ar  = Base[iter+1].const_array(mfi,n);
             auto const& comp2_ar  = Base[row].const_array(mfi,n);
-#ifdef PELEC_USE_EB
             auto flag_arr = flags.const_array(mfi);
-#endif
             amrex::ParallelFor(bx, [comp1_ar, comp2_ar, &Hsum
-#ifdef PELEC_USE_EB
                                 , flag_arr
-#endif
                                           ]
             AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
-#ifdef PELEC_USE_EB
               if(!flag_arr(i,j,k).isCovered()){
-#endif
                 Hsum += comp1_ar(i,j,k) * comp2_ar(i,j,k);
-#ifdef PELEC_USE_EB
               }
-#endif
             });
           }
         }

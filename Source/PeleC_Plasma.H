@@ -188,15 +188,9 @@
   amrex::MultiFab            nE_state_old;
 
   // Preconditioner data
-#ifdef PELEC_USE_EB
   amrex::MLEBABecCecLap   *pnp_pc_diff = nullptr;
   amrex::MLEBABecLap      *pnp_pc_drift = nullptr;
   amrex::MLEBABecLap      *pnp_pc_Stilda = nullptr;
-#else
-  amrex::MLABecCecLaplacian   *pnp_pc_diff = nullptr;
-  amrex::MLABecLaplacian      *pnp_pc_drift = nullptr;
-  amrex::MLABecLaplacian      *pnp_pc_Stilda = nullptr;
-#endif
   amrex::MLMG                 *mg_diff = nullptr;
   amrex::MLMG                 *mg_drift = nullptr;
   amrex::MLMG                 *mg_Stilda = nullptr;

@@ -1,72 +1,11 @@
-#ifndef _UTILITIES_H_
-#define _UTILITIES_H_
+#ifndef UTILITIES_H
+#define UTILITIES_H
 
+#include <AMReX_IArrayBox.H>
 #include <AMReX_FArrayBox.H>
 #include "Constants.H"
 #include "IndexDefines.H"
 #include "PelePhysics.H"
-
-AMREX_GPU_DEVICE
-AMREX_FORCE_INLINE
-void
-clip_normalize_Y(amrex::Real* Y)
-{
-
-  // Clip
-  amrex::Real sum = 0.0;
-  for (int n = 0; n < NUM_SPECIES; n++) {
-    Y[n] = amrex::max(amrex::min(Y[n], 1.0), 0.0);
-    sum += Y[n];
-  }
-
-  // Normalize
-  for (int n = 0; n < NUM_SPECIES; n++) {
-    Y[n] /= sum;
-  }
-}
-
-AMREX_GPU_DEVICE
-AMREX_FORCE_INLINE
-void
-clip_normalize_rY(const amrex::Real rho, amrex::Real* rY)
-{
-
-  amrex::Real Y[NUM_SPECIES];
-  const amrex::Real rhoInv = 1.0 / rho;
-  for (int n = 0; n < NUM_SPECIES; n++) {
-    Y[n] = rY[n] * rhoInv;
-  }
-
-  clip_normalize_Y(Y);
-
-  for (int n = 0; n < NUM_SPECIES; n++) {
-    rY[n] = Y[n] * rho;
-  }
-}
-
-AMREX_GPU_DEVICE
-AMREX_FORCE_INLINE
-void
-clip_normalize_rYarr(
-  const int i,
-  const int j,
-  const int k,
-  amrex::Array4<const amrex::Real> const& s,
-  amrex::Array4<amrex::Real> const& rhoY)
-{
-
-  amrex::Real Y[NUM_SPECIES];
-  const amrex::Real rhoInv = 1.0 / s(i, j, k, URHO);
-  for (int n = 0; n < NUM_SPECIES; n++) {
-    Y[n] = rhoY(i, j, k, n) * rhoInv;
-  }
-
-  clip_normalize_Y(Y);
-
-  for (int n = 0; n < NUM_SPECIES; n++) {
-    rhoY(i, j, k, n) = Y[n] * s(i, j, k, URHO);
-  }
-}
 
 AMREX_GPU_DEVICE
 AMREX_FORCE_INLINE
@@ -103,28 +42,27 @@ pc_rst_int_e(
   const int j,
   const int k,
   amrex::Array4<amrex::Real> const& S,
-  const int allow_small_energy,
-  const int allow_negative_energy,
-  const int dual_energy_update_E_from_e,
+  const bool allow_small_energy,
+  const bool allow_negative_energy,
+  const bool dual_energy_update_E_from_e,
   const amrex::Real dual_energy_eta2,
   const int /*verbose*/)
 {
   if (std::is_same<
         pele::physics::PhysicsType::eos_type, pele::physics::eos::SRK>::value) {
-    if (allow_small_energy == 0 || allow_negative_energy == 0) {
+    if ((!allow_small_energy) || (!allow_negative_energy)) {
       amrex::Error("Small/negative energy must be allowed for nonideal EOS");
     }
   }
   auto eos = pele::physics::PhysicsType::eos();
-  if (allow_small_energy == 0) {
+  if (!allow_small_energy) {
     const amrex::Real rhoInv = 1.0 / S(i, j, k, URHO);
     const amrex::Real Up = S(i, j, k, UMX) * rhoInv;
     const amrex::Real Vp = S(i, j, k, UMY) * rhoInv;
     const amrex::Real Wp = S(i, j, k, UMZ) * rhoInv;
     const amrex::Real ke = 0.5 * (Up * Up + Vp * Vp + Wp * Wp);
     const amrex::Real eden = S(i, j, k, UEDEN) * rhoInv;
-    // const amrex::Real eos_state_rho = S(i, j, k, URHO);
-    const amrex::Real eos_state_T = std::numeric_limits<amrex::Real>::min();
+    const amrex::Real eos_state_T = constants::very_small_num();
     amrex::Real eos_state_massfrac[NUM_SPECIES] = {0.0};
     amrex::Real eos_state_ei[NUM_SPECIES] = {0.0};
     eos.T2Ei(eos_state_T, eos_state_ei);
@@ -178,7 +116,7 @@ pc_rst_int_e(
           eos_state_e += eos_state_massfrac[sp] * eos_state_ei[sp];
 #endif
         }
-        if (dual_energy_update_E_from_e == 1) {
+        if (dual_energy_update_E_from_e) {
           S(i, j, k, UEDEN) =
             S(i, j, k, UEDEN) +
             (S(i, j, k, URHO) * eos_state_e - S(i, j, k, UEINT));
@@ -186,7 +124,7 @@ pc_rst_int_e(
         S(i, j, k, UEINT) = S(i, j, k, URHO) * eos_state_e;
       }
     }
-  } else if (allow_negative_energy == 0) {
+  } else if (!allow_negative_energy) {
     const amrex::Real rhoInv = 1.0 / S(i, j, k, URHO);
     const amrex::Real Up = S(i, j, k, UMX) * rhoInv;
     const amrex::Real Vp = S(i, j, k, UMY) * rhoInv;
@@ -198,8 +136,7 @@ pc_rst_int_e(
       if (
         S(i, j, k, UEINT) <
         (S(i, j, k, URHO) * std::numeric_limits<amrex::Real>::min())) {
-        // const amrex::Real eos_state_rho = S(i, j, k, URHO);
-        const amrex::Real eos_state_T = std::numeric_limits<amrex::Real>::min();
+        const amrex::Real eos_state_T = constants::very_small_num();
         amrex::Real eos_state_massfrac[NUM_SPECIES] = {0.0};
         amrex::Real eos_state_ei[NUM_SPECIES] = {0.0};
         eos.T2Ei(eos_state_T, eos_state_ei);
@@ -229,13 +166,12 @@ pc_rst_int_e(
       } else if (
         S(i, j, k, UEINT) >
           (S(i, j, k, URHO) * std::numeric_limits<amrex::Real>::min()) &&
-        (dual_energy_update_E_from_e == 1)) {
+        (dual_energy_update_E_from_e)) {
         S(i, j, k, UEDEN) = S(i, j, k, UEINT) + S(i, j, k, URHO) * ke;
       } else if (
         S(i, j, k, UEINT) <=
         (S(i, j, k, URHO) * std::numeric_limits<amrex::Real>::min())) {
-        // const amrex::Real eos_state_rho = S(i, j, k, URHO);
-        const amrex::Real eos_state_T = std::numeric_limits<amrex::Real>::min();
+        const amrex::Real eos_state_T = constants::very_small_num();
         amrex::Real eos_state_massfrac[NUM_SPECIES] = {0.0};
         amrex::Real eos_state_ei[NUM_SPECIES] = {0.0};
         eos.T2Ei(eos_state_T, eos_state_ei);
@@ -249,20 +185,7 @@ pc_rst_int_e(
 #endif
         }
         const amrex::Real eint_new = eos_state_e;
-        /* Avoiding this for now due to GPU restricitions
-        if (verbose) {
-          amrex::Print() << std::endl;
-          amrex::Print()
-            << ">>> Warning: PeleC_util.F90::reset_internal_energy "
-            << " " << i << ", " << j << ", " << k << std::endl;
-          amrex::Print() << ">>> ... resetting neg. e from EOS using
-        std::numeric_limits<amrex::Real>::min()"
-                         << std::endl;
-          amrex::Print() << ">>> ... from ',S(i,j,k,UEINT)/S(i,j,k,URHO),' to "
-                         << std::endl;
-          amrex::Print() << eint_new << std::endl;
-        }*/
-        if (dual_energy_update_E_from_e == 1) {
+        if (dual_energy_update_E_from_e) {
           S(i, j, k, UEDEN) = S(i, j, k, UEDEN) +
                               (S(i, j, k, URHO) * eint_new - S(i, j, k, UEINT));
         }
@@ -289,9 +212,7 @@ pc_ctoprim(
   const int k,
   amrex::Array4<const amrex::Real> const& u,
   amrex::Array4<amrex::Real> const& q,
-  amrex::Array4<amrex::Real> const& qa,
-  PassMap const& pmap,
-  const int clean_massfrac)
+  amrex::Array4<amrex::Real> const& qa)
 {
   auto eos = pele::physics::PhysicsType::eos();
   const amrex::Real rho = u(i, j, k, URHO);
@@ -304,10 +225,18 @@ pc_ctoprim(
   q(i, j, k, QU) = vx;
   q(i, j, k, QV) = vy;
   q(i, j, k, QW) = vz;
-  for (int ipassive = 0; ipassive < NPASSIVE; ++ipassive) {
-    const int n = pmap.upassMap[ipassive];
-    const int nq = pmap.qpassMap[ipassive];
-    q(i, j, k, nq) = u(i, j, k, n) / rho;
+  for (int n = 0; n < NUM_ADV; n++) {
+    q(i, j, k, QFA + n) = u(i, j, k, UFA + n) / rho;
+  }
+  for (int n = 0; n < NUM_SPECIES; n++) {
+    q(i, j, k, QFS + n) = u(i, j, k, UFS + n) / rho;
+  }
+  for (int n = 0; n < NUM_AUX; n++) {
+    q(i, j, k, QFX + n) = u(i, j, k, UFX + n) / rho;
+  }
+  // Handle passive variables that are not per unit mass
+  for (int n = 0; n < NUM_LIN; n++) {
+    q(i, j, k, QLIN + n) = u(i, j, k, ULIN + n);
   }
 
   const amrex::Real e = (u(i, j, k, UEDEN) - kineng) * rhoinv;
@@ -324,25 +253,14 @@ pc_ctoprim(
     massfrac[sp] = q(i, j, k, sp + QFS);
   }
 
-  if (clean_massfrac == 1) {
-    clip_normalize_Y(massfrac);
-
-    for (int sp = 0; sp < NUM_SPECIES; ++sp) {
-      q(i, j, k, sp + QFS) = massfrac[sp];
-    }
-  }
-
 #ifdef PELEC_USE_TWO_TEMP
   // Make sure Uele and Tele are available as primitive variables
   q(i, j, k, QFX + 5) = u(i, j, k, UFX + 5);  
   q(i, j, k, QFX + 6) = u(i, j, k, UFX + 6);  
 #endif
 
-  //    amrex::Real aux[NUM_AUX];
-  //    for(int ax = 0; ax < NUM_AUX; ++ax) aux[ax] = q(i,j,k,ax+QFX);
   amrex::Real dpdr_e, dpde, gam1, cs, wbar, p;
 
-  // Are all these EOS calls needed? Seems fairly convoluted.
   eos.Y2WBAR(massfrac, wbar);
   eos.REY2T(rho, e, massfrac, T);
   eos.RTY2P(rho, T, massfrac, p);
@@ -380,32 +298,36 @@ pc_move_transcoefs_to_ec(
 
 {
   if (do_harmonic == 0) {
-    if (dir == 0)
+    if (dir == 0) {
       earr[n] = 0.5 * (carr(i, j, k, n) + carr(i - 1, j, k, n));
-    else if (dir == 1)
+    } else if (dir == 1) {
       earr[n] = 0.5 * (carr(i, j, k, n) + carr(i, j - 1, k, n));
-    else
+    } else {
       earr[n] = 0.5 * (carr(i, j, k, n) + carr(i, j, k - 1, n));
+    }
   } else {
     amrex::Real a = carr(i, j, k, n);
     if (dir == 0) {
       amrex::Real b = carr(i - 1, j, k, n);
-      if (a * b > 0.0)
+      if (a * b > 0.0) {
         earr[n] = 2.0 * (a * b) / (a + b);
-      else
+      } else {
         earr[n] = 0.0;
+      }
     } else if (dir == 1) {
       amrex::Real b = carr(i, j - 1, k, n);
-      if (a * b > 0.0)
+      if (a * b > 0.0) {
         earr[n] = 2.0 * (a * b) / (a + b);
-      else
+      } else {
         earr[n] = 0.0;
+      }
     } else {
       amrex::Real b = carr(i, j, k - 1, n);
-      if (a * b > 0.0)
+      if (a * b > 0.0) {
         earr[n] = 2.0 * (a * b) / (a + b);
-      else
+      } else {
         earr[n] = 0.0;
+      }
     }
   }
 }
@@ -434,8 +356,9 @@ setC(
   const amrex::Real val)
 {
   amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    for (int n = Nstart; n < Nend; n++)
+    for (int n = Nstart; n < Nend; n++) {
       array(i, j, k, n) = val;
+    }
   });
 }
 
@@ -466,8 +389,9 @@ lincomb_array4(
   const amrex::Array4<amrex::Real>& d)
 {
   amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    for (int n = Nstart; n < Nend; n++)
+    for (int n = Nstart; n < Nend; n++) {
       d(i, j, k, n) = alpha * f1(i, j, k, n) + beta * f2(i, j, k, n);
+    }
   });
 }
 
@@ -581,7 +505,7 @@ unique(T input)
 
   // allocate the memory
   T output(Nunique);
-  if (output.size() == 0) {
+  if (output.empty()) {
     return output;
   }
   typename T::value_type* d_output = output.data();
@@ -600,5 +524,26 @@ unique(T input)
 
   return output;
 }
+
+// Find position of element in vector
+template <typename T>
+int
+find_position(const std::vector<T>& vec, const T& element)
+{
+  auto it = std::find(vec.begin(), vec.end(), element);
+  if (it != vec.end()) {
+    return distance(vec.begin(), it);
+  }
+  return -1;
+}
+
+std::string convertIntGG(int number);
+
+// Clean the mass fractions on state, given a mask
+void clean_massfrac(
+  const amrex::Box& /*bx*/,
+  const amrex::Real /*threshold*/,
+  amrex::Array4<const int> const& /*mask*/,
+  amrex::Array4<amrex::Real> const& /*state*/);
 
 #endif

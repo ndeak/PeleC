@@ -1,5 +1,5 @@
-#ifndef _PPM_H_
-#define _PPM_H_
+#ifndef PPM_H
+#define PPM_H
 
 #include <AMReX_FArrayBox.H>
 #include <AMReX_IArrayBox.H>
@@ -249,8 +249,8 @@ void trace_ppm(
   const amrex::Box& vbx,
   const amrex::Real dt,
   const amrex::Real* dx,
-  const int use_flattening,
-  const int use_hybrid_weno,
+  const bool use_flattening,
+  const bool use_hybrid_weno,
   const int weno_scheme);
 
 #endif

@@ -1,5 +1,5 @@
-#ifndef _HYDRO_H_
-#define _HYDRO_H_
+#ifndef HYDRO_H
+#define HYDRO_H
 
 #include "PeleC.H"
 #include "IndexDefines.H"
@@ -17,8 +17,7 @@ pc_srctoprim(
   amrex::Array4<const amrex::Real> const& q,
   amrex::Array4<const amrex::Real> const& qa,
   amrex::Array4<const amrex::Real> const& src,
-  amrex::Array4<amrex::Real> const& srcq,
-  PassMap const& pmap)
+  amrex::Array4<amrex::Real> const& srcq)
 {
   // Local loading Vars ==> Load once from global memory use multiple times
   const amrex::Real srcrho = src(i, j, k, URHO);
@@ -41,10 +40,20 @@ pc_srctoprim(
       (srcq(i, j, k, QREINT) - q(i, j, k, QREINT) * srcrho * rhoinv) * rhoinv +
     qa(i, j, k, QDPDR) * srcrho;
 
-  for (int ip = 0; ip < NPASSIVE; ++ip) {
-    const int n = pmap.upassMap[ip];
-    const int nq = pmap.qpassMap[ip];
-    srcq(i, j, k, nq) = (src(i, j, k, n) - q(i, j, k, nq) * srcrho) * rhoinv;
+  for (int n = 0; n < NUM_ADV; n++) {
+    srcq(i, j, k, QFA + n) =
+      (src(i, j, k, UFA + n) - q(i, j, k, QFA + n) * srcrho) * rhoinv;
+  }
+  for (int n = 0; n < NUM_SPECIES; n++) {
+    srcq(i, j, k, QFS + n) =
+      (src(i, j, k, UFS + n) - q(i, j, k, QFS + n) * srcrho) * rhoinv;
+  }
+  for (int n = 0; n < NUM_AUX; n++) {
+    srcq(i, j, k, QFX + n) =
+      (src(i, j, k, UFX + n) - q(i, j, k, QFX + n) * srcrho) * rhoinv;
+  }
+  for (int n = 0; n < NUM_LIN; n++) {
+    srcq(i, j, k, QLIN + n) = src(i, j, k, ULIN + n);
   }
 }
 
@@ -103,12 +112,14 @@ pc_norm_spec_flx(
   const int num = NUM_SPECIES + UFS;
   amrex::Real summ, fac;
   summ = 0.0;
-  for (int n = UFS; n < num; ++n)
+  for (int n = UFS; n < num; ++n) {
     summ += flx(i, j, k, n);
+  }
 
   fac = (summ != 0.0) ? flx(i, j, k, URHO) / summ : 1.0;
-  for (int n = UFS; n < num; ++n)
+  for (int n = UFS; n < num; ++n) {
     flx(i, j, k, n) *= fac;
+  }
 }
 
 AMREX_GPU_DEVICE
@@ -122,8 +133,9 @@ pc_ext_flx(
   amrex::Array4<const amrex::Real> const& a)
 {
   amrex::Real area = a(i, j, k); // avoid reading from global memory NVAR times
-  for (int n = 0; n < NVAR; ++n)
+  for (int n = 0; n < NVAR; ++n) {
     flx(i, j, k, n) *= area;
+  }
 }
 
 AMREX_GPU_DEVICE
@@ -168,7 +180,10 @@ void pc_umdrv(
   const amrex::Real* dx,
   const amrex::Real dt,
   const int ppm_type,
-  const int use_flattening,
+  const bool use_flattening,
+  const bool use_hybrid_weno,
+  const int weno_scheme,
+  const amrex::Real difmag,
   const amrex::GpuArray<const amrex::Array4<amrex::Real>, AMREX_SPACEDIM> flx,
   const amrex::GpuArray<const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
     a,

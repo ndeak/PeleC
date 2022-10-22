@@ -1,5 +1,5 @@
-#ifndef _PROB_H_
-#define _PROB_H_
+#ifndef PROB_H
+#define PROB_H
 
 #include <AMReX_Print.H>
 #include <AMReX_ParmParse.H>
@@ -40,8 +40,9 @@ pc_initdata(
 #if AMREX_SPACEDIM == 3
   z = prob_lo[2] + (k + 0.5) * dx[2];
 #endif
-  for (int n = 0; n < NUM_SPECIES; n++)
+  for (int n = 0; n < NUM_SPECIES; n++) {
     state(i, j, k, UFS + n) = 0;
+  }
 
   // Set the states
   if (prob_parm.idir == 1) {

@@ -1,5 +1,5 @@
-#ifndef _PROB_PARM_H_
-#define _PROB_PARM_H_
+#ifndef PROB_PARM_H
+#define PROB_PARM_H
 
 #include <AMReX_REAL.H>
 #include <AMReX_GpuQualifiers.H>
@@ -13,9 +13,9 @@ struct ProbParmDevice
   amrex::Real vn_in = 0.2;
   amrex::Real pertmag = 0.0;
   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> L = {{1.0}};
-  unsigned int pmf_N = 0;
-  unsigned int pmf_M = 0;
-  int pmf_do_average = 0;
+  int pmf_N = 0;
+  int pmf_M = 0;
+  bool pmf_do_average = false;
 
   amrex::GpuArray<amrex::Real, NVAR> fuel_state = {{0.0}};
   amrex::Real* d_pmf_X = nullptr;

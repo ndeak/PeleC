@@ -11,8 +11,8 @@ amrex_probinit(
   const int* /*init*/,
   const int* /*name*/,
   const int* /*namelen*/,
-  const amrex_real* problo,
-  const amrex_real* probhi)
+  const amrex::Real* problo,
+  const amrex::Real* probhi)
 {
   // Parse params
   {
@@ -166,9 +166,8 @@ PeleC::problem_post_timestep()
   int finest_level = parent->finestLevel();
   amrex::Real time = state[State_Type].curTime();
   amrex::Real rho_mms_err = 0.0;
-  amrex::Real u_mms_err = 0.0;
-  amrex::Real v_mms_err = 0.0;
-  amrex::Real w_mms_err = 0.0;
+  AMREX_D_TERM(amrex::Real u_mms_err = 0.0;, amrex::Real v_mms_err = 0.0;
+               , amrex::Real w_mms_err = 0.0;)
   amrex::Real p_mms_err = 0.0;
   amrex::Real rho_residual = 0.0;
   amrex::Real rhou_residual = 0.0;
@@ -261,9 +260,9 @@ PeleC::problem_post_timestep()
       amrex::Print() << "TIME= " << time
                      << " RHO*E RESIDUAL = " << rhoE_residual << '\n';
 
-      if (parent->NumDataLogs() > 1) {
-
-        std::ostream& data_log2 = parent->DataLog(1);
+      const int log_index = find_datalog_index("mmslog");
+      if (log_index >= 0) {
+        std::ostream& data_log2 = parent->DataLog(log_index);
 
         // Write the quantities at this time
         const int datwidth = 14;
@@ -314,9 +313,9 @@ PeleC::problem_post_init()
   if (level == 0) {
     if (amrex::ParallelDescriptor::IOProcessor()) {
 
-      if (parent->NumDataLogs() > 1) {
-
-        std::ostream& data_log2 = parent->DataLog(1);
+      const int log_index = find_datalog_index("mmslog");
+      if (log_index >= 0) {
+        std::ostream& data_log2 = parent->DataLog(log_index);
         if (time == 0.0) {
           const int datwidth = 14;
           data_log2 << std::setw(datwidth) << "          time";

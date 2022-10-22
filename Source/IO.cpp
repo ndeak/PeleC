@@ -4,7 +4,7 @@
 #include <string>
 #include <ctime>
 
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #include <omp.h>
 #endif
 
@@ -13,9 +13,10 @@
 #include <AMReX_ParmParse.H>
 #include <AMReX_PlotFileUtil.H>
 #include <AMReX_VisMF.H>
-#ifdef PELEC_USE_EB
 #include <AMReX_EBMultiFabUtil.H>
-#endif
+
+#include "mechanism.H"
+#include "PltFileManager.H"
 
 #include "PeleC.H"
 #include "IO.H"
@@ -34,10 +35,37 @@ namespace {
 int input_version = -1;
 int current_version = 1;
 std::string body_state_filename = "body_state.fab";
-amrex::Real vfraceps = 0.000001;
 } // namespace
 
 // I/O routines for PeleC
+
+bool
+PeleC::check_state_in_checkpoint(const StateType state_type)
+{
+  const std::string state_pfx =
+    "Level_" + std::to_string(level) + "/SD_" + std::to_string(state_type);
+
+  const std::string filename = parent->theRestartFile();
+  const std::string faHeaderFilesName(filename + "/FabArrayHeaders.txt");
+  amrex::Vector<char> faHeaderFileChars;
+  bool bExitOnError(false); // ---- dont exit if this file does not exist
+  amrex::ParallelDescriptor::ReadAndBcastFile(
+    faHeaderFilesName, faHeaderFileChars, bExitOnError);
+  if (!faHeaderFileChars.empty()) { // ---- headers were read
+    std::string faFileCharPtrString(faHeaderFileChars.dataPtr());
+    std::istringstream fais(faFileCharPtrString, std::istringstream::in);
+    while (!fais.eof()) {
+      std::string faHeaderName;
+      fais >> faHeaderName;
+      if (!fais.eof()) {
+        if (faHeaderName.rfind(state_pfx, 0) == 0) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
 
 void
 PeleC::restart(amrex::Amr& papa, std::istream& is, bool bReadSpecial)
@@ -79,36 +107,26 @@ PeleC::restart(amrex::Amr& papa, std::istream& is, bool bReadSpecial)
       const amrex::Real ctime = state[i - 1].curTime();
       state[i].define(
         geom.Domain(), grids, dmap, desc_lst[i], ctime, parent->dtLevel(level),
-        *m_factory);
-      state[i] = state[i - 1];
+        Factory());
+      get_new_data(i).setVal(0.0);
     }
   }
   buildMetrics();
 
-#ifdef PELEC_USE_EB
-  init_eb(geom, grids, dmap);
-#endif
+  init_eb();
 
-  amrex::MultiFab& S_new = get_new_data(State_Type);
+  const amrex::MultiFab& S_new = get_new_data(State_Type);
 
   for (int n = 0; n < src_list.size(); ++n) {
     int oldGrow = numGrow();
     int newGrow = S_new.nGrow();
-#ifdef AMREX_PARTICLES
-    if (src_list[n] == spray_src) {
-      oldGrow = 1;
-      newGrow = 1;
-    }
-#endif
     old_sources[src_list[n]] = std::make_unique<amrex::MultiFab>(
       grids, dmap, NVAR, oldGrow, amrex::MFInfo(), Factory());
     new_sources[src_list[n]] = std::make_unique<amrex::MultiFab>(
       grids, dmap, NVAR, newGrow, amrex::MFInfo(), Factory());
   }
 
-  if (do_hydro) {
-    Sborder.define(grids, dmap, NVAR, numGrow(), amrex::MFInfo(), Factory());
-  } else if (do_diffuse) {
+  if (do_hydro || do_diffuse) {
     Sborder.define(grids, dmap, NVAR, numGrow(), amrex::MFInfo(), Factory());
   }
 
@@ -183,18 +201,18 @@ PeleC::restart(amrex::Amr& papa, std::istream& is, bool bReadSpecial)
   */
 
   if (level > 0 && do_reflux) {
-    flux_reg.define(
+    flux_reg = std::make_unique<amrex::EBFluxRegister>(
       grids, papa.boxArray(level - 1), dmap, papa.DistributionMap(level - 1),
       geom, papa.Geom(level - 1), papa.refRatio(level - 1), level, NVAR);
 
     if (!amrex::DefaultGeometry().IsCartesian()) {
-      pres_reg.define(
-        grids, papa.boxArray(level - 1), dmap, papa.DistributionMap(level - 1),
-        geom, papa.Geom(level - 1), papa.refRatio(level - 1), level, 1);
+      // pres_reg.define(
+      // grids, papa.boxArray(level - 1), dmap, papa.DistributionMap(level - 1),
+      // geom, papa.Geom(level - 1), papa.refRatio(level - 1), level, 1);
+      amrex::Abort("We don't do rz.");
     }
   }
 
-#ifdef PELEC_USE_EB
   if (input_version > 0 && level == 0 && eb_in_domain) {
     if (amrex::ParallelDescriptor::IOProcessor()) {
       std::ifstream BodyFile;
@@ -207,27 +225,49 @@ PeleC::restart(amrex::Amr& papa, std::istream& is, bool bReadSpecial)
       if (bstate_fab.nComp() != NVAR) {
         amrex::Abort("Body state incompatible with checkpointed version");
       }
-      amrex::IntVect iv(bstate_fab.box().smallEnd());
-      for (int n = 0; n < NVAR; ++n) {
-        body_state[n] = bstate_fab(iv, n);
-      }
+      const auto bx = bstate_fab.box();
+      auto const& bstate_arr = bstate_fab.array();
+      amrex::Gpu::DeviceVector<amrex::Real> local_body_state(NVAR, -1);
+      amrex::Real* p_body_state = local_body_state.begin();
+      amrex::ParallelFor(
+        bx, NVAR, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
+          p_body_state[n] = bstate_arr(i, j, k, n);
+        });
+
+      amrex::Gpu::copy(
+        amrex::Gpu::deviceToHost, local_body_state.begin(),
+        local_body_state.end(), body_state.begin());
     }
     amrex::ParallelDescriptor::Bcast(
-      &(body_state[0]), body_state.size(),
+      &(body_state[0]), body_state.size(), // NOLINT
       amrex::ParallelDescriptor::IOProcessorNumber());
     body_state_set = true;
   }
-#endif
 }
 
 void
 PeleC::set_state_in_checkpoint(amrex::Vector<int>& state_in_checkpoint)
 {
   for (int i = 0; i < num_state_type; ++i) {
-    state_in_checkpoint[i] = 1;
+    const bool is_present =
+      check_state_in_checkpoint(static_cast<StateType>(i));
 
-    if (i == Work_Estimate_Type) {
+    if (i == State_Type) {
+      state_in_checkpoint[i] = 1;
+      if ((!is_present) && (level == 0)) {
+        amrex::Abort("State_Type is not present in the checkpoint file");
+      }
+    } else if (i == Reactions_Type) {
+      if (!do_react) {
+        state_in_checkpoint[i] = 0;
+      } else {
+        state_in_checkpoint[i] = is_present ? 1 : 0;
+      }
+    } else if (i == Work_Estimate_Type) {
+      // Never use work estimate checkpoint
       state_in_checkpoint[i] = 0;
+    } else {
+      amrex::Abort("Unknown StateType");
     }
   }
 }
@@ -240,26 +280,6 @@ PeleC::checkPoint(
   bool /*dump_old_default*/)
 {
   amrex::AmrLevel::checkPoint(dir, os, how, dump_old);
-
-#ifdef AMREX_PARTICLES
-  bool is_checkpoint = true;
-
-  amrex::Vector<std::string> real_comp_names(pstateNum);
-  AMREX_D_TERM(real_comp_names[pstateVel] = "xvel";
-               , real_comp_names[pstateVel + 1] = "yvel";
-               , real_comp_names[pstateVel + 2] = "zvel";);
-  real_comp_names[pstateT] = "temperature";
-  real_comp_names[pstateDia] = "diam";
-  real_comp_names[pstateRho] = "density";
-  for (int sp = 0; sp < SPRAY_FUEL_NUM; ++sp) {
-    real_comp_names[pstateY + sp] = "spray_mf_" + PeleC::sprayFuelNames[sp];
-  }
-  amrex::Vector<std::string> int_comp_names;
-  if (PeleC::theSprayPC()) {
-    PeleC::theSprayPC()->Checkpoint(
-      dir, "particles", is_checkpoint, real_comp_names, int_comp_names);
-  }
-#endif
 
   if (level == 0 && amrex::ParallelDescriptor::IOProcessor()) {
     {
@@ -281,6 +301,16 @@ PeleC::checkPoint(
 
       CPUFile << std::setprecision(15) << getCPUTime();
       CPUFile.close();
+    }
+
+    {
+      // Store the level at which EB was generated
+      std::ofstream EBLevelFile;
+      std::string FullPathEBLevelFile = dir;
+      FullPathEBLevelFile += "/EBMaxLevel";
+      EBLevelFile.open(FullPathEBLevelFile.c_str(), std::ios::out);
+      EBLevelFile << eb_max_lvl_gen;
+      EBLevelFile.close();
     }
 
     if (track_grid_losses) {
@@ -317,14 +347,17 @@ PeleC::checkPoint(
     */
   }
 
-#ifdef PELEC_USE_EB
   if (current_version > 0) {
     if (amrex::ParallelDescriptor::IOProcessor() && eb_in_domain) {
       amrex::IntVect iv(AMREX_D_DECL(0, 0, 0));
-      amrex::FArrayBox bstate_fab(amrex::Box(iv, iv), NVAR);
-      for (int n = 0; n < NVAR; ++n) {
-        bstate_fab(iv, n) = body_state[n];
-      }
+      const amrex::Box bx(iv, iv);
+      amrex::FArrayBox bstate_fab(bx, NVAR);
+      auto const& bstate_arr = bstate_fab.array();
+      auto const captured_body_state = body_state;
+      amrex::ParallelFor(
+        bx, NVAR, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
+          bstate_arr(i, j, k, n) = captured_body_state[n];
+        });
 
       std::ofstream BodyFile;
       std::string FullPathBodyFile = dir;
@@ -334,7 +367,6 @@ PeleC::checkPoint(
       BodyFile.close();
     }
   }
-#endif
 }
 
 void
@@ -344,19 +376,22 @@ PeleC::setPlotVariables()
 
   amrex::ParmParse pp("pelec");
 
-#ifdef PELEC_USE_EB
-  bool plot_vfrac = eb_in_domain;
-  pp.query("plot_vfrac ", plot_vfrac);
-  if (plot_vfrac) {
-    amrex::Amr::addDerivePlotVar("vfrac");
-  } else if (amrex::Amr::isDerivePlotVar("vfrac")) {
-    amrex::Amr::deleteDerivePlotVar("vfrac");
-  }
-#endif
-  bool plot_cost = true;
+  bool plot_cost = do_react_load_balance || do_mol_load_balance;
   pp.query("plot_cost", plot_cost);
   if (plot_cost) {
-    amrex::Amr::addDerivePlotVar("WorkEstimate");
+    for (int i = 0; i < desc_lst[Work_Estimate_Type].nComp(); i++) {
+      amrex::Amr::addStatePlotVar(desc_lst[Work_Estimate_Type].name(i));
+    }
+  } else {
+    for (int i = 0; i < desc_lst[Work_Estimate_Type].nComp(); i++) {
+      amrex::Amr::deleteStatePlotVar(desc_lst[Work_Estimate_Type].name(i));
+    }
+  }
+
+  if (!do_react) {
+    for (int i = 0; i < desc_lst[Reactions_Type].nComp(); i++) {
+      amrex::Amr::deleteStatePlotVar(desc_lst[Reactions_Type].name(i));
+    }
   }
 
   bool plot_rhoy = true;
@@ -373,32 +408,6 @@ PeleC::setPlotVariables()
 
   bool plot_massfrac = false;
   pp.query("plot_massfrac", plot_massfrac);
-  //    if (plot_massfrac)
-  //    {
-  //	if (plot_massfrac)
-  //	{
-  //	    //
-  //	    // Get the species names from the network model.
-  //	    //
-  //	    for (int i = 0; i < NUM_SPECIES; i++)
-  //	    {
-  //		int len = 20;
-  //		Vector<int> int_spec_names(len);
-  //		// This call return the actual length of each string in "len"
-  //		get_spec_names(int_spec_names.dataPtr(),&i,&len);
-  //		char* spec_name = new char[len+1];
-  //		for (int j = 0; j < len; j++)
-  //		    spec_name[j] = int_spec_names[j];
-  //		spec_name[len] = '\0';
-  //		string spec_string = "Y(";
-  //		spec_string += spec_name;
-  //		spec_string += ')';
-  //		parent->addDerivePlotVar(spec_string);
-  //		delete [] spec_name;
-  //	    }
-  //	}
-  //    }
-
   if (plot_massfrac) {
     amrex::Amr::addDerivePlotVar("massfrac");
   } else {
@@ -412,6 +421,25 @@ PeleC::setPlotVariables()
     amrex::Amr::deleteDerivePlotVar("numdens");
   }
 #endif
+  bool plot_rho_adv = true;
+  pp.query("plot_rho_adv", plot_rho_adv);
+  if (plot_rho_adv) {
+    for (int i = 0; i < NUM_ADV; i++) {
+      amrex::Amr::addStatePlotVar(desc_lst[State_Type].name(FirstAdv + i));
+    }
+  } else {
+    for (int i = 0; i < NUM_ADV; i++) {
+      amrex::Amr::deleteStatePlotVar(desc_lst[State_Type].name(FirstAdv + i));
+    }
+  }
+
+  bool plot_adv = false;
+  pp.query("plot_adv", plot_adv);
+  if (plot_adv) {
+    amrex::Amr::addDerivePlotVar("adv");
+  } else {
+    amrex::Amr::deleteDerivePlotVar("adv");
+  }
 
   bool plot_moleFrac = false;
   pp.query("plot_molefrac", plot_moleFrac);
@@ -419,6 +447,14 @@ PeleC::setPlotVariables()
     amrex::Amr::addDerivePlotVar("molefrac");
   } else {
     amrex::Amr::deleteDerivePlotVar("molefrac");
+  }
+}
+
+void
+PeleC::writePlotFilePost(const std::string& dir, std::ostream& /*os*/)
+{
+  if (level == 0 && amrex::ParallelDescriptor::IOProcessor()) {
+    writeJobInfo(dir);
   }
 }
 
@@ -447,7 +483,7 @@ PeleC::writeJobInfo(const std::string& dir)
 
   jobInfoFile << "number of MPI processes: "
               << amrex::ParallelDescriptor::NProcs() << "\n";
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
   jobInfoFile << "number of threads:       " << omp_get_max_threads() << "\n";
 #endif
 
@@ -504,6 +540,8 @@ PeleC::writeJobInfo(const std::string& dir)
   const char* githash1 = amrex::buildInfoGetGitHash(1);
   const char* githash2 = amrex::buildInfoGetGitHash(2);
   const char* githash3 = amrex::buildInfoGetGitHash(3);
+  const char* githash4 = amrex::buildInfoGetGitHash(4);
+  const char* githash5 = amrex::buildInfoGetGitHash(5);
   if (strlen(githash1) > 0) {
     jobInfoFile << "PeleC       git hash: " << githash1 << "\n";
   }
@@ -512,6 +550,12 @@ PeleC::writeJobInfo(const std::string& dir)
   }
   if (strlen(githash3) > 0) {
     jobInfoFile << "PelePhysics git hash: " << githash3 << "\n";
+  }
+  if (strlen(githash4) > 0) {
+    jobInfoFile << "AMReX-Hydro git hash: " << githash4 << "\n";
+  }
+  if (strlen(githash5) > 0) {
+    jobInfoFile << "SUNDIALS    git hash: " << githash5 << "\n";
   }
 
   const char* buildgithash = amrex::buildInfoGetBuildGitHash();
@@ -574,21 +618,6 @@ PeleC::writeJobInfo(const std::string& dir)
               << std::setw(7) << "Z"
               << "\n";
   jobInfoFile << OtherLine;
-  // Why is this here? It creates spec_name and deletes it?
-  //     int len = mlen;
-  //     amrex::Vector<int> int_spec_names(len * NUM_SPECIES);
-  //     CKSYMS(int_spec_names.dataPtr(),&len);
-  //     for (int i = 0; i < NUM_SPECIES; i++) {
-  //         int j = 0;
-  //         char* spec_name = new char[len];
-  //         for (j = 0; j < len; j++) {
-  //           spec_name[j] = int_spec_names[i*len + j];
-  //           if (spec_name[j] == ' ')
-  //             break;
-  //         }
-  //         spec_name[len] = '\0';
-  //         delete [] spec_name;
-  //     }
   jobInfoFile << "\n\n";
 
   // runtime parameters
@@ -649,6 +678,8 @@ PeleC::writeBuildInfo(std::ostream& os)
   const char* githash1 = amrex::buildInfoGetGitHash(1);
   const char* githash2 = amrex::buildInfoGetGitHash(2);
   const char* githash3 = amrex::buildInfoGetGitHash(3);
+  const char* githash4 = amrex::buildInfoGetGitHash(4);
+  const char* githash5 = amrex::buildInfoGetGitHash(5);
   if (strlen(githash1) > 0) {
     os << "PeleC       git hash: " << githash1 << "\n";
   }
@@ -657,6 +688,12 @@ PeleC::writeBuildInfo(std::ostream& os)
   }
   if (strlen(githash3) > 0) {
     os << "PelePhysics git hash: " << githash3 << "\n";
+  }
+  if (strlen(githash4) > 0) {
+    os << "AMReX-Hydro git hash: " << githash4 << "\n";
+  }
+  if (strlen(githash5) > 0) {
+    os << "SUNDIALS    git hash: " << githash5 << "\n";
   }
 
   const char* buildgithash = amrex::buildInfoGetBuildGitHash();
@@ -668,7 +705,6 @@ PeleC::writeBuildInfo(std::ostream& os)
   os << "\n";
   os << " PeleC Compile time variables: \n";
 
-#ifdef PELEC_USE_REACTIONS
   int mm;
   int kk;
   int ii;
@@ -680,15 +716,14 @@ PeleC::writeBuildInfo(std::ostream& os)
      << std::endl;
   os << std::setw(40) << std::left << "Number reactions from chem cpp : " << ii
      << std::endl;
-#endif
 
   os << "\n";
   os << " PeleC Defines: \n";
-#ifdef _OPENMP
-  os << std::setw(35) << std::left << "_OPENMP " << std::setw(6) << "ON"
+#ifdef AMREX_USE_OMP
+  os << std::setw(35) << std::left << "AMREX_USE_OMP " << std::setw(6) << "ON"
      << std::endl;
 #else
-  os << std::setw(35) << std::left << "_OPENMP " << std::setw(6) << "OFF"
+  os << std::setw(35) << std::left << "AMREX_USE_OMP " << std::setw(6) << "OFF"
      << std::endl;
 #endif
 
@@ -708,27 +743,11 @@ PeleC::writeBuildInfo(std::ostream& os)
      << "UNDEFINED" << std::endl;
 #endif
 
-#ifdef PELEC_USE_REACTIONS
-  os << std::setw(35) << std::left << "PELEC_USE_REACTIONS " << std::setw(6)
-     << "ON" << std::endl;
-#else
-  os << std::setw(35) << std::left << "PELEC_USE_REACTIONS " << std::setw(6)
-     << "OFF" << std::endl;
-#endif
-#ifdef NUM_ADV
   os << std::setw(35) << std::left << "NUM_ADV=" << NUM_ADV << std::endl;
-#else
-  os << std::setw(35) << std::left << "NUM_ADV"
-     << "is undefined (0)" << std::endl;
-#endif
 
-#ifdef PELEC_USE_EB
-  os << std::setw(35) << std::left << "PELEC_USE_EB " << std::setw(6) << "ON"
-     << std::endl;
-#else
-  os << std::setw(35) << std::left << "PELEC_USE_EB " << std::setw(6) << "OFF"
-     << std::endl;
-#endif
+  os << std::setw(35) << std::left << "NUM_AUX=" << NUM_AUX << std::endl;
+
+  os << std::setw(35) << std::left << "NUM_LIN=" << NUM_LIN << std::endl;
 
 #ifdef PELEC_USE_MASA
   os << std::setw(35) << std::left << "PELEC_USE_MASA " << std::setw(6) << "ON"
@@ -738,403 +757,128 @@ PeleC::writeBuildInfo(std::ostream& os)
      << std::endl;
 #endif
 
-#ifdef PELEC_USE_EB
-  os << std::setw(35) << std::left << "PELEC_USE_EB " << std::setw(6) << "ON"
+#ifdef PELEC_SPRAY
+  os << std::setw(35) << std::left << "PELEC_SPRAY " << std::setw(6) << "ON"
      << std::endl;
 #else
-  os << std::setw(35) << std::left << "PELEC_USE_EB " << std::setw(6) << "OFF"
+  os << std::setw(35) << std::left << "PELEC_SPRAY " << std::setw(6) << "OFF"
      << std::endl;
-#endif
-
-#ifdef AMREX_PARTICLES
-  os << std::setw(35) << std::left << "AMREX_PARTICLES " << std::setw(6) << "ON"
-     << std::endl;
-#else
-  os << std::setw(35) << std::left << "AMREX_PARTICLES " << std::setw(6)
-     << "OFF" << std::endl;
 #endif
 
   os << "\n\n";
 }
 
 void
-PeleC::writePlotFile(
-  const std::string& dir, std::ostream& os, amrex::VisMF::How how)
+PeleC::initLevelDataFromPlt(
+  const int lev, const std::string& dataPltFile, amrex::MultiFab& S_new)
 {
-  // The list of indices of State to write to plotfile.
-  // first component of pair is state_type,
-  // second component of pair is component # within the state_type
-  amrex::Vector<std::pair<int, int>> plot_var_map;
-  for (int typ = 0; typ < desc_lst.size(); typ++) {
-    for (int comp = 0; comp < desc_lst[typ].nComp(); comp++) {
-      if (
-        amrex::Amr::isStatePlotVar(desc_lst[typ].name(comp)) &&
-        desc_lst[typ].getType() == amrex::IndexType::TheCellType()) {
-        plot_var_map.push_back(std::pair<int, int>(typ, comp));
-      }
+  amrex::Print() << "Using data (rho, u, T, Y) from pltfile " << dataPltFile
+                 << std::endl;
+  pele::physics::pltfilemanager::PltFileManager pltData(dataPltFile);
+  const auto plt_vars = pltData.getVariableList();
+
+  // Read rho, u, temperature (required)
+  std::map<std::string, int> vars{
+    {"density", -1}, {"x_velocity", -1}, {"Temp", -1}};
+  for (auto& var : vars) {
+    var.second = find_position(plt_vars, var.first);
+    if (var.second == -1) {
+      amrex::Abort("Unable to find variable in plot file: " + var.first);
+    }
+  }
+  pltData.fillPatchFromPlt(lev, geom, vars["density"], URHO, 1, S_new);
+  pltData.fillPatchFromPlt(
+    lev, geom, vars["x_velocity"], UMX, AMREX_SPACEDIM, S_new);
+  pltData.fillPatchFromPlt(lev, geom, vars["Temp"], UTEMP, 1, S_new);
+
+  // Copy species from the plot file
+  for (int n = 0; n < spec_names.size(); n++) {
+    const auto& spec = spec_names.at(n);
+    const int pos = find_position(plt_vars, "Y(" + spec + ")");
+    if (pos != -1) {
+      pltData.fillPatchFromPlt(lev, geom, pos, UFS + n, 1, S_new);
     }
   }
 
-  int num_derive = 0;
-  std::list<std::string> derive_names;
-  const std::list<amrex::DeriveRec>& dlist = derive_lst.dlist();
+  // Sanity check the species, clean them up if they aren't too bad
+  auto sarrs = S_new.arrays();
+  const auto tol = init_pltfile_massfrac_tol;
+  amrex::ParallelFor(
+    S_new, [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k) noexcept {
+      auto sarr = sarrs[nbx];
+      amrex::Real sumY = 0.0;
 
-  for (const auto& it : dlist) {
-    if (amrex::Amr::isDerivePlotVar(it.name())) {
-#ifdef AMREX_PARTICLES
-      if (
-        it->name() == "particle_count" ||
-        it->name() == "total_particle_count" ||
-        it->name() == "particle_density") {
-        if (PeleC::theSprayPC()) {
-          derive_names.push_back(it->name());
-          num_derive++;
+      for (int n = 0; n < NUM_SPECIES; n++) {
+        // if the species is not too far out of bounds, clip it
+        const auto mf = sarr(i, j, k, UFS + n);
+        if ((mf < 0.0) || (1.0 < mf)) {
+          if (((-tol < mf) && (mf < 0.0)) || ((1.0 < mf) && (mf < 1 + tol))) {
+            sarr(i, j, k, UFS + n) =
+              amrex::min<amrex::Real>(1.0, amrex::max<amrex::Real>(0.0, mf));
+          } else {
+#ifdef AMREX_USE_GPU
+            AMREX_DEVICE_PRINTF(
+              "Species mass fraction is out of bounds (spec, value): (%d, %g)",
+              n, mf);
+            amrex::Abort();
+#else
+            amrex::Abort(
+              "Species mass fraction is out of bounds (spec, value): ( " +
+              std::to_string(n) + ", " + std::to_string(mf) + ")");
+#endif
+          }
         }
-      } else
-#endif
-      {
-        derive_names.push_back(it.name());
-        num_derive += it.numDerive();
+
+        sumY += sarr(i, j, k, UFS + n);
       }
-    }
-  }
 
-  int n_data_items = plot_var_map.size() + num_derive;
-
-  amrex::Real cur_time = state[State_Type].curTime();
-
-  if (level == 0 && amrex::ParallelDescriptor::IOProcessor()) {
-    // The first thing we write out is the plotfile type.
-    os << thePlotFileType() << '\n';
-
-    if (n_data_items == 0) {
-      amrex::Error("Must specify at least one valid data item to plot");
-    }
-
-    os << n_data_items << '\n';
-
-    // Names of variables -- first state, then derived
-    for (int i = 0; i < plot_var_map.size(); i++) {
-      int typ = plot_var_map[i].first;
-      int comp = plot_var_map[i].second;
-      os << desc_lst[typ].name(comp) << '\n';
-    }
-
-    for (const auto& derive_name : derive_names) {
-      const amrex::DeriveRec* rec = derive_lst.get(derive_name);
-      for (int i = 0; i < rec->numDerive(); i++) {
-        os << rec->variableName(i) << '\n';
-      }
-    }
-
-    os << AMREX_SPACEDIM << '\n';
-    os << parent->cumTime() << '\n';
-    int f_lev = parent->finestLevel();
-    os << f_lev << '\n';
-    for (int i = 0; i < AMREX_SPACEDIM; i++) {
-      os << amrex::DefaultGeometry().ProbLo(i) << ' ';
-    }
-    os << '\n';
-    for (int i = 0; i < AMREX_SPACEDIM; i++) {
-      os << amrex::DefaultGeometry().ProbHi(i) << ' ';
-    }
-    os << '\n';
-    for (int i = 0; i < f_lev; i++) {
-      os << parent->refRatio(i)[0] << ' ';
-    }
-    os << '\n';
-    for (int i = 0; i <= f_lev; i++) {
-      os << parent->Geom(i).Domain() << ' ';
-    }
-    os << '\n';
-    for (int i = 0; i <= f_lev; i++) {
-      os << parent->levelSteps(i) << ' ';
-    }
-    os << '\n';
-    for (int i = 0; i <= f_lev; i++) {
-      for (int k = 0; k < AMREX_SPACEDIM; k++) {
-        os << parent->Geom(i).CellSize()[k] << ' ';
-      }
-      os << '\n';
-    }
-    os << (int)amrex::DefaultGeometry().Coord() << '\n';
-    os << "0\n"; // Write bndry data.
-
-    writeJobInfo(dir);
-  }
-
-  // Build the directory to hold the MultiFab at this level.
-  // The name is relative to the directory containing the Header file.
-  static const std::string BaseName = "/Cell";
-  char buf[64];
-  sprintf(buf, "Level_%d", level);
-  std::string LevelStr = buf;
-
-  // Now for the full pathname of that directory.
-  std::string FullPath = dir;
-  if (!FullPath.empty() && FullPath[FullPath.size() - 1] != '/') {
-    FullPath += '/';
-  }
-  FullPath += LevelStr;
-
-  // Only the I/O processor makes the directory if it doesn't already exist.
-  if (amrex::ParallelDescriptor::IOProcessor()) {
-    if (!amrex::UtilCreateDirectory(FullPath, 0755)) {
-      amrex::CreateDirectoryFailed(FullPath);
-    }
-  }
-
-  // Force other processors to wait till directory is built.
-  amrex::ParallelDescriptor::Barrier();
-
-  if (amrex::ParallelDescriptor::IOProcessor()) {
-    os << level << ' ' << grids.size() << ' ' << cur_time << '\n';
-    os << parent->levelSteps(level) << '\n';
-
-    for (int i = 0; i < grids.size(); ++i) {
-      amrex::RealBox gridloc =
-        amrex::RealBox(grids[i], geom.CellSize(), geom.ProbLo());
-      for (int n = 0; n < AMREX_SPACEDIM; n++) {
-        os << gridloc.lo(n) << ' ' << gridloc.hi(n) << '\n';
-      }
-    }
-
-    // The full relative pathname of the MultiFabs at this level.
-    // The name is relative to the Header file containing this name.
-    // It's the name that gets written into the Header.
-    if (n_data_items > 0) {
-      std::string PathNameInHeader = LevelStr;
-      PathNameInHeader += BaseName;
-      os << PathNameInHeader << '\n';
-    }
-
-#ifdef PELEC_USE_EB
-    if (eb_in_domain && level == parent->finestLevel()) {
-      os << vfraceps << '\n';
-    }
-#endif
-  }
-
-  // We combine all of the multifabs -- state, derived, etc -- into one
-  // multifab -- plotMF.
-  // NOTE: we are assuming that each state variable has one component,
-  // but a derived variable is allowed to have multiple components.
-  int cnt = 0;
-  const int nGrow = 0;
-  amrex::MultiFab plotMF(
-    grids, dmap, n_data_items, nGrow, amrex::MFInfo(), Factory());
-
-  // Cull data from state variables -- use no ghost cells.
-  for (int i = 0; i < plot_var_map.size(); i++) {
-    int typ = plot_var_map[i].first;
-    int comp = plot_var_map[i].second;
-    amrex::MultiFab* this_dat = &state[typ].newData();
-    amrex::MultiFab::Copy(plotMF, *this_dat, comp, cnt, 1, nGrow);
-    cnt++;
-  }
-
-  // Cull data from derived variables.
-  if (!derive_names.empty()) {
-    for (const auto& derive_name : derive_names) {
-      const amrex::DeriveRec* rec = derive_lst.get(derive_name);
-      int ncomp = rec->numDerive();
-
-      auto derive_dat = derive(derive_name, cur_time, nGrow);
-      amrex::MultiFab::Copy(plotMF, *derive_dat, 0, cnt, ncomp, nGrow);
-      cnt += ncomp;
-    }
-  }
-
-#ifdef PELEC_USE_EB
-  // Prefer app-specific one
-  // amrex::EB_set_covered(plotMF);
-#endif
-
-  // Use the Full pathname when naming the MultiFab.
-  std::string TheFullPath = FullPath;
-  TheFullPath += BaseName;
-  amrex::VisMF::Write(plotMF, TheFullPath, how, true);
-#ifdef AMREX_PARTICLES
-  bool is_checkpoint = false;
-
-  if (PeleC::theSprayPC()) {
-    amrex::Vector<std::string> real_comp_names(pstateNum);
-    AMREX_D_TERM(real_comp_names[pstateVel] = "xvel";
-                 , real_comp_names[pstateVel + 1] = "yvel";
-                 , real_comp_names[pstateVel + 2] = "zvel";);
-    real_comp_names[pstateT] = "temperature";
-    real_comp_names[pstateDia] = "diam";
-    real_comp_names[pstateRho] = "density";
-    for (int sp = 0; sp < SPRAY_FUEL_NUM; ++sp) {
-      real_comp_names[pstateY + sp] = "spray_mf_" + PeleC::sprayFuelNames[sp];
-    }
-    amrex::Vector<std::string> int_comp_names;
-    if (PeleC::theSprayPC()) {
-      PeleC::theSprayPC()->Checkpoint(
-        dir, "particles", is_checkpoint, real_comp_names, int_comp_names);
-      if (level == 0) {
-        if (do_spray_particles == 1 && write_spray_ascii_files == 1) {
-          // TODO: Would be nice to be able to use file_name_digits instead of
-          // doing this
-          int strlen = dir.length();
-          // Remove the ".temp" from the directory
-          std::string dirout = dir.substr(0, strlen - 5);
-          size_t num_start_loc = dirout.find_last_not_of("0123456789") + 1;
-          std::string fname =
-            "spray" + dirout.substr(num_start_loc, strlen) + ".p3d";
-          theSprayPC()->WriteAsciiFile(fname);
+      // If the sumY isn't too far from 1, renormalize
+      if (amrex::Math::abs(1.0 - sumY) < tol) {
+        for (int n = 0; n < NUM_SPECIES; n++) {
+          sarr(i, j, k, UFS + n) /= sumY;
         }
-      }
-    }
-  }
+      } else {
+#ifdef AMREX_USE_GPU
+        AMREX_DEVICE_PRINTF(
+          "Species mass fraction don't sum to 1. The sum is: %g", sumY);
+        amrex::Abort();
+#else
+        amrex::Abort(
+          "Species mass fraction don't sum to 1. The sum is: " +
+          std::to_string(sumY));
 #endif
-}
-
-void
-PeleC::writeSmallPlotFile(
-  const std::string& dir, std::ostream& os, amrex::VisMF::How how)
-{
-  // The list of indices of State to write to plotfile.
-  // first component of pair is state_type,
-  // second component of pair is component # within the state_type
-  amrex::Vector<std::pair<int, int>> plot_var_map;
-  for (int typ = 0; typ < desc_lst.size(); typ++) {
-    for (int comp = 0; comp < desc_lst[typ].nComp(); comp++) {
-      if (
-        amrex::Amr::isStateSmallPlotVar(desc_lst[typ].name(comp)) &&
-        desc_lst[typ].getType() == amrex::IndexType::TheCellType()) {
-        plot_var_map.push_back(std::pair<int, int>(typ, comp));
       }
-    }
-  }
+    });
+  amrex::Gpu::synchronize();
 
-  int n_data_items = plot_var_map.size();
-
-  amrex::Real cur_time = state[State_Type].curTime();
-
-  if (level == 0 && amrex::ParallelDescriptor::IOProcessor()) {
-    // The first thing we write out is the plotfile type.
-    os << thePlotFileType() << '\n';
-
-    if (n_data_items == 0) {
-      amrex::Error("Must specify at least one valid data item to plot");
-    }
-
-    os << n_data_items << '\n';
-
-    // Names of variables -- first state, then derived
-    for (int i = 0; i < plot_var_map.size(); i++) {
-      int typ = plot_var_map[i].first;
-      int comp = plot_var_map[i].second;
-      os << desc_lst[typ].name(comp) << '\n';
-    }
-
-    os << AMREX_SPACEDIM << '\n';
-    os << parent->cumTime() << '\n';
-    int f_lev = parent->finestLevel();
-    os << f_lev << '\n';
-    for (int i = 0; i < AMREX_SPACEDIM; i++) {
-      os << amrex::DefaultGeometry().ProbLo(i) << ' ';
-    }
-    os << '\n';
-    for (int i = 0; i < AMREX_SPACEDIM; i++) {
-      os << amrex::DefaultGeometry().ProbHi(i) << ' ';
-    }
-    os << '\n';
-    for (int i = 0; i < f_lev; i++) {
-      os << parent->refRatio(i)[0] << ' ';
-    }
-    os << '\n';
-    for (int i = 0; i <= f_lev; i++) {
-      os << parent->Geom(i).Domain() << ' ';
-    }
-    os << '\n';
-    for (int i = 0; i <= f_lev; i++) {
-      os << parent->levelSteps(i) << ' ';
-    }
-    os << '\n';
-    for (int i = 0; i <= f_lev; i++) {
-      for (int k = 0; k < AMREX_SPACEDIM; k++) {
-        os << parent->Geom(i).CellSize()[k] << ' ';
+  // Convert to conserved variables
+  amrex::ParallelFor(
+    S_new, [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k) noexcept {
+      auto sarr = sarrs[nbx];
+      const amrex::Real rho = sarr(i, j, k, URHO);
+      const amrex::Real temp = sarr(i, j, k, UTEMP);
+      amrex::Real massfrac[NUM_SPECIES] = {0.0};
+      for (int n = 0; n < NUM_SPECIES; n++) {
+        massfrac[n] = sarr(i, j, k, UFS + n);
+        sarr(i, j, k, UFS + n) *= rho;
       }
-      os << '\n';
-    }
-    os << (int)amrex::DefaultGeometry().Coord() << '\n';
-    os << "0\n"; // Write bndry data.
+      AMREX_D_TERM(sarr(i, j, k, UMX) *= rho;, sarr(i, j, k, UMY) *= rho;
+                   , sarr(i, j, k, UMZ) *= rho;)
 
-    // job_info file with details about the run
-    writeJobInfo(dir);
-  }
+      auto eos = pele::physics::PhysicsType::eos();
+      amrex::Real eint = 0.0;
+      eos.RTY2E(rho, temp, massfrac, eint);
 
-  // Build the directory to hold the MultiFab at this level.
-  // The name is relative to the directory containing the Header file.
-  static const std::string BaseName = "/Cell";
-  char buf[64];
-  sprintf(buf, "Level_%d", level);
-  std::string LevelStr = buf;
-
-  // Now for the full pathname of that directory.
-  std::string FullPath = dir;
-  if (!FullPath.empty() && FullPath[FullPath.size() - 1] != '/') {
-    FullPath += '/';
-  }
-  FullPath += LevelStr;
-
-  // Only the I/O processor makes the directory if it doesn't already exist.
-  if (amrex::ParallelDescriptor::IOProcessor()) {
-    if (!amrex::UtilCreateDirectory(FullPath, 0755)) {
-      amrex::CreateDirectoryFailed(FullPath);
-    }
-  }
-
-  // Force other processors to wait till directory is built.
-  amrex::ParallelDescriptor::Barrier();
-
-  if (amrex::ParallelDescriptor::IOProcessor()) {
-    os << level << ' ' << grids.size() << ' ' << cur_time << '\n';
-    os << parent->levelSteps(level) << '\n';
-
-    for (int i = 0; i < grids.size(); ++i) {
-      amrex::RealBox gridloc =
-        amrex::RealBox(grids[i], geom.CellSize(), geom.ProbLo());
-      for (int n = 0; n < AMREX_SPACEDIM; n++) {
-        os << gridloc.lo(n) << ' ' << gridloc.hi(n) << '\n';
-      }
-    }
-
-    // The full relative pathname of the MultiFabs at this level.
-    // The name is relative to the Header file containing this name.
-    // It's the name that gets written into the Header.
-    if (n_data_items > 0) {
-      std::string PathNameInHeader = LevelStr;
-      PathNameInHeader += BaseName;
-      os << PathNameInHeader << '\n';
-    }
-    os << vfraceps << '\n';
-  }
-
-  // We combine all of the multifabs -- state, derived, etc -- into one
-  // multifab -- plotMF.
-  // NOTE: we are assuming that each state variable has one component,
-  // but a derived variable is allowed to have multiple components.
-  int cnt = 0;
-  const int nGrow = 0;
-  amrex::MultiFab plotMF(
-    grids, dmap, n_data_items, nGrow, amrex::MFInfo(), Factory());
-
-  // Cull data from state variables -- use no ghost cells.
-  for (int i = 0; i < plot_var_map.size(); i++) {
-    int typ = plot_var_map[i].first;
-    int comp = plot_var_map[i].second;
-    amrex::MultiFab* this_dat = &state[typ].newData();
-    amrex::MultiFab::Copy(plotMF, *this_dat, comp, cnt, 1, nGrow);
-    cnt++;
-  }
-
-  // Use the Full pathname when naming the MultiFab.
-  std::string TheFullPath = FullPath;
-  TheFullPath += BaseName;
-  amrex::VisMF::Write(plotMF, TheFullPath, how, true);
+      sarr(i, j, k, UEINT) = rho * eint;
+      sarr(i, j, k, UEDEN) =
+        rho * eint + 0.5 *
+                       (AMREX_D_TERM(
+                         sarr(i, j, k, UMX) * sarr(i, j, k, UMX),
+                         +sarr(i, j, k, UMY) * sarr(i, j, k, UMY),
+                         +sarr(i, j, k, UMZ) * sarr(i, j, k, UMZ))) /
+                       rho;
+    });
+  amrex::Gpu::synchronize();
 }
 
 void PeleC::writeDebugPlotFile(const amrex::Vector<const amrex::MultiFab*> &a_MF,

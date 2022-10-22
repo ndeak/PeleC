@@ -24,8 +24,6 @@ FSANITIZER = FALSE
 THREAD_SANITIZER = FALSE
 
 # PeleC
-USE_REACT = FALSE
-USE_EB = TRUE
 # Eos_dir := Soave-Redlich-Kwong
 Eos_Model := GammaLaw
 Chemistry_Model := Null
@@ -36,5 +34,3 @@ Bpack := ./Make.package
 Blocs := .
 PELEC_HOME := ../../..
 include $(PELEC_HOME)/Exec/Make.PeleC
-
-DEFINES += -DConvergingNozzle

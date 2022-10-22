@@ -1,5 +1,6 @@
 #ifndef _PLASMA_H_
 #define _PLASMA_H_
+#include "PeleC.H"
 
 // Definition of global plasma objects
 

@@ -75,11 +75,9 @@ PeleC::fill_ext_source(
   auto eos = pele::physics::PhysicsType::eos();
   eos.molecular_weight(mwt);   // CGS
 
-#ifdef PELEC_USE_EB
   auto const& fact =
     dynamic_cast<amrex::EBFArrayBoxFactory const&>(state_old.Factory());
   auto const& flags = fact.getMultiEBCellFlagFab();
-#endif
 
 //   // First need cell-centered gradients for all ions
 //   for (int dir = 0; dir < AMREX_SPACEDIM; dir++)
@@ -171,13 +169,11 @@ PeleC::fill_ext_source(
   for (amrex::MFIter mfi(ext_src, amrex::TilingIfNotGPU()); mfi.isValid();
        ++mfi) {
     const amrex::Box& bx = mfi.growntilebox(ng);
-#ifdef PELEC_USE_EB
     const auto& flag_fab = flags[mfi];
     amrex::FabType typ = flag_fab.getType(bx);
     if (typ == amrex::FabType::covered) {
       continue;
     }
-#endif
     auto const& S_arr = (time == prev_time) ? state_old.array(mfi):state_new.array(mfi);
     auto const& Farr = ext_src.array(mfi);
     auto const& joule_src = joule_heating.array(mfi);
@@ -211,5 +207,5 @@ PeleC::fill_ext_source(
     });
   }
 #endif  
-
+  amrex::Gpu::synchronize();
 }

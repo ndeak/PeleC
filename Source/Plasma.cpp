@@ -1,9 +1,7 @@
 #include <PeleC.H>
 #include <AMReX_MLABecLaplacian.H>
 #include <AMReX_MLPoisson.H>
-#ifdef AMREX_USE_EB
 #include <AMReX_MLEBABecLap.H>
-#endif
 #include <AMReX_ParmParse.H>
 #include <Plasma_K.H>
 #include <PlasmaBCFill.H>
@@ -140,7 +138,7 @@ void PeleC::plasma_define_data() {
    KSpec_new.define(grids,dmap,NUM_SPECIES, numGrow()); KSpec_new.setVal(0.0);
    spec_drift.define(grids,dmap,NUM_E*NUM_SPECIES,numGrow()); spec_drift.setVal(0.0);
    coeffs_old.define(grids,dmap,NUM_SPECIES+3, numGrow()); coeffs_old.setVal(0.0);
-   Q_ext.define(grids,dmap,NQ,numGrow()); Q_ext.setVal(0.0);
+   Q_ext.define(grids,dmap,QVAR,numGrow()); Q_ext.setVal(0.0);
    Qaux_ext.define(grids,dmap,NQAUX,numGrow()); Qaux_ext.setVal(0.0);
    ionFlx_eb.define(grids,dmap,1,numGrow()); ionFlx_eb.setVal(0.0);      // EB ion fluxes - a bit inefficient to store as full MF
    PI_source.define(grids, dmap, 4, 1, amrex::MFInfo(), Factory()); PI_source.setVal(0.0);
@@ -239,12 +237,8 @@ void PeleC::ef_calcGradPhiV(const Real&    time_lcl,
    info.setConsolidation(1);
    info.setMetricTerm(false);
    info.setMaxCoarseningLevel(0);
-#ifdef AMREX_USE_EB
    const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
    MLEBABecLap poisson({geom}, {grids}, {dmap}, info, {ebf});
-#else
-   MLABecLaplacian poisson({geom}, {grids}, {dmap}, info);
-#endif
    // MLPoisson poisson({geom}, {grids}, {dmap}, info);
 
    poisson.setMaxOrder(ef_PoissonMaxOrder);

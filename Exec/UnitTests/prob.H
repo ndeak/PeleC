@@ -1,5 +1,5 @@
-#ifndef _PROB_H_
-#define _PROB_H_
+#ifndef PROB_H
+#define PROB_H
 
 #include "ProblemDerive.H"
 
@@ -34,7 +34,7 @@ bcnormal(
 
 struct MyProbTagStruct
 {
-  AMREX_GPU_HOST_DEVICE
+  AMREX_GPU_DEVICE
   AMREX_FORCE_INLINE
   static void set_problem_tags(
     const int /*i*/,

@@ -1,15 +1,11 @@
 #include <memory>
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #include <omp.h>
 #endif
 
 #include <AMReX_Vector.H>
 #include <AMReX_TagBox.H>
-
-#ifdef PELEC_USE_EB
 #include <AMReX_EBMultiFabUtil.H>
-#include "hydro_redistribution.H"
-#endif
 
 #ifdef AMREX_PARTICLES
 #include <AMReX_Particles.H>
@@ -31,9 +27,6 @@ using namespace MASA;
 #include "Utilities.H"
 #include "Tagging.H"
 #include "IndexDefines.H"
-// #if defined(PELEC_USE_REACTIONS) && defined(USE_SUNDIALS_PP)
-// #include "reactor.h"
-// #endif
 
 #ifdef PELEC_ENABLE_FPE_TRAP
 #if defined(__linux__)
@@ -44,7 +37,6 @@ using namespace MASA;
 #endif
 
 bool PeleC::signalStopJob = false;
-bool PeleC::dump_old = false;
 bool PeleC::monitor_file = false;
 bool PeleC::NL_convergence_file = false;
 int PeleC::verbose = 0;
@@ -64,14 +56,8 @@ int PeleC::Tele = -1;
 #endif
 int PeleC::FirstSpec = -1;
 int PeleC::FirstAux = -1;
-int PeleC::NumAdv = 0;
 int PeleC::FirstAdv = -1;
-int PeleC::pstateVel = -1;
-int PeleC::pstateT = -1;
-int PeleC::pstateDia = -1;
-int PeleC::pstateRho = -1;
-int PeleC::pstateY = -1;
-int PeleC::pstateNum = 0;
+int PeleC::FirstLin = -1;
 
 #ifdef PELEC_USE_PLASMA
 // TODO: Organize this better
@@ -179,20 +165,17 @@ amrex::GpuArray<amrex::Real,1000> PeleC::lin_residuals;
 
 #include "pelec_defaults.H"
 
-int PeleC::diffuse_temp = 0;
-int PeleC::diffuse_enth = 0;
-int PeleC::diffuse_spec = 0;
-int PeleC::diffuse_vel = 0;
-amrex::Real PeleC::diffuse_cutoff_density =
-  -std::numeric_limits<amrex::Real>::max();
 bool PeleC::do_diffuse = false;
+
+#ifdef PELEC_SPRAY
+bool PeleC::do_spray_particles = true;
+#else
+bool PeleC::do_spray_particles = false;
+#endif
 
 #ifdef PELEC_USE_MASA
 bool PeleC::mms_initialized = false;
 #endif
-
-int PeleC::use_hybrid_weno = 0;
-int PeleC::weno_scheme = 1;
 
 int PeleC::les_model = 0;
 int PeleC::les_filter_type = no_filter;
@@ -201,11 +184,10 @@ int PeleC::les_test_filter_type = box_3pt_optimized_approx;
 int PeleC::les_test_filter_fgr = 2;
 
 bool PeleC::eb_in_domain = false;
-#ifdef PELEC_USE_EB
 bool PeleC::eb_initialized = false;
+int PeleC::eb_max_lvl_gen = -1;
 bool PeleC::body_state_set = false;
 amrex::GpuArray<amrex::Real, NVAR> PeleC::body_state;
-#endif
 
 bool PeleC::do_react_load_balance = false;
 bool PeleC::do_mol_load_balance = false;
@@ -216,6 +198,8 @@ pele::physics::transport::TransportParams<
   pele::physics::PhysicsType::transport_type>
   PeleC::trans_parms;
 
+pele::physics::turbinflow::TurbInflow PeleC::turb_inflow;
+
 amrex::Vector<int> PeleC::src_list;
 
 // this will be reset upon restart
@@ -223,7 +207,12 @@ amrex::Real PeleC::previousCPUTimeUsed = 0.0;
 amrex::Real PeleC::startCPUTime = 0.0;
 int PeleC::num_state_type = 0;
 
-#ifdef PELEC_USE_EB
+amrex::Real PeleC::typical_rhoY_val_min = 1.e-10;
+bool PeleC::use_typical_vals_chem = false;
+bool PeleC::use_typical_vals_chem_usr = false;
+int PeleC::reset_typical_vals_int = 10;
+amrex::Vector<amrex::Real> PeleC::typical_values_chem_usr;
+
 static bool eb_initialized = false;
 
 bool
@@ -237,7 +226,36 @@ ebInitialized(bool eb_init_val)
 {
   eb_initialized = eb_init_val;
 }
-#endif
+
+int
+PeleC::getEBMaxLevel()
+{
+  // Look into amr PP
+  amrex::ParmParse ppa("amr");
+  int max_eb_level = -1;
+
+  // Default to amr.max_level
+  ppa.query("max_level", max_eb_level);
+
+  // Get the level in the restart file if present
+  std::string restart_file;
+  ppa.query("restart", restart_file);
+  if (!restart_file.empty()) {
+    std::string FullPathEBLevelFile = restart_file;
+    FullPathEBLevelFile += "/EBMaxLevel";
+    std::ifstream EBLevelFile(FullPathEBLevelFile);
+    if (!EBLevelFile.fail()) {
+      EBLevelFile >> max_eb_level;
+      EBLevelFile.close();
+    }
+  }
+
+  // Allow manual overwrite
+  amrex::ParmParse ppeb("eb2");
+  ppeb.query("max_level_generation", max_eb_level);
+
+  return max_eb_level;
+}
 
 void
 PeleC::read_params()
@@ -256,7 +274,6 @@ PeleC::read_params()
 
   pp.query("v", verbose);
   pp.query("sum_interval", sum_interval);
-  pp.query("dump_old", dump_old);
   pp.query("monitor_file", monitor_file);
   pp.query("NL_convergence_file", NL_convergence_file);
 
@@ -313,6 +330,19 @@ PeleC::read_params()
     phys_bc.setHi(dir, hi_bc[dir]);
   }
 
+  typical_values_chem_usr.resize(NUM_SPECIES + 1, 1.0e-10);
+  pp.query("use_typ_vals_chem", use_typical_vals_chem);
+  pp.query("use_typ_vals_chem_usr", use_typical_vals_chem_usr);
+
+  if (use_typical_vals_chem_usr) {
+    use_typical_vals_chem = true;
+  }
+
+  pp.query("typical_rhoY_val_min", typical_rhoY_val_min);
+  pp.query("reset_typical_vals_int", reset_typical_vals_int);
+  pp.queryarr(
+    "typical_values_chem", typical_values_chem_usr, 0, NUM_SPECIES + 1);
+
   // Check phys_bc against possible periodic geometry
   // if periodic, must have internal BC marked.
   // Check, periodic means interior in those directions.
@@ -355,19 +385,13 @@ PeleC::read_params()
     amrex::Abort("We don't support spherical coordinate systems in 3D");
   }
 
-  pp.query("diffuse_temp", diffuse_temp);
-  pp.query("diffuse_enth", diffuse_enth);
-  pp.query("diffuse_spec", diffuse_spec);
-  pp.query("diffuse_vel", diffuse_vel);
-  pp.query("diffuse_cutoff_density", diffuse_cutoff_density);
-
-  do_diffuse = diffuse_temp || diffuse_enth || diffuse_spec || diffuse_vel;
+  do_diffuse = (diffuse_temp || diffuse_enth || diffuse_spec || diffuse_vel);
 
   // sanity checks
   if (cfl <= 0.0 || cfl > 1.0) {
     amrex::Error("Invalid CFL factor; must be between zero and one.");
   }
-  if ((do_hydro == 1) && (do_mol == 1) && (cfl > 0.3)) {
+  if (do_hydro && do_mol && (cfl > 0.3)) {
     amrex::Print() << "WARNING -- CFL should be <= 0.3 when using MOL hydro."
                    << std::endl;
   }
@@ -388,61 +412,38 @@ PeleC::read_params()
   }
 
   // Check on PPM type
-  if ((do_hydro == 1) && (do_mol == 0)) {
+  if (do_hydro && (!do_mol)) {
     if (ppm_type != 0 && ppm_type != 1) {
       amrex::Error("PeleC::ppm_type must be 0 (PLM) or 1 (PPM)");
     }
   }
 
-  pp.query("use_hybrid_weno", use_hybrid_weno);
-  pp.query("weno_scheme", weno_scheme);
-  if (ppm_type != 1 && use_hybrid_weno == 1) {
+  if (ppm_type != 1 && use_hybrid_weno) {
     amrex::Error("PeleC::ppm_type must be 1 (PPM) to use WENO method");
   }
 
   // for the moment, ppm_type = 0 does not support ppm_trace_sources --
   // we need to add the momentum sources to the states (and not
   // add it in trans_3d
-  if (ppm_type == 0 && ppm_trace_sources == 1) {
+  if (ppm_type == 0 && ppm_trace_sources) {
     amrex::Print()
       << "WARNING: ppm_trace_sources = 1 not implemented for ppm_type = 0"
       << std::endl;
-    ppm_trace_sources = 0;
+    ppm_trace_sources = false;
     pp.add("ppm_trace_sources", ppm_trace_sources);
-  }
-  /*
-    if (ppm_temp_fix > 0 && AMREX_SPACEDIM == 1) {
-      amrex::Error("ppm_temp_fix > 0 not implemented in 1-d");
-    }
-
-    if (hybrid_riemann == 1 && AMREX_SPACEDIM == 1) {
-      amrex::Error("hybrid_riemann only implemented in 2- and 3-d");
-    }
-  */
-  if (
-    hybrid_riemann == 1 && (amrex::DefaultGeometry().IsSPHERICAL() ||
-                            amrex::DefaultGeometry().IsRZ())) {
-    amrex::Error(
-      "hybrid_riemann should only be used for Cartesian coordinates");
-  }
-
-  if (use_colglaz >= 0) {
-    amrex::Error("use_colglaz is deprecated. Use riemann_solver instead");
   }
 
   if (max_dt < fixed_dt) {
     amrex::Error("Cannot have max_dt < fixed_dt");
   }
 
-#ifdef AMREX_PARTICLES
+#ifdef PELEC_SPRAY
   readParticleParams();
 #endif
 
-#ifdef PELEC_USE_EB
-  if ((do_mol == 0) && (eb_in_domain)) {
+  if ((!do_mol) && eb_in_domain) {
     amrex::Abort("Must do_mol = 1 when using EB\n");
   }
-#endif
 
 #ifdef PELEC_USE_PLASMA
   pp.query("ion_bc_type", ion_bc_type);
@@ -462,11 +463,11 @@ PeleC::read_params()
   read_tagging_params();
 
   // TODO: What is this?
-  amrex::StateDescriptor::setBndryFuncThreadSafety(bndry_func_thread_safe);
+  amrex::StateDescriptor::setBndryFuncThreadSafety(
+    static_cast<int>(bndry_func_thread_safe));
 
   // Get some useful amr inputs
   amrex::ParmParse ppa("amr");
-
   // This turns on the lb stuff inside Amr, but we use our own flag to signal
   // whether to gather data
   ppa.query("loadbalance_with_workestimates", do_mol_load_balance);
@@ -506,37 +507,22 @@ PeleC::PeleC(
 {
   buildMetrics();
 
-#ifdef PELEC_USE_EB
-  init_eb(level_geom, bl, dm);
-#endif
+  init_eb();
 
-  amrex::MultiFab& S_new = get_new_data(State_Type);
+  const amrex::MultiFab& S_new = get_new_data(State_Type);
 
   for (int n = 0; n < src_list.size(); ++n) {
     int oldGrow = numGrow();
     int newGrow = S_new.nGrow();
-#ifdef AMREX_PARTICLES
-    if (src_list[n] == spray_src) {
-      oldGrow = 1;
-      newGrow = amrex::max<amrex::Real>(1, newGrow);
-    }
-#endif
     old_sources[src_list[n]] = std::make_unique<amrex::MultiFab>(
       grids, dmap, NVAR, oldGrow, amrex::MFInfo(), Factory());
     new_sources[src_list[n]] = std::make_unique<amrex::MultiFab>(
       grids, dmap, NVAR, newGrow, amrex::MFInfo(), Factory());
   }
 
-  if (do_hydro) {
-    Sborder.define(grids, dmap, NVAR, numGrow(), amrex::MFInfo(), Factory());
-  } else if (do_diffuse) {
+  if (do_hydro || do_diffuse) {
     Sborder.define(grids, dmap, NVAR, numGrow(), amrex::MFInfo(), Factory());
   }
-#ifdef AMREX_PARTICLES
-  else if (do_spray_particles) {
-    Sborder.define(grids, dmap, NVAR, numGrow(), amrex::MFInfo(), Factory());
-  }
-#endif
 
   if (!do_mol) {
     if (do_hydro) {
@@ -562,20 +548,19 @@ PeleC::PeleC(
   }
 
   if (do_reflux && level > 0) {
-    flux_reg.define(
+    flux_reg = std::make_unique<amrex::EBFluxRegister>(
       bl, papa.boxArray(level - 1), dm, papa.DistributionMap(level - 1),
       level_geom, papa.Geom(level - 1), papa.refRatio(level - 1), level, NVAR);
 
     if (!amrex::DefaultGeometry().IsCartesian()) {
-      pres_reg.define(
-        bl, papa.boxArray(level - 1), dm, papa.DistributionMap(level - 1),
-        level_geom, papa.Geom(level - 1), papa.refRatio(level - 1), level, 1);
+      // pres_reg.define(
+      // bl, papa.boxArray(level - 1), dm, papa.DistributionMap(level - 1),
+      // level_geom, papa.Geom(level - 1), papa.refRatio(level - 1), level, 1);
+      amrex::Abort("We don't do rz.");
     }
   }
 
-#ifdef PELEC_USE_REACTIONS
   get_new_data(Reactions_Type).setVal(0.0);
-#endif
 
   // Don't need this in pure C++?
   // initialize the Godunov state array used in hydro -- we wait
@@ -585,6 +570,11 @@ PeleC::PeleC(
   //{
   //  init_godunov_indices();
   //}
+
+  // Initialize the reactor
+  if (do_react) {
+    init_reactor();
+  }
 
   // initialize LES variables
   if (do_les) {
@@ -603,7 +593,12 @@ PeleC::PeleC(
 #endif
 }
 
-PeleC::~PeleC() = default;
+PeleC::~PeleC()
+{
+  if (do_react) {
+    close_reactor();
+  }
+}
 
 void
 PeleC::buildMetrics()
@@ -653,14 +648,11 @@ PeleC::buildMetrics()
     geom.GetFaceArea(area[dir], dir);
   }
 
-#ifdef PELEC_USE_EB
   vfrac.clear();
   vfrac.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory());
   const auto& ebfactory =
     dynamic_cast<amrex::EBFArrayBoxFactory const&>(Factory());
   amrex::MultiFab::Copy(vfrac, ebfactory.getVolFrac(), 0, 0, 1, numGrow());
-  areafrac = ebfactory.getAreaFrac();
-#endif
 
   level_mask.clear();
   level_mask.define(grids, dmap, 1, 1);
@@ -693,17 +685,17 @@ PeleC::setGridInfo()
     const int nlevs = max_level + 1;
     const int size = 3 * nlevs;
 
-    amrex::Vector<amrex::Real> dx_level(size);
+    // amrex::Vector<amrex::Real> dx_level(size);
     amrex::Vector<int> domlo_level(size);
     amrex::Vector<int> domhi_level(size);
 
-    const amrex::Real* dx_coarse = geom.CellSize();
+    // const amrex::Real* dx_coarse = geom.CellSize();
 
     const int* domlo_coarse = geom.Domain().loVect();
     const int* domhi_coarse = geom.Domain().hiVect();
 
     for (int dir = 0; dir < 3; dir++) {
-      dx_level[dir] = (ZFILL(dx_coarse))[dir];
+      // dx_level[dir] = (ZFILL(dx_coarse))[dir];
 
       domlo_level[dir] = (ARLIM_3D(domlo_coarse))[dir];
       domhi_level[dir] = (ARLIM_3D(domhi_coarse))[dir];
@@ -719,15 +711,15 @@ PeleC::setGridInfo()
 
       for (int dir = 0; dir < 3; dir++) {
         if (dir < AMREX_SPACEDIM) {
-          dx_level[3 * lev + dir] =
-            dx_level[3 * (lev - 1) + dir] / ref_ratio[dir];
+          // dx_level[3 * lev + dir] = dx_level[3 * (lev - 1) + dir] /
+          // ref_ratio[dir];
           int ncell = (domhi_level[3 * (lev - 1) + dir] -
                        domlo_level[3 * (lev - 1) + dir] + 1) *
                       ref_ratio[dir];
           domlo_level[3 * lev + dir] = domlo_level[dir];
           domhi_level[3 * lev + dir] = domlo_level[3 * lev + dir] + ncell - 1;
         } else {
-          dx_level[3 * lev + dir] = 0.0;
+          // dx_level[3 * lev + dir] = 0.0;
           domlo_level[3 * lev + dir] = 0;
           domhi_level[3 * lev + dir] = 0;
         }
@@ -760,7 +752,6 @@ PeleC::initData()
 
   // int ns = NVAR;
   amrex::MultiFab& S_new = get_new_data(State_Type);
-  // amrex::Real cur_time = state[State_Type].curTime();
 
   S_new.setVal(0.0);
 
@@ -778,49 +769,40 @@ PeleC::initData()
   }
 #endif
 
-  if (verbose) {
+  if (verbose != 0) {
     amrex::Print() << "Initializing the data at level " << level << std::endl;
   }
 
-#ifdef PELEC_USE_REACTIONS
   get_new_data(Reactions_Type).setVal(0.0);
-#endif
 
   if (do_mol_load_balance || do_react_load_balance) {
     get_new_data(Work_Estimate_Type).setVal(1.0);
   }
 
-#ifdef _OPENMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid();
-       ++mfi) {
-    const amrex::Box& box = mfi.tilebox();
-    auto sfab = S_new.array(mfi);
+  if (init_pltfile.empty()) {
     const auto geomdata = geom.data();
-
-#ifdef PELEC_USE_PLASMA    
-    int useNL = ef_use_NLsolve;
-#endif
-
     const ProbParmDevice* lprobparm = d_prob_parm_device;
-
-    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      pc_initdata(i, j, k, 
+    auto sarrs = S_new.arrays();
+    amrex::ParallelFor(
+      S_new, [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k) noexcept {
+        pc_initdata(i, j, k, 
 #ifdef PELEC_USE_PLASMA
-                  useNL, 
+                  ef_use_NLsolve, 
 #endif
-                  sfab, geomdata, *lprobparm);
-      // Verify that the sum of (rho Y)_i = rho at every cell
-      pc_check_initial_species(i, j, k, sfab);
-    });
+        sarrs[nbx], geomdata, *lprobparm);
+        // Verify that the sum of (rho Y)_i = rho at every cell
+        pc_check_initial_species(i, j, k, sarrs[nbx]);
+      });
+    amrex::Gpu::synchronize();
+  } else {
+    initLevelDataFromPlt(level, init_pltfile, S_new);
   }
 
   enforce_consistent_e(S_new);
 
+  amrex::Real cur_time = state[State_Type].curTime();
 #ifdef PELEC_USE_PLASMA
   // Compute initial PhiV
-  amrex::Real cur_time = state[State_Type].curTime();
   const ProbParmDevice* lprobparm = d_prob_parm_device;
   setCurrVoltage(0.0);
   if(ef_semiImpEfield == 1) FillPatch(*this, Sborder, numGrow() + nGrowF, cur_time, State_Type, 0, NVAR);
@@ -834,22 +816,12 @@ PeleC::initData()
 
   // computeTemp(S_new,0);
 
-#ifdef PELEC_USE_EB
   set_body_state(S_new);
-  InitialRedistribution();
-#endif
+  const amrex::StateDescriptor* desc = state[State_Type].descriptor();
+  const auto& bcs = desc->getBCs();
+  InitialRedistribution(cur_time, bcs, S_new);
 
-#ifdef AMREX_PARTICLES
-  if (level == 0) {
-    initParticles();
-  } else {
-    // TODO: Determine how many ghost cells to use here
-    int nGrow = 0;
-    particleRedistribute(level - 1, nGrow, 0, false);
-  }
-#endif
-
-  if (verbose) {
+  if (verbose != 0) {
     amrex::Print() << "Done initializing level " << level << " data "
                    << std::endl;
   }
@@ -872,7 +844,6 @@ PeleC::init(AmrLevel& old)
   amrex::MultiFab& S_new = get_new_data(State_Type);
   FillPatch(old, S_new, 0, cur_time, State_Type, 0, NVAR);
 
-#ifdef PELEC_USE_REACTIONS
   amrex::MultiFab& React_new = get_new_data(Reactions_Type);
 
   if (do_react) {
@@ -881,7 +852,6 @@ PeleC::init(AmrLevel& old)
   } else {
     React_new.setVal(0);
   }
-#endif
 
   if (do_mol_load_balance || do_react_load_balance) {
     amrex::MultiFab& work_estimate_new = get_new_data(Work_Estimate_Type);
@@ -934,7 +904,8 @@ PeleC::initialTimeStep()
   return init_dt;
 }
 
-amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
+amrex::Real
+PeleC::estTimeStep(amrex::Real /*dt_old*/)
 {
   BL_PROFILE("PeleC::estTimeStep()");
 
@@ -964,11 +935,9 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
   amrex::Real estdt_edif = max_dt_over_cfl;
   if (do_hydro || do_mol || diffuse_vel || diffuse_temp || diffuse_enth) {
 
-#ifdef PELEC_USE_EB
     auto const& fact =
       dynamic_cast<amrex::EBFArrayBoxFactory const&>(stateMF.Factory());
     auto const& flags = fact.getMultiEBCellFlagFab();
-#endif
 
     prefetchToDevice(stateMF); // This should accelerate the below operations.
     amrex::Real AMREX_D_DECL(dx1 = dx[0], dx2 = dx[1], dx3 = dx[2]);
@@ -996,31 +965,23 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 #endif
 
     if (do_hydro) {
-      amrex::Real dt = amrex::ReduceMin(
-        stateMF,
-#ifdef PELEC_USE_EB
-        flags,
-#endif
+      amrex::Real dt = 0.0;
+      dt = amrex::ReduceMin(
+        stateMF, flags,
 #ifdef PELEC_USE_PLASMA
         spec_drift,
 #endif
         0,
         [=] AMREX_GPU_HOST_DEVICE(
-          amrex::Box const& bx, const amrex::Array4<const amrex::Real>& fab_arr
-#ifdef PELEC_USE_EB
-          ,
+          amrex::Box const& bx, const amrex::Array4<const amrex::Real>& fab_arr,
           const amrex::Array4<const amrex::EBCellFlag>& flag_arr
-#endif
 #ifdef PELEC_USE_PLASMA
           ,
           const amrex::Array4<const amrex::Real>& drift_arr
 #endif
           ) noexcept -> amrex::Real {
           return pc_estdt_hydro(
-            bx, fab_arr,
-#ifdef PELEC_USE_EB
-            flag_arr,
-#endif
+            bx, fab_arr, flag_arr,
 #ifdef PELEC_USE_PLASMA
             drift_arr,
 #endif
@@ -1037,75 +998,45 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
 
     if (diffuse_vel) {
       auto const* ltransparm = trans_parms.device_trans_parm();
-      amrex::Real dt = amrex::ReduceMin(
-        stateMF,
-#ifdef PELEC_USE_EB
-        flags,
-#endif
-        0,
+      amrex::Real dt = 0.0;
+      dt = amrex::ReduceMin(
+        stateMF, flags, 0,
         [=] AMREX_GPU_HOST_DEVICE(
-          amrex::Box const& bx, const amrex::Array4<const amrex::Real>& fab_arr
-#ifdef PELEC_USE_EB
-          ,
-          const amrex::Array4<const amrex::EBCellFlag>& flag_arr
-#endif
-          ) noexcept -> amrex::Real {
+          amrex::Box const& bx, const amrex::Array4<const amrex::Real>& fab_arr,
+          const amrex::Array4<const amrex::EBCellFlag>& flag_arr) noexcept
+        -> amrex::Real {
           return pc_estdt_veldif(
-            bx, fab_arr,
-#ifdef PELEC_USE_EB
-            flag_arr,
-#endif
-            AMREX_D_DECL(dx1, dx2, dx3), ltransparm);
+            bx, fab_arr, flag_arr, AMREX_D_DECL(dx1, dx2, dx3), ltransparm);
         });
       estdt_vdif = amrex::min<amrex::Real>(estdt_vdif, dt);
     }
 
     if (diffuse_temp) {
       auto const* ltransparm = trans_parms.device_trans_parm();
-      amrex::Real dt = amrex::ReduceMin(
-        stateMF,
-#ifdef PELEC_USE_EB
-        flags,
-#endif
-        0,
+      amrex::Real dt = 0.0;
+      dt = amrex::ReduceMin(
+        stateMF, flags, 0,
         [=] AMREX_GPU_HOST_DEVICE(
-          amrex::Box const& bx, const amrex::Array4<const amrex::Real>& fab_arr
-#ifdef PELEC_USE_EB
-          ,
-          const amrex::Array4<const amrex::EBCellFlag>& flag_arr
-#endif
-          ) noexcept -> amrex::Real {
+          amrex::Box const& bx, const amrex::Array4<const amrex::Real>& fab_arr,
+          const amrex::Array4<const amrex::EBCellFlag>& flag_arr) noexcept
+        -> amrex::Real {
           return pc_estdt_tempdif(
-            bx, fab_arr,
-#ifdef PELEC_USE_EB
-            flag_arr,
-#endif
-            AMREX_D_DECL(dx1, dx2, dx3), ltransparm);
+            bx, fab_arr, flag_arr, AMREX_D_DECL(dx1, dx2, dx3), ltransparm);
         });
       estdt_tdif = amrex::min<amrex::Real>(estdt_tdif, dt);
     }
 
     if (diffuse_enth) {
       auto const* ltransparm = trans_parms.device_trans_parm();
-      amrex::Real dt = amrex::ReduceMin(
-        stateMF,
-#ifdef PELEC_USE_EB
-        flags,
-#endif
-        0,
+      amrex::Real dt = 0.0;
+      dt = amrex::ReduceMin(
+        stateMF, flags, 0,
         [=] AMREX_GPU_HOST_DEVICE(
-          amrex::Box const& bx, const amrex::Array4<const amrex::Real>& fab_arr
-#ifdef PELEC_USE_EB
-          ,
-          const amrex::Array4<const amrex::EBCellFlag>& flag_arr
-#endif
-          ) noexcept -> amrex::Real {
+          amrex::Box const& bx, const amrex::Array4<const amrex::Real>& fab_arr,
+          const amrex::Array4<const amrex::EBCellFlag>& flag_arr) noexcept
+        -> amrex::Real {
           return pc_estdt_enthdif(
-            bx, fab_arr,
-#ifdef PELEC_USE_EB
-            flag_arr,
-#endif
-            AMREX_D_DECL(dx1, dx2, dx3), ltransparm);
+            bx, fab_arr, flag_arr, AMREX_D_DECL(dx1, dx2, dx3), ltransparm);
         });
       estdt_edif = amrex::min<amrex::Real>(estdt_edif, dt);
     }
@@ -1127,10 +1058,10 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
       estdt_hydro *= cfl;
 #endif
 
-    // if (verbose) {
+    if (verbose != 0) {
       amrex::Print() << "...estimated hydro-limited timestep at level " << level
                      << ": " << estdt_hydro << std::endl;
-    // }
+    }
     
 #ifdef PELEC_USE_PLASMA
     // NOTE: Hard-coding factor of 10 for dielectric timescale increase when using semi-implicit system
@@ -1147,19 +1078,7 @@ amrex::Real PeleC::estTimeStep(amrex::Real /*dt_old*/)
     }
   }
 
-#ifdef AMREX_PARTICLES
-  amrex::Real estdt_particle = max_dt;
-  if (do_spray_particles) {
-    particleEstTimeStep(estdt_particle);
-    if (estdt_particle < estdt) {
-      limiter = "particles";
-      estdt = estdt_particle;
-    }
-  }
-#endif
-
-
-  if (verbose) {
+  if (verbose != 0) {
     amrex::Print() << "PeleC::estTimeStep (" << limiter << "-limited) at level "
                    << level << ":  estdt = " << estdt << '\n';
   }
@@ -1186,7 +1105,7 @@ PeleC::computeNewDt(
     return;
   }
 
-  amrex::Real dt_0 = 1.0e+100;
+  amrex::Real dt_0 = std::numeric_limits<amrex::Real>::max();
   int n_factor = 1;
   for (int i = 0; i <= finest_level; i++) {
     PeleC& adv_level = getLevel(i);
@@ -1202,7 +1121,7 @@ PeleC::computeNewDt(
     } else {
       // Limit dt's by change_max * old dt
       for (int i = 0; i <= finest_level; i++) {
-        if (verbose && amrex::ParallelDescriptor::IOProcessor()) {
+        if ((verbose != 0) && amrex::ParallelDescriptor::IOProcessor()) {
           if (dt_min[i] > change_max * dt_level[i]) {
             amrex::Print() << "PeleC::compute_new_dt : limiting dt at level "
                            << i << '\n';
@@ -1256,7 +1175,7 @@ PeleC::computeInitialDt(
     return;
   }
 
-  amrex::Real dt_0 = 1.0e+100;
+  amrex::Real dt_0 = std::numeric_limits<amrex::Real>::max();
   int n_factor = 1;
   // TODO: This will need to change for optimal subcycling.
   for (int i = 0; i <= finest_level; i++) {
@@ -1283,35 +1202,14 @@ PeleC::computeInitialDt(
 
 void
 PeleC::post_timestep(int
-#ifdef AMREX_PARTICLES
+#ifdef PELEC_SPRAY
                        iteration
 #endif
-)
+                     /*iteration*/)
 {
   BL_PROFILE("PeleC::post_timestep()");
 
   const int finest_level = parent->finestLevel();
-
-#ifdef AMREX_PARTICLES
-  const int ncycle = parent->nCycle(level);
-  if (do_spray_particles) {
-    // Remove virtual particles at this level if we have any.
-    if (theVirtPC() != 0)
-      removeVirtualParticles();
-
-    // Remove Ghost particles on the final iteration
-    if (iteration == ncycle)
-      removeGhostParticles();
-
-    // Sync up if we're level 0 or if we have particles that may have moved
-    // off the next finest level and need to be added to our own level.
-    if ((iteration < ncycle && level < finest_level) || level == 0) {
-      // TODO: Determine how many ghost cells to use here
-      int nGrow = iteration;
-      theSprayPC()->Redistribute(level, theSprayPC()->finestLevel(), nGrow);
-    }
-  }
-#endif
 
   if (do_reflux && level < finest_level) {
     reflux();
@@ -1326,6 +1224,10 @@ PeleC::post_timestep(int
     // Clean up any aberrant state data generated by the reflux.
     // amrex::MultiFab& S_new_crse = get_new_data(State_Type);
     // clean_state(S_new_crse);
+
+    // fillpatcher on level+1 needs to be reset because data on this
+    // level have changed.
+    getLevel(level + 1).resetFillPatcher();
   }
 
   // Re-compute temperature after all the other updates.
@@ -1357,7 +1259,16 @@ PeleC::post_timestep(int
 
     if (sum_int_test || sum_per_test) {
       sum_integrated_quantities();
+      if (track_extrema) {
+        monitor_extrema();
+      }
     }
+  }
+
+  if (
+    do_react && use_typical_vals_chem &&
+    parent->levelSteps(0) % reset_typical_vals_int == 0) {
+    set_typical_values_chem();
   }
 }
 
@@ -1373,12 +1284,6 @@ PeleC::post_restart()
 
   // amrex::Real cur_time = state[State_Type].curTime();
 
-#ifdef AMREX_PARTICLES
-  if (do_spray_particles) {
-    particlePostRestart(parent->theRestartFile());
-  }
-#endif
-
   // Don't need this in pure C++?
   // initialize the Godunov state array used in hydro -- we wait
   // until here so that ngroups is defined (if needed) in
@@ -1386,6 +1291,14 @@ PeleC::post_restart()
   // if (do_hydro) {
   //  init_godunov_indices();
   //}
+
+  // Initialize the reactor
+  if (do_react) {
+    init_reactor();
+    if (use_typical_vals_chem) {
+      set_typical_values_chem();
+    }
+  }
 
   // initialize LES variables
   if (do_les) {
@@ -1428,25 +1341,22 @@ PeleC::postCoarseTimeStep(amrex::Real cumtime)
 void
 PeleC::post_regrid(
   int
-#ifdef AMREX_PARTICLES
+#ifdef PELEC_SPRAY
     lbase
 #endif
-  ,
+  /*lbase*/,
   int /*new_finest*/)
 {
   BL_PROFILE("PeleC::post_regrid()");
   fine_mask.clear();
 
-#ifdef AMREX_PARTICLES
-  if (do_spray_particles && theSprayPC() != 0 && level == lbase) {
-    // TODO: Determine how many ghost cells to use here
-    int nGrow = 0;
-    particleRedistribute(lbase);
+  if ((do_react) && (use_typical_vals_chem)) {
+    set_typical_values_chem();
   }
-#endif
 }
 
-void PeleC::post_init(amrex::Real /*stop_time*/)
+void
+PeleC::post_init(amrex::Real /*stop_time*/)
 {
   BL_PROFILE("PeleC::post_init()");
 
@@ -1454,12 +1364,15 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
   amrex::Real cumtime = parent->cumTime();
 
   // Fill Reactions_Type data based on initial dt
-#ifdef PELEC_USE_REACTIONS
-  if (do_react == 1) {
+  if (do_react) {
+
     bool react_init = true;
+    if (use_typical_vals_chem) {
+      set_typical_values_chem();
+    }
+
     react_state(cumtime, dtlev, react_init);
   }
-#endif
 
   if (level > 0) {
     return;
@@ -1467,7 +1380,7 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
 
   // Average data down from finer levels
   // so that conserved data is consistent between levels.
-  if (do_avg_down != 0) {
+  if (do_avg_down) {
     int finest_level = parent->finestLevel();
     for (int k = finest_level - 1; k >= 0; k--) {
       getLevel(k).avgDown();
@@ -1505,6 +1418,9 @@ void PeleC::post_init(amrex::Real /*stop_time*/)
 
   if (sum_int_test || sum_per_test) {
     sum_integrated_quantities();
+    if (track_extrema) {
+      monitor_extrema();
+    }
   }
 
 #ifdef PELEC_USE_PLASMA
@@ -1568,20 +1484,12 @@ PeleC::reflux()
 
   PeleC& fine_level = getLevel(level + 1);
   amrex::MultiFab& S_crse = get_new_data(State_Type);
-
-#ifdef PELEC_USE_EB
-
   amrex::MultiFab& S_fine = fine_level.get_new_data(State_Type);
+  getFluxReg(level + 1).Reflux(S_crse, vfrac, S_fine, fine_level.vfrac);
 
-  fine_level.flux_reg.Reflux(S_crse, vfrac, S_fine, fine_level.vfrac);
-
-  if (!amrex::DefaultGeometry().IsCartesian()) {
+  if (!amrex::DefaultGeometry().IsCartesian() && eb_in_domain) {
     amrex::Abort("rz not yet compatible with EB");
   }
-
-#else
-
-  fine_level.flux_reg.Reflux(S_crse);
 
   if (!amrex::DefaultGeometry().IsCartesian()) {
     amrex::MultiFab dr(
@@ -1589,24 +1497,16 @@ PeleC::reflux()
       amrex::MFInfo(), amrex::FArrayBoxFactory());
     dr.setVal(geom.CellSize(0));
     amrex::Abort("PeleC reflux not yet ready for r-z");
-    // fine_level.pres_reg.Reflux(S_crse,dr,1.0,0,Xmom,1,geom);
   }
-#endif
 
-  if (verbose) {
+  if (verbose != 0) {
     const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
     amrex::Real end = amrex::ParallelDescriptor::second() - strt;
 
-#ifdef AMREX_LAZY
-    Lazy::QueueReduction([=]() mutable {
-#endif
-      amrex::ParallelDescriptor::ReduceRealMax(end, IOProc);
+    amrex::ParallelDescriptor::ReduceRealMax(end, IOProc);
 
-      amrex::Print() << "PeleC::reflux() at level " << level
-                     << " : time = " << end << std::endl;
-#ifdef AMREX_LAZY
-    });
-#endif
+    amrex::Print() << "PeleC::reflux() at level " << level
+                   << " : time = " << end << std::endl;
   }
 }
 
@@ -1620,125 +1520,24 @@ PeleC::avgDown()
   }
 
   avgDown(State_Type);
-
-#ifdef PELEC_USE_REACTIONS
   avgDown(Reactions_Type);
-#endif
-}
-
-void
-PeleC::normalize_species(amrex::MultiFab& /*S*/)
-{
-  amrex::Abort("We don't normalize species!");
 }
 
 void
 PeleC::enforce_consistent_e(amrex::MultiFab& S)
 {
-#ifdef _OPENMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-  for (amrex::MFIter mfi(S, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-    const amrex::Box& tbox = mfi.tilebox();
-    const auto Sfab = S.array(mfi);
-    amrex::ParallelFor(
-      tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        const amrex::Real rhoInv = 1.0 / Sfab(i, j, k, URHO);
-        const amrex::Real u = Sfab(i, j, k, UMX) * rhoInv;
-        const amrex::Real v = Sfab(i, j, k, UMY) * rhoInv;
-        const amrex::Real w = Sfab(i, j, k, UMZ) * rhoInv;
-        Sfab(i, j, k, UEDEN) = Sfab(i, j, k, UEINT) + 0.5 *
-                                                        Sfab(i, j, k, URHO) *
-                                                        (u * u + v * v + w * w);
-      });
-  }
-}
-
-amrex::Real
-PeleC::enforce_min_density(
-  amrex::MultiFab& /*S_old*/, const amrex::MultiFab& S_new)
-{
-  // This routine sets the density in S_new to be larger than the density
-  // floor. Note that it will operate everywhere on S_new, including ghost
-  // zones. S_old is present so that, after the hydro call, we know what the old
-  // density was so that we have a reference for comparison. If you are calling
-  // it elsewhere and there's no meaningful reference state, just pass in the
-  // same amrex::MultiFab twice.
-  //  @return  The return value is the the negative fractional change in the
-  // state that has the largest magnitude. If there is no reference state, this
-  // is meaningless.
-
-  amrex::Real dens_change = 1.0;
-  amrex::Real mass_added = 0.0; // cppcheck-suppress variableScope
-  amrex::Real eint_added = 0.0; // cppcheck-suppress variableScope
-  amrex::Real eden_added = 0.0; // cppcheck-suppress variableScope
-
-#ifdef PELEC_USE_EB
-  auto const& fact =
-    dynamic_cast<amrex::EBFArrayBoxFactory const&>(S_new.Factory());
-  auto const& flags = fact.getMultiEBCellFlagFab();
-#endif
-
-#ifdef _OPENMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion()) \
-  reduction(min                                           \
-            : dens_change)
-#endif
-  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid();
-       ++mfi) {
-
-#ifdef PELEC_USE_EB
-    const amrex::Box& bx = mfi.growntilebox();
-    const auto& flag_fab = flags[mfi];
-    amrex::FabType typ = flag_fab.getType(bx);
-    if (typ == amrex::FabType::covered) {
-      continue;
-    }
-#endif
-
-    // Not enabled on the GPU
-    // const auto& stateold = S_old[mfi];
-    // auto& statenew = S_new[mfi];
-    // const auto& vol = volume[mfi];
-    // enforce_minimum_density(stateold.dataPtr(), ARLIM_3D(stateold.loVect()),
-    // ARLIM_3D(stateold.hiVect()),
-    //                        statenew.dataPtr(), ARLIM_3D(statenew.loVect()),
-    //                        ARLIM_3D(statenew.hiVect()), vol.dataPtr(),
-    //                        ARLIM_3D(vol.loVect()), ARLIM_3D(vol.hiVect()),
-    //                        ARLIM_3D(bx.loVect()), ARLIM_3D(bx.hiVect()),
-    //                        &mass_added, &eint_added, &eden_added,
-    //                        &dens_change, &verbose);
-  }
-
-  if (print_energy_diagnostics) {
-    amrex::Real foo[3] = {mass_added, eint_added, eden_added};
-
-#ifdef AMREX_LAZY
-    Lazy::QueueReduction([=]() mutable {
-#endif
-      amrex::ParallelDescriptor::ReduceRealSum(
-        foo, 3, amrex::ParallelDescriptor::IOProcessorNumber());
-
-      if (amrex::ParallelDescriptor::IOProcessor()) {
-        mass_added = foo[0];
-        eint_added = foo[1];
-        eden_added = foo[2];
-
-        if (amrex::Math::abs(mass_added) != 0.0) {
-          amrex::Print() << "   Mass added from negative density correction : "
-                         << mass_added << std::endl;
-          amrex::Print() << "(rho e) added from negative density correction : "
-                         << eint_added << std::endl;
-          amrex::Print() << "(rho E) added from negative density correction : "
-                         << eden_added << std::endl;
-        }
-      }
-#ifdef AMREX_LAZY
+  auto sarrs = S.arrays();
+  amrex::ParallelFor(
+    S, [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k) noexcept {
+      auto sarr = sarrs[nbx];
+      const amrex::Real rhoInv = 1.0 / sarr(i, j, k, URHO);
+      const amrex::Real u = sarr(i, j, k, UMX) * rhoInv;
+      const amrex::Real v = sarr(i, j, k, UMY) * rhoInv;
+      const amrex::Real w = sarr(i, j, k, UMZ) * rhoInv;
+      sarr(i, j, k, UEDEN) = sarr(i, j, k, UEINT) + 0.5 * sarr(i, j, k, URHO) *
+                                                      (u * u + v * v + w * w);
     });
-#endif
-  }
-
-  return dens_change;
+  amrex::Gpu::synchronize();
 }
 
 void
@@ -1751,27 +1550,25 @@ PeleC::avgDown(int state_indx)
   }
 
   amrex::MultiFab& S_crse = get_new_data(state_indx);
-  amrex::MultiFab& S_fine = getLevel(level + 1).get_new_data(state_indx);
+  const amrex::MultiFab& S_fine = getLevel(level + 1).get_new_data(state_indx);
 
-#ifdef PELEC_USE_EB
-  PeleC& fine_lev = getLevel(level + 1);
+  if (eb_in_domain) {
+    PeleC& fine_lev = getLevel(level + 1);
 
-  amrex::EB_average_down(
-    S_fine, S_crse, fine_lev.Volume(), fine_lev.volFrac(), 0, S_fine.nComp(),
-    fine_ratio);
+    amrex::EB_average_down(
+      S_fine, S_crse, fine_lev.Volume(), fine_lev.volFrac(), 0, S_fine.nComp(),
+      fine_ratio);
 
-  if (state_indx == State_Type) {
-    set_body_state(S_crse); // TODO: Is this necessary?
+    if (state_indx == State_Type) {
+      set_body_state(S_crse); // TODO: Is this necessary?
+    }
+  } else {
+    const amrex::Geometry& fgeom = getLevel(level + 1).geom;
+    const amrex::Geometry& cgeom = geom;
+
+    amrex::average_down(
+      S_fine, S_crse, fgeom, cgeom, 0, S_fine.nComp(), fine_ratio);
   }
-#else
-
-  const amrex::Geometry& fgeom = getLevel(level + 1).geom;
-  const amrex::Geometry& cgeom = geom;
-
-  amrex::average_down(
-    S_fine, S_crse, fgeom, cgeom, 0, S_fine.nComp(), fine_ratio);
-
-#endif
 }
 
 void
@@ -1801,16 +1598,16 @@ PeleC::errorEst(
 
   amrex::MultiFab S_data(
     get_new_data(State_Type).boxArray(),
-    get_new_data(State_Type).DistributionMap(), NVAR, 1);
+    get_new_data(State_Type).DistributionMap(), NVAR, 1, amrex::MFInfo(),
+    Factory());
   const amrex::Real cur_time = state[State_Type].curTime();
   FillPatch(
     *this, S_data, S_data.nGrow(), cur_time, State_Type, Density, NVAR, 0);
 
   amrex::Vector<amrex::BCRec> bcs(NVAR);
   const char tagval = amrex::TagBox::SET;
-  // const char clearval = amrex::TagBox::CLEAR;
 
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
   {
@@ -1819,13 +1616,10 @@ PeleC::errorEst(
       const amrex::Box& tilebox = mfi.tilebox();
       const auto Sfab = S_data.array(mfi);
       auto tag_arr = tags.array(mfi);
-      const auto datbox = S_data[mfi].box();
-      amrex::Elixir S_data_mfi_eli = S_data[mfi].elixir();
-
-#ifdef PELEC_USE_EB
+      const auto datbox = amrex::grow(tilebox, 1);
       const auto vfrac_arr = vfrac.array(mfi);
-#endif
 #ifdef PELEC_USE_PLASMA
+      // FIXME: hard-coded to tag for bagheri test case
       int ionIdx = 6;
       if(streamer_test) ionIdx = 3;
       const auto redEfield_arr = redEfield.array(mfi);
@@ -1836,8 +1630,7 @@ PeleC::errorEst(
 #endif
 #endif
 
-      amrex::FArrayBox S_derData(datbox, 1);
-      amrex::Elixir S_derData_eli = S_derData.elixir();
+      amrex::FArrayBox S_derData(datbox, 1, amrex::The_Async_Arena());
       auto S_derarr = S_derData.array();
       const int ncp = S_derData.nComp();
       const int* bc = bcs[0].data();
@@ -1857,9 +1650,16 @@ PeleC::errorEst(
             tag_graderror(i, j, k, tag_arr, Sfab, captured_dengrad, tagval);
           });
       }
+      if (level < tagging_parm->max_denratio_lev) {
+        const amrex::Real captured_denratio = tagging_parm->denratio;
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_ratioerror(i, j, k, tag_arr, Sfab, captured_denratio, tagval);
+          });
+      }
 
       // Tagging pressure
-      S_derData.setVal<amrex::RunOn::Device>(0.0);
+      S_derData.setVal<amrex::RunOn::Device>(0.0, datbox);
       pc_derpres(
         datbox, S_derData, ncp, Sfab.nComp(), S_data[mfi], geom, time, bc,
         level);
@@ -1880,7 +1680,7 @@ PeleC::errorEst(
       }
 
       // Tagging vel_x
-      S_derData.setVal<amrex::RunOn::Device>(0.0);
+      S_derData.setVal<amrex::RunOn::Device>(0.0, datbox);
       pc_dervelx(
         datbox, S_derData, ncp, Sfab.nComp(), S_data[mfi], geom, time, bc,
         level);
@@ -1900,7 +1700,7 @@ PeleC::errorEst(
       }
 
       // Tagging vel_y
-      S_derData.setVal<amrex::RunOn::Device>(0.0);
+      S_derData.setVal<amrex::RunOn::Device>(0.0, datbox);
       pc_dervely(
         datbox, S_derData, ncp, Sfab.nComp(), S_data[mfi], geom, time, bc,
         level);
@@ -1920,7 +1720,7 @@ PeleC::errorEst(
       }
 
       // Tagging vel_z
-      S_derData.setVal<amrex::RunOn::Device>(0.0);
+      S_derData.setVal<amrex::RunOn::Device>(0.0, datbox);
       pc_dervelz(
         datbox, S_derData, ncp, Sfab.nComp(), S_data[mfi], geom, time, bc,
         level);
@@ -1940,7 +1740,7 @@ PeleC::errorEst(
       }
 
       // Tagging magnitude of vorticity
-      S_derData.setVal<amrex::RunOn::Device>(0.0);
+      S_derData.setVal<amrex::RunOn::Device>(0.0, datbox);
       pc_dermagvort(
         tilebox, S_derData, ncp, Sfab.nComp(), S_data[mfi], geom, time, bc,
         level);
@@ -1954,7 +1754,7 @@ PeleC::errorEst(
       }
 
       // Tagging temperature
-      S_derData.setVal<amrex::RunOn::Device>(0.0);
+      S_derData.setVal<amrex::RunOn::Device>(0.0, datbox);
       pc_dertemp(
         datbox, S_derData, ncp, Sfab.nComp(), S_data[mfi], geom, time, bc,
         level);
@@ -1963,6 +1763,13 @@ PeleC::errorEst(
         amrex::ParallelFor(
           tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             tag_error(i, j, k, tag_arr, S_derarr, captured_temperr, tagval);
+          });
+      }
+      if (level < tagging_parm->max_lotemperr_lev) {
+        const amrex::Real captured_lotemperr = tagging_parm->lotemperr;
+        amrex::ParallelFor(
+          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            tag_loerror(i, j, k, tag_arr, S_derarr, captured_lotemperr, tagval);
           });
       }
       if (level < tagging_parm->max_tempgrad_lev) {
@@ -1976,19 +1783,14 @@ PeleC::errorEst(
 
       // Tagging flame tracer
       if (!flame_trac_name.empty()) {
-        int idx = -1;
-        for (int i = 0; i < spec_names.size(); ++i) {
-          if (flame_trac_name == spec_names[i]) {
-            idx = i;
-          }
-        }
+        int idx = find_position(spec_names, flame_trac_name);
 
         if (idx >= 0) {
           // const std::string name = "Y("+flame_trac_name+")";
           // if (amrex::ParallelDescriptor::IOProcessor())
           // amrex::Print() << " Flame tracer will be " << name << '\n';
 
-          S_derData.setVal<amrex::RunOn::Device>(0.0);
+          S_derData.setVal<amrex::RunOn::Device>(0.0, datbox);
           pc_derspectrac(
             datbox, S_derData, ncp, Sfab.nComp(), S_data[mfi], geom, time, bc,
             level, idx);
@@ -2015,15 +1817,25 @@ PeleC::errorEst(
         }
       }
 
-#ifdef PELEC_USE_EB
-      // Tagging volume fraction
-      if (level < tagging_parm->max_vfracerr_lev) {
-        amrex::ParallelFor(
-          tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            tag_error_bounds(i, j, k, tag_arr, vfrac_arr, 0.0, 1.0, tagval);
+      if (eb_in_domain) {
+        // Tagging volume fraction
+        if (level < tagging_parm->max_vfracerr_lev) {
+          amrex::ParallelFor(
+            tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+              tag_error_bounds(i, j, k, tag_arr, vfrac_arr, 0.0, 1.0, tagval);
+            });
+
+          const int local_i = mfi.LocalIndex();
+          const auto Nebg = sv_eb_bndry_geom[local_i].size();
+          EBBndryGeom* ebg = sv_eb_bndry_geom[local_i].data();
+          amrex::ParallelFor(Nebg, [=] AMREX_GPU_DEVICE(int L) {
+            const auto& iv = ebg[L].iv;
+            if (tilebox.contains(iv)) {
+              tag_arr(iv) = tagval;
+            }
           });
+        }
       }
-#endif
 
 #ifdef PELEC_USE_PLASMA
       // Tagging reduced efield strength
@@ -2148,16 +1960,50 @@ PeleC::errorEst(
 
       // Now update the tags in the TagBox.
       // tag_arr.tags(itags, tilebox);
-      // rho_eli.clear();
-      // temp_eli.clear();
     }
+  }
+
+  // Untag cell close to EB, do this last
+  if (
+    eb_in_domain && (tagging_parm->eb_refine_type == "static") &&
+    (level >= tagging_parm->max_eb_refine_lev)) {
+    // Get distance function at current level
+    const auto& ebfactory =
+      dynamic_cast<amrex::EBFArrayBoxFactory const&>(Factory());
+    amrex::MultiFab signDist(grids, dmap, 1, 0, amrex::MFInfo(), ebfactory);
+    eb_distance(level, signDist);
+
+    // Estimate how far I need to derefine
+    const amrex::Real safetyFac = tagging_parm->detag_eb_factor;
+    amrex::Real clearTagDist =
+      parent->Geom(tagging_parm->max_eb_refine_lev).CellSize(0) *
+      static_cast<amrex::Real>(
+        parent->nErrorBuf(tagging_parm->max_eb_refine_lev)) *
+      safetyFac;
+    const int finest_level = parent->finestLevel();
+    for (int ilev = tagging_parm->max_eb_refine_lev + 1; ilev <= finest_level;
+         ++ilev) {
+      clearTagDist +=
+        static_cast<amrex::Real>(parent->nErrorBuf(ilev)) *
+        parent->Geom(tagging_parm->max_eb_refine_lev).CellSize(0) * safetyFac;
+    }
+
+    // Untag cells too close to EB
+    const auto& dists = signDist.const_arrays();
+    const auto& tagarrs = tags.arrays();
+    amrex::ParallelFor(
+      tags, [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k) noexcept {
+        if (dists[nbx](i, j, k) < clearTagDist) {
+          tagarrs[nbx](i, j, k) = amrex::TagBox::CLEAR;
+        }
+      });
+    amrex::Gpu::synchronize();
   }
 }
 
 std::unique_ptr<amrex::MultiFab>
 PeleC::derive(const std::string& name, amrex::Real time, int ngrow)
 {
-
   if ((do_les) && (name == "C_s2")) {
     std::unique_ptr<amrex::MultiFab> derive_dat(
       new amrex::MultiFab(grids, dmap, 1, 0));
@@ -2184,7 +2030,6 @@ PeleC::derive(const std::string& name, amrex::Real time, int ngrow)
     return derive_dat;
   }
 
-#ifdef PELEC_USE_EB
   if (name == "vfrac") {
     std::unique_ptr<amrex::MultiFab> mf(
       new amrex::MultiFab(grids, dmap, 1, ngrow, amrex::MFInfo()));
@@ -2194,25 +2039,22 @@ PeleC::derive(const std::string& name, amrex::Real time, int ngrow)
     amrex::MultiFab::Copy(*mf, vfrac, 0, 0, 1, 0);
     return mf;
   }
-#endif
 
-#ifdef AMREX_PARTICLES
-  return particleDerive(name, time, ngrow);
-#else
+  // For those using GrowBoxByOne we need this
+  if ((name == "enstrophy") || (name == "magvort") || (name == "divu")) {
+    ngrow += 1;
+  }
+
   return AmrLevel::derive(name, time, ngrow);
-#endif
 }
 
 void
 PeleC::derive(
   const std::string& name, amrex::Real time, amrex::MultiFab& mf, int dcomp)
 {
-#ifdef PELEC_USE_EB
   if (name == "vfrac") {
     amrex::MultiFab::Copy(mf, vfrac, 0, dcomp, 1, 0);
-  } else
-#endif
-  {
+  } else {
     AmrLevel::derive(name, time, mf, dcomp);
   }
 }
@@ -2223,31 +2065,29 @@ PeleC::clear_prob()
   pc_prob_close();
 }
 
-#ifdef PELEC_USE_REACTIONS
 void
 PeleC::init_reactor()
 {
-#ifdef USE_SUNDIALS_PP
-#ifdef _OPENMP
-#pragma omp parallel
-#endif
-  {
-    reactor_init(1, 1);
+  reactor = pele::physics::reactions::ReactorBase::create(chem_integrator);
+  if (do_react && (chem_integrator == "ReactorNull")) {
+    amrex::Print() << "WARNING: turning on reactions while using ReactorNull. "
+                      "Make sure this is intended."
+                   << std::endl;
   }
-#endif
+  reactor->init(1, 1);
 }
 
 void
 PeleC::close_reactor()
 {
+  reactor->close();
 }
-#endif
 
 void
 PeleC::init_les()
 {
   // Fill with default coefficient values
-  LES_Coeffs.define(grids, dmap, nCompC, 1);
+  LES_Coeffs.define(grids, dmap, nCompC, 1, amrex::MFInfo(), Factory());
   LES_Coeffs.setVal(0.0);
   LES_Coeffs.setVal(Cs * Cs, comp_Cs2, 1, LES_Coeffs.nGrow());
   LES_Coeffs.setVal(CI, comp_CI, 1, LES_Coeffs.nGrow());
@@ -2362,8 +2202,9 @@ PeleC::reset_internal_energy(amrex::MultiFab& S_new, int ng)
     sum0 = volWgtSumMF(S_new, Eden, true);
   }
 #endif
+
   // Ensure (rho e) isn't too small or negative
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
   {
@@ -2373,39 +2214,30 @@ PeleC::reset_internal_energy(amrex::MultiFab& S_new, int ng)
       dual_energy_update_E_from_e;
     const auto captured_verbose = verbose;
     const auto captured_dual_energy_eta2 = dual_energy_eta2;
-    for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid();
-         ++mfi) {
-      const amrex::Box& bx = mfi.growntilebox(ng);
-      const auto& sarr = S_new.array(mfi);
-      amrex::ParallelFor(
-        bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          pc_rst_int_e(
-            i, j, k, sarr, captured_allow_small_energy,
-            captured_allow_negative_energy,
-            captured_dual_energy_update_E_from_e, captured_dual_energy_eta2,
-            captured_verbose);
-        });
-    }
+    auto sarrs = S_new.arrays();
+    const amrex::IntVect ngs(ng);
+    amrex::ParallelFor(
+      S_new, ngs, [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k) noexcept {
+        pc_rst_int_e(
+          i, j, k, sarrs[nbx], captured_allow_small_energy,
+          captured_allow_negative_energy, captured_dual_energy_update_E_from_e,
+          captured_dual_energy_eta2, captured_verbose);
+      });
+    amrex::Gpu::synchronize();
   }
 
 #ifndef AMREX_USE_GPU
   if (parent->finestLevel() == 0 && print_energy_diagnostics) {
     // Pass in the multifab and the component
     amrex::Real sum = volWgtSumMF(S_new, Eden, true);
-#ifdef AMREX_LAZY
-    Lazy::QueueReduction([=]() mutable {
-#endif
-      amrex::ParallelDescriptor::ReduceRealSum(sum0);
-      amrex::ParallelDescriptor::ReduceRealSum(sum);
-      if (
-        amrex::ParallelDescriptor::IOProcessor() &&
-        amrex::Math::abs(sum - sum0) > 0) {
-        amrex::Print() << "(rho E) added from reset terms                 : "
-                       << sum - sum0 << " out of " << sum0 << std::endl;
-      }
-#ifdef AMREX_LAZY
-    });
-#endif
+    amrex::ParallelDescriptor::ReduceRealSum(sum0);
+    amrex::ParallelDescriptor::ReduceRealSum(sum);
+    if (
+      amrex::ParallelDescriptor::IOProcessor() &&
+      amrex::Math::abs(sum - sum0) > 0) {
+      amrex::Print() << "(rho E) added from reset terms                 : "
+                     << sum - sum0 << " out of " << sum0 << std::endl;
+    }
   }
 #endif
 }
@@ -2415,29 +2247,18 @@ PeleC::computeTemp(amrex::MultiFab& S, int ng)
 {
   reset_internal_energy(S, ng);
 
-#ifdef PELEC_USE_EB
   auto const& fact =
     dynamic_cast<amrex::EBFArrayBoxFactory const&>(S.Factory());
   auto const& flags = fact.getMultiEBCellFlagFab();
-#endif
 
-#ifdef _OPENMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-  for (amrex::MFIter mfi(S, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-    const amrex::Box& bx = mfi.growntilebox(ng);
-
-#ifdef PELEC_USE_EB
-    const auto& flag_fab = flags[mfi];
-    amrex::FabType typ = flag_fab.getType(bx);
-    if (typ == amrex::FabType::covered) {
-      continue;
-    }
-#endif
-
-    const auto& sarr = S.array(mfi);
-    amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      pc_cmpTemp(i, j, k, sarr);
+  auto const& sarrs = S.arrays();
+  auto const& flagarrs = flags.const_arrays();
+  const amrex::IntVect ngs(ng);
+  amrex::ParallelFor(
+    S, ngs, [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k) noexcept {
+      if (!flagarrs[nbx](i, j, k).isCovered()) {
+        pc_cmpTemp(i, j, k, sarrs[nbx]);
+      }
     });
 
 #ifdef PELEC_USE_TWO_TEMP
@@ -2450,14 +2271,14 @@ PeleC::computeTemp(amrex::MultiFab& S, int ng)
       sarr(i,j,k,Tele) = sarr(i,j,k,Uele) * (2.0/3.0) * 1.0/(kB * ne);
     });
 #endif
-  }
+  amrex::Gpu::synchronize();
 }
 
 amrex::Real
 PeleC::getCPUTime()
 {
   int numCores = amrex::ParallelDescriptor::NProcs();
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
   numCores = numCores * omp_get_max_threads();
 #endif
 
@@ -2487,24 +2308,16 @@ PeleC::build_fine_mask()
   amrex::BoxArray fba = parent->boxArray(level);
   amrex::iMultiFab ifine_mask = makeFineMask(cba, cdm, fba, crse_ratio, 1, 0);
 
-#ifdef _OPENMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-  for (amrex::MFIter mfi(fine_mask, amrex::TilingIfNotGPU()); mfi.isValid();
-       ++mfi) {
-    auto& fab = fine_mask[mfi];
-    auto& ifab = ifine_mask[mfi];
-    const auto arr = fab.array();
-    const auto iarr = ifab.array();
-    amrex::ParallelFor(
-      fab.box(), [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-#ifdef _OPENMP
+  const auto& arrs = fine_mask.arrays();
+  const auto& iarrs = ifine_mask.const_arrays();
+  amrex::ParallelFor(
+    fine_mask, [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k) noexcept {
+#ifdef AMREX_USE_OMP
 #pragma omp atomic write
 #endif
-        arr(i, j, k) = iarr(i, j, k);
-      });
-  }
-
+      arrs[nbx](i, j, k) = iarrs[nbx](i, j, k);
+    });
+  amrex::Gpu::synchronize();
   return fine_mask;
 }
 
@@ -2539,103 +2352,15 @@ PeleC::build_interior_boundary_mask(int ng)
 }
 
 amrex::Real
-PeleC::clean_state(amrex::MultiFab& S)
+PeleC::clean_state(const amrex::MultiFab& /*S*/)
 {
-  // Enforce a minimum density.
-
-  amrex::MultiFab temp_state(
-    S.boxArray(), S.DistributionMap(), S.nComp(), S.nGrow(), amrex::MFInfo(),
-    Factory());
-
-  amrex::MultiFab::Copy(temp_state, S, 0, 0, S.nComp(), S.nGrow());
-
-  amrex::Real frac_change_t = enforce_min_density(temp_state, S);
-
-  // normalize_species(S);
-
-  return frac_change_t;
+  // In the past, we enforced a minimum density and normalization of species.
+  return 0.0;
 }
 
 amrex::Real
-PeleC::clean_state(const amrex::MultiFab& S, amrex::MultiFab& S_old)
+PeleC::clean_state(const amrex::MultiFab& /*S*/, amrex::MultiFab& /*S_old*/)
 {
-  // Enforce a minimum density.
-
-  amrex::Real frac_change_t = enforce_min_density(S_old, S);
-
-  // normalize_species(S);
-
-  return frac_change_t;
+  // In the past, we enforced a minimum density and normalization of species.
+  return 0.0;
 }
-
-#ifdef PELEC_USE_EB
-void
-PeleC::InitialRedistribution()
-{
-  BL_PROFILE("PeleC::InitialRedistribution()");
-
-  // Next we must redistribute the initial solution if we are going to use
-  // StateRedist redistribution schemes
-  if (
-    (eb_in_domain) && ((redistribution_type != "StateRedist") &&
-                       (redistribution_type != "NewStateRedist"))) {
-    return;
-  }
-
-  if (verbose) {
-    amrex::Print() << "Doing initial redistribution... " << std::endl;
-  }
-
-  // Initial data are set at new time step
-  amrex::MultiFab& S_new = get_new_data(State_Type);
-  amrex::MultiFab tmp(
-    grids, dmap, S_new.nComp(), numGrow(), amrex::MFInfo(), Factory());
-
-  amrex::MultiFab::Copy(tmp, S_new, 0, 0, S_new.nComp(), S_new.nGrow());
-  const amrex::Real time = state[State_Type].curTime();
-  FillPatch(*this, tmp, numGrow(), time, State_Type, 0, S_new.nComp());
-  EB_set_covered(tmp, 0.0);
-
-  const amrex::StateDescriptor* desc = state[State_Type].descriptor();
-  const auto& bcs = desc->getBCs();
-  amrex::Gpu::DeviceVector<amrex::BCRec> d_bcs(desc->nComp());
-  amrex::Gpu::copy(
-    amrex::Gpu::hostToDevice, bcs.begin(), bcs.end(), d_bcs.begin());
-
-  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid();
-       ++mfi) {
-    const amrex::Box& bx = mfi.validbox();
-
-    auto const& fact =
-      dynamic_cast<amrex::EBFArrayBoxFactory const&>(S_new.Factory());
-
-    auto const& flags = fact.getMultiEBCellFlagFab()[mfi];
-    amrex::Array4<const amrex::EBCellFlag> const& flag_arr =
-      flags.const_array();
-
-    if (
-      (flags.getType(amrex::grow(bx, 1)) != amrex::FabType::covered) &&
-      (flags.getType(amrex::grow(bx, 1)) != amrex::FabType::regular)) {
-      amrex::Array4<const amrex::Real> AMREX_D_DECL(fcx, fcy, fcz), ccc,
-        AMREX_D_DECL(apx, apy, apz);
-
-      AMREX_D_TERM(fcx = fact.getFaceCent()[0]->const_array(mfi);
-                   , fcy = fact.getFaceCent()[1]->const_array(mfi);
-                   , fcz = fact.getFaceCent()[2]->const_array(mfi););
-
-      ccc = fact.getCentroid().const_array(mfi);
-
-      AMREX_D_TERM(apx = fact.getAreaFrac()[0]->const_array(mfi);
-                   , apy = fact.getAreaFrac()[1]->const_array(mfi);
-                   , apz = fact.getAreaFrac()[2]->const_array(mfi););
-
-      Redistribution::ApplyToInitialData(
-        bx, NVAR, S_new.array(mfi), tmp.array(mfi), flag_arr,
-        AMREX_D_DECL(apx, apy, apz), vfrac.const_array(mfi),
-        AMREX_D_DECL(fcx, fcy, fcz), ccc, d_bcs.dataPtr(), geom,
-        redistribution_type);
-    }
-  }
-  set_body_state(S_new);
-}
-#endif

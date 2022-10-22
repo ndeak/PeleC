@@ -3,6 +3,7 @@
 #include "PeleC.H"
 #include <Plasma.H>
 #endif
+#include "Godunov.H"
 
 void
 pc_compute_hyp_mol_flux(
@@ -10,14 +11,10 @@ pc_compute_hyp_mol_flux(
   const amrex::Array4<const amrex::Real>& q,
   const amrex::Array4<const amrex::Real>& qaux,
   const amrex::GpuArray<amrex::Array4<amrex::Real>, AMREX_SPACEDIM> flx,
-  const amrex::GpuArray<const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
-    area,
-  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>
-#ifdef PELEC_USE_EB
-    del
-#endif
-  ,
-  const int plm_iorder
+  const amrex::GpuArray<const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM> area,
+  const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> del,
+  const int plm_iorder,
+  const bool use_laxf_flux
 #ifdef PELEC_USE_PLASMA
   ,
   const amrex::Array4<const amrex::Real>& s_cc,
@@ -38,26 +35,25 @@ pc_compute_hyp_mol_flux(
   const amrex::Real secondary_em_coef,
   const amrex::Real electron_emit_const,
   const int ef_do_drift,
-  const int ef_ambiDiff,
-  const int ef_use_SG,
   const amrex::Array4<amrex::Real>& coe_cc
 #endif
-#ifdef PELEC_USE_EB
   ,
   const amrex::Array4<amrex::EBCellFlag const>& flags,
   const EBBndryGeom* ebg,
   const int /*Nebg*/,
   amrex::Real* ebflux,
-  const int nebflux
-#endif
-)
+  const int nebflux)
 {
   const int R_RHO = 0;
   const int R_UN = 1;
   const int R_UT1 = 2;
   const int R_UT2 = 3;
   const int R_P = 4;
-  const int R_Y = 5;
+  const int R_ADV = 5;
+  const int R_Y = R_ADV + NUM_ADV;
+  const int R_AUX = R_Y + NUM_SPECIES;
+  const int R_LIN = R_AUX + NUM_AUX;
+  const int R_NUM = 5 + NUM_SPECIES + NUM_ADV + NUM_LIN + NUM_AUX;
   const int bc_test_val = 1;
 
 #ifdef PELEC_USE_PLASMA
@@ -67,13 +63,14 @@ pc_compute_hyp_mol_flux(
 #endif
 
   for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
-    amrex::FArrayBox dq_fab(cbox, QVAR);
-    amrex::Elixir dq_fab_eli = dq_fab.elixir();
+    amrex::FArrayBox dq_fab(cbox, QVAR, amrex::The_Async_Arena());
     auto const& dq = dq_fab.array();
     setV(cbox, QVAR, dq, 0.0);
 
     // dimensional indexing
-    const amrex::GpuArray<const int, 3> bdim{{dir == 0, dir == 1, dir == 2}};
+    const amrex::GpuArray<const int, 3> bdim{
+      {static_cast<int>(dir == 0), static_cast<int>(dir == 1),
+       static_cast<int>(dir == 2)}};
     const amrex::GpuArray<const int, 3> q_idx{
       {bdim[0] * QU + bdim[1] * QV + bdim[2] * QW,
        bdim[0] * QV + bdim[1] * QU + bdim[2] * QU,
@@ -86,13 +83,7 @@ pc_compute_hyp_mol_flux(
     if (plm_iorder != 1) {
       amrex::ParallelFor(
         cbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-          mol_slope(
-            i, j, k, bdim, q_idx, q, qaux, dq
-#ifdef PELEC_USE_EB
-            ,
-            flags
-#endif
-          );
+          mol_slope(i, j, k, dir, q_idx, q, qaux, dq, flags);
         });
     }
     // ndeak note - box is contracted in the dir direction so we don't index out
@@ -101,27 +92,23 @@ pc_compute_hyp_mol_flux(
     const amrex::Box ebox = amrex::surroundingNodes(tbox, dir);
     amrex::ParallelFor(
       ebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-        const int ii = i - bdim[0];
-        const int jj = j - bdim[1];
-        const int kk = k - bdim[2];
+        const amrex::IntVect iv{AMREX_D_DECL(i, j, k)};
+        const amrex::IntVect ivm(iv - amrex::IntVect::TheDimensionVector(dir));
 
-        amrex::Real qtempl[5 + NUM_SPECIES] = {0.0};
+        amrex::Real qtempl[R_NUM] = {0.0};
         qtempl[R_UN] =
-          q(ii, jj, kk, q_idx[0]) +
-          0.5 * ((dq(ii, jj, kk, 1) - dq(ii, jj, kk, 0)) / q(ii, jj, kk, QRHO));
+          q(ivm, q_idx[0]) + 0.5 * ((dq(ivm, 1) - dq(ivm, 0)) / q(ivm, QRHO));
         qtempl[R_P] =
-          q(ii, jj, kk, QPRES) +
-          0.5 * (dq(ii, jj, kk, 0) + dq(ii, jj, kk, 1)) * qaux(ii, jj, kk, QC);
-        qtempl[R_UT1] = q(ii, jj, kk, q_idx[1]) + 0.5 * dq(ii, jj, kk, 2);
-        qtempl[R_UT2] = AMREX_D_PICK(
-          0.0, 0.0, q(ii, jj, kk, q_idx[2]) + 0.5 * dq(ii, jj, kk, 3));
+          q(ivm, QPRES) + 0.5 * (dq(ivm, 0) + dq(ivm, 1)) * qaux(ivm, QC);
+        qtempl[R_UT1] = q(ivm, q_idx[1]) + 0.5 * dq(ivm, 2);
+        qtempl[R_UT2] =
+          AMREX_D_PICK(0.0, 0.0, q(ivm, q_idx[2]) + 0.5 * dq(ivm, 3));
         qtempl[R_RHO] = 0.0;
         for (int n = 0; n < NUM_SPECIES; n++) {
-          qtempl[R_Y + n] = q(ii, jj, kk, QFS + n) * q(ii, jj, kk, QRHO) +
-                            0.5 * (dq(ii, jj, kk, 4 + n) +
-                                   q(ii, jj, kk, QFS + n) *
-                                     (dq(ii, jj, kk, 0) + dq(ii, jj, kk, 1)) /
-                                     qaux(ii, jj, kk, QC));
+          qtempl[R_Y + n] =
+            q(ivm, QFS + n) * q(ivm, QRHO) +
+            0.5 * (dq(ivm, QFS + n) +
+                   q(ivm, QFS + n) * (dq(ivm, 0) + dq(ivm, 1)) / qaux(ivm, QC));
           qtempl[R_RHO] += qtempl[R_Y + n];
         }
 
@@ -130,26 +117,23 @@ pc_compute_hyp_mol_flux(
         }
 #ifdef PELEC_USE_TWO_TEMP
           // FIXME: Using first order Godunov until bug fix for Ue slope
-          amrex::Real uelel = q(ii, jj, kk, QFX+5) + 0.0 * dq(ii, jj, kk, QFX+5);
+          amrex::Real uelel = q(ivm, QFX+5) + 0.0 * dq(ivm, QFX+5);
 #endif
 
-        amrex::Real qtempr[5 + NUM_SPECIES] = {0.0};
+        amrex::Real qtempr[R_NUM] = {0.0};
         qtempr[R_UN] =
-          q(i, j, k, q_idx[0]) -
-          0.5 * ((dq(i, j, k, 1) - dq(i, j, k, 0)) / q(i, j, k, QRHO));
-        qtempr[R_P] = q(i, j, k, QPRES) - 0.5 *
-                                            (dq(i, j, k, 0) + dq(i, j, k, 1)) *
-                                            qaux(i, j, k, QC);
-        qtempr[R_UT1] = q(i, j, k, q_idx[1]) - 0.5 * dq(i, j, k, 2);
+          q(iv, q_idx[0]) - 0.5 * ((dq(iv, 1) - dq(iv, 0)) / q(iv, QRHO));
+        qtempr[R_P] =
+          q(iv, QPRES) - 0.5 * (dq(iv, 0) + dq(iv, 1)) * qaux(iv, QC);
+        qtempr[R_UT1] = q(iv, q_idx[1]) - 0.5 * dq(iv, 2);
         qtempr[R_UT2] =
-          AMREX_D_PICK(0.0, 0.0, q(i, j, k, q_idx[2]) - 0.5 * dq(i, j, k, 3));
+          AMREX_D_PICK(0.0, 0.0, q(iv, q_idx[2]) - 0.5 * dq(iv, 3));
         qtempr[R_RHO] = 0.0;
         for (int n = 0; n < NUM_SPECIES; n++) {
           qtempr[R_Y + n] =
-            q(i, j, k, QFS + n) * q(i, j, k, QRHO) -
-            0.5 * (dq(i, j, k, 4 + n) + q(i, j, k, QFS + n) *
-                                          (dq(i, j, k, 0) + dq(i, j, k, 1)) /
-                                          qaux(i, j, k, QC));
+            q(iv, QFS + n) * q(iv, QRHO) -
+            0.5 * (dq(iv, QFS + n) +
+                   q(iv, QFS + n) * (dq(iv, 0) + dq(iv, 1)) / qaux(iv, QC));
           qtempr[R_RHO] += qtempr[R_Y + n];
         }
         for (int n = 0; n < NUM_SPECIES; n++) {
@@ -157,11 +141,22 @@ pc_compute_hyp_mol_flux(
         }
 #ifdef PELEC_USE_TWO_TEMP
           // FIXME: Using first order Godunov until bug fix for Ue slope
-          amrex::Real ueler = q(i, j, k, QFX+5) - 0.0 * dq(i, j, k, QFX+5);
+          amrex::Real ueler = q(iv, QFX+5) - 0.0 * dq(iv, QFX+5);
 #endif
 
-        const amrex::Real cavg =
-          0.5 * (qaux(i, j, k, QC) + qaux(ii, jj, kk, QC));
+        for (int n = 0; n < NUM_ADV; n++) {
+          qtempl[R_ADV + n] = q(ivm, QFA + n) + 0.5 * dq(ivm, QFA + n);
+          qtempr[R_ADV + n] = q(iv, QFA + n) - 0.5 * dq(iv, QFA + n);
+        }
+        for (int n = 0; n < NUM_AUX; n++) {
+          qtempl[R_AUX + n] = q(ivm, QFX + n) + 0.5 * dq(ivm, QFX + n);
+          qtempr[R_AUX + n] = q(iv, QFX + n) - 0.5 * dq(iv, QFX + n);
+        }
+        for (int n = 0; n < NUM_LIN; n++) {
+          qtempl[R_LIN + n] = q(ivm, QLIN + n) + 0.5 * dq(ivm, QLIN + n);
+          qtempr[R_LIN + n] = q(iv, QLIN + n) - 0.5 * dq(iv, QLIN + n);
+        }
+        const amrex::Real cavg = 0.5 * (qaux(iv, QC) + qaux(ivm, QC));
 
         amrex::Real spl[NUM_SPECIES];
         for (int n = 0; n < NUM_SPECIES; n++) {
@@ -187,154 +182,96 @@ pc_compute_hyp_mol_flux(
         // get cell-edge mobilities for each species (includes charge sign)
         amrex::Real c[NUM_SPECIES];
         for(int n=0; n<NUM_SPECIES; n++)
-          c[n] = 0.5 * (K_cc(i,j,k,n) + K_cc(ii,jj,kk,n));
+          c[n] = 0.5 * (K_cc(iv,n) + K_cc(ivm,n));
         
-        // Calculate the cell-edge drift velocity
-        for(int n=0; n<NUM_SPECIES; n++){
-          drift_tmp[n] = 0.0;
-          drift_tmp[n] = c[n] * E_edge[dir](i,j,k);
-        }
-
-        // Store cell-center drift velocity for time step estimation
-        if(!ef_ambiDiff){
+        if(ef_do_drift){
+          // Calculate the cell-edge drift velocity
           for(int n=0; n<NUM_SPECIES; n++){
-            drift_cc(i, j, k, NUM_E*n + 0) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 0));
-            drift_cc(i, j, k, NUM_E*n + 1) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 1));
-            drift_cc(i, j, k, NUM_E*n + 2) = amrex::Math::abs(K_cc(i, j, k, n) * E_cc(i, j, k, 2));
+            drift_tmp[n] = c[n] * E_edge[dir](iv);
+          }
+
+          // Store cell-center drift velocity for time step estimation
+          for(int n=0; n<NUM_SPECIES; n++){
+            drift_cc(iv, NUM_E*n + 0) = amrex::Math::abs(K_cc(iv, n) * E_cc(iv, 0));
+            drift_cc(iv, NUM_E*n + 1) = amrex::Math::abs(K_cc(iv, n) * E_cc(iv, 1));
+            drift_cc(iv, NUM_E*n + 2) = amrex::Math::abs(K_cc(iv, n) * E_cc(iv, 2));
           }
         }
 #endif
         amrex::Real flux_tmp[NVAR] = {0.0};
         amrex::Real ustar = 0.0;
 
-        amrex::Real tmp0 = 0.0;
-        amrex::Real tmp1 = 0.0;
-        amrex::Real tmp2 = 0.0;
-        amrex::Real tmp3 = 0.0;
-        amrex::Real tmp4 = 0.0;
-        amrex::Real tmp5 = 0.0;
-        riemann(
-          qtempl[R_RHO], qtempl[R_UN], qtempl[R_UT1], qtempl[R_UT2],
-          qtempl[R_P], spl, qtempr[R_RHO], qtempr[R_UN], qtempr[R_UT1],
-          qtempr[R_UT2], qtempr[R_P], spr, bc_test_val, cavg, ustar,
-          flux_tmp[URHO], flux_tmp[f_idx[0]], flux_tmp[f_idx[1]],
-          flux_tmp[f_idx[2]], flux_tmp[UEDEN], flux_tmp[UEINT], tmp0, tmp1,
-          tmp2, tmp3, tmp4, tmp5);
-
-        for (int n = 0; n < NUM_SPECIES; n++) {
-          flux_tmp[UFS + n] = (ustar + drift_tmp[n] > 0.0) ? flux_tmp[URHO] * qtempl[R_Y + n]
-                                            : flux_tmp[URHO] * qtempr[R_Y + n];
-          flux_tmp[UFS + n] =
-            (ustar + drift_tmp[n] == 0.0)
-              ? flux_tmp[URHO] * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
-              : flux_tmp[UFS + n];
-        }
-
-
-        flux_tmp[UTEMP] = 0.0;
-        for (int n = UFX; n < UFX + NUM_AUX; n++) {
-          flux_tmp[n] = (NUM_AUX > 0) ? 0.0 : flux_tmp[n];
-        }
-#ifdef PELEC_USE_PLASMA
-        for (int n = UFX; n < UFX + NUM_AUX; n++) {
-          flux_tmp[n] = 0.0;
-        }
+        if (!use_laxf_flux) {
+          amrex::Real qint_iu = 0.0, tmp1 = 0.0, tmp2 = 0.0, tmp3 = 0.0,
+                      tmp4 = 0.0;
+          riemann(
+            qtempl[R_RHO], qtempl[R_UN], qtempl[R_UT1], qtempl[R_UT2],
+            qtempl[R_P], spl, qtempr[R_RHO], qtempr[R_UN], qtempr[R_UT1],
+            qtempr[R_UT2], qtempr[R_P], spr, bc_test_val, cavg, drift_tmp, ustar,
+            flux_tmp[URHO], &flux_tmp[UFS], flux_tmp[f_idx[0]],
+            flux_tmp[f_idx[1]], flux_tmp[f_idx[2]], flux_tmp[UEDEN],
+            flux_tmp[UEINT], qint_iu, tmp1, tmp2, tmp3, tmp4);
+          const amrex::Real flxrho = flux_tmp[URHO];
+          for (int n = 0; n < NUM_ADV; n++) {
+            pc_cmpflx_passive(
+              ustar, flxrho, qtempl[R_ADV + n], qtempr[R_ADV + n],
+              flux_tmp[UFA + n]);
+          }
+#ifndef PELEC_USE_PLASMA
+          // Don't want to advect potential or efield components
+          for (int n = 0; n < NUM_AUX; n++) {
+            pc_cmpflx_passive(
+              ustar, flxrho, qtempl[R_AUX + n], qtempr[R_AUX + n],
+              flux_tmp[UFX + n]);
+          }
 #endif
-        for (int n = UFA; n < UFA + NUM_ADV; n++) {
-          flux_tmp[n] = (NUM_ADV > 0) ? 0.0 : flux_tmp[n];
-        }
-
+          for (int n = 0; n < NUM_LIN; n++) {
+            pc_cmpflx_passive(
+              ustar, qint_iu, qtempl[R_LIN + n], qtempr[R_LIN + n],
+              flux_tmp[ULIN + n]);
+          }
 #ifdef PELEC_USE_PLASMA
-        amrex::Real ndens = 0.0;
-        amrex::Real kB = 1.380649e-16; // cm^2.g.s^-2/K
-        amrex::Real NA = 6.0221409e23; // 1/mol
-        double EoN, Te;
-        amrex::Real mwt[NUM_SPECIES];
-        auto eos = pele::physics::PhysicsType::eos();
-        eos.molecular_weight(mwt);
-        if(ef_do_drift == 1 && !ef_ambiDiff){
-          // Recalculate fluxes taking into account drift velocity
-          // Riemann solver temporary values: tmp0 = idir velocity
-          //                                  tmp1 = other velocity comp 1
-          //                                  tmp2 = other velocity comp 2
-          //                                  tmp3 = godunov state pressure
-          //                                  tmp4 = 
+          // TODO account for electrohydrodynamic force
 
-          // Calculate new species and u momentum fluxes
-          amrex::Real mfgd[NUM_SPECIES];
-          amrex::Real uflux_tmp = 0.0;
-          flux_tmp[f_idx[0]] = 0.0;
-          for(int n = 0; n < NUM_SPECIES; n++){
-            // Calculate species density flux using left or right state (based on effective velocity)
-            flux_tmp[UFS + n] = (ustar + drift_tmp[n] > 0.0) ? tmp5 * (tmp0 + drift_tmp[n]) * qtempl[R_Y + n]
-                                                             : tmp5 * (tmp0 + drift_tmp[n]) * qtempr[R_Y + n];
-
-            // Calculate u momentum density flux using left or right state (based on effective velocity)
-            uflux_tmp = (ustar + drift_tmp[n] > 0.0) ? tmp5 * pow((tmp0 + drift_tmp[n]), 2) * qtempl[R_Y + n]
-                                                     : tmp5 * pow((tmp0 + drift_tmp[n]), 2) * qtempr[R_Y + n];
-
-            // Correct flux value to account for a zero effective velocity
-            flux_tmp[UFS + n] =
-              (ustar + drift_tmp[n] == 0.0)
-                ? tmp5 * (tmp0 + drift_tmp[n]) * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
-                : flux_tmp[UFS + n];
-
-            // FIXME: We should not be modifying the momentum flux in this way 
-            flux_tmp[f_idx[0]] +=
-              (ustar + drift_tmp[n] == 0.0)
-                ? tmp5 * pow((tmp0 + drift_tmp[n]), 2) * 0.5 * (qtempl[R_Y + n] + qtempr[R_Y + n])
-                : uflux_tmp;
-
-
-            // Re-evaluate species mass fractions based on corrections          
-            // mfgd[n] = flux_tmp[UFS + n] / (tmp5 * (tmp0 + drift_tmp[n]));
-          }
-      
-          // TODO: should the Godunov states (density pressure velocity) be re-evaluated as well? 
-
-          // Use species fluxes to correct density flux and density values
-          flux_tmp[URHO] = 0.0;  
-          for(int n = 0; n < NUM_SPECIES; n++) flux_tmp[URHO] += flux_tmp[UFS + n];
-          // rgd = flux_tmp[URHO] / tmp0;
-
-          // Use updated density flux to calculate new momentum fluxes
-          // TODO: do the velocity components that are not orthogonal to the cell 
-          // face also need to be updated with appropriate drift components?
-          // flux_tmp[f_idx[0]] +=  flux_tmp[URHO] * tmp0 + tmp3;
-          // FIXME: We should not be modifying the momentum flux in this way 
-          flux_tmp[f_idx[0]] +=  tmp3;
-          flux_tmp[f_idx[1]] = flux_tmp[URHO] * tmp1;
-          flux_tmp[f_idx[2]] = flux_tmp[URHO] * tmp2;
-
-          // Re-evaluate other quantities to obtain new energy fluxes
-          // amrex::Real egd;
-          // EOS::RYP2E(tmp5, mfgd, tmp3, egd);      
-          // amrex::Real regd = tmp5 * egd;
-          // amrex::Real rhoetot = regd + 0.5 * tmp5 * (tmp0 * tmp0 + tmp1 * tmp1 + tmp2 * tmp2);
-          // flux_tmp[UEDEN] = tmp0 * (rhoetot + tmp3); 
-          // flux_tmp[UEINT] = tmp0 * regd;
-
-          // Overwrite electron flux with SG model if needed
-          // See Nguyen et al., High-order Scharfetter-Gummel-based schemes and applications to gas discharge modeling (2022)
-          if(ef_use_SG){
-            const amrex::Real* dx = geom.CellSize();
-            amrex::Real De = 0.5 * (coe_cc(i,j,k,dComp_rhoD + E_ID)/q(i, j, k, QRHO) + coe_cc(ii,jj,kk,dComp_rhoD + E_ID)/q(ii, jj, kk, QRHO));
-            amrex::Real alpha = (De > 0.0) ? c[E_ID] * dx[dir] * E_edge[dir](i,j,k) / De : 0.0;
-            amrex::Real B1 = (alpha != 0.0) ? alpha / (exp(alpha) - 1.0) : 0.0;
-            amrex::Real B2 = (alpha != 0.0) ? -alpha / (exp(-alpha) - 1.0) : 0.0;
-            amrex::Real me_k = q(ii, jj, kk, QFS + E_ID) * q(ii, jj, kk, QRHO); 
-            amrex::Real me_k1 = q(i, j, k, QFS + E_ID) * q(i, j, k, QRHO); 
-            flux_tmp[UFS+E_ID] = De / dx[dir] * (B1*me_k - B2*me_k1);
-          }
-
+          
 #ifdef PELEC_USE_TWO_TEMP
+          // FIXME: make electron energy advective flux consistent with electron number density treatment
           flux_tmp[UFX + 5] = (ustar + drift_tmp[E_ID] > 0.0) ? (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * uelel : (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * ueler;
           flux_tmp[UFX + 5] = (ustar + drift_tmp[E_ID] == 0.0)? (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * 0.5 * (uelel + ueler) : flux_tmp[UFX + 5];
 #endif
-        }
 #endif
+        } else {
+          // TODO: update LF flux to incorporate drift velocity
+          amrex::Real maxeigval = 0.0;
+          laxfriedrich_flux(
+            qtempl[R_RHO], qtempl[R_UN], qtempl[R_UT1], qtempl[R_UT2],
+            qtempl[R_P], spl, qtempr[R_RHO], qtempr[R_UN], qtempr[R_UT1],
+            qtempr[R_UT2], qtempr[R_P], spr, bc_test_val, cavg, ustar,
+            maxeigval, flux_tmp[URHO], &flux_tmp[UFS], flux_tmp[f_idx[0]],
+            flux_tmp[f_idx[1]], flux_tmp[f_idx[2]], flux_tmp[UEDEN],
+            flux_tmp[UEINT]);
+          const amrex::Real ul = qtempl[R_UN];
+          const amrex::Real ur = qtempr[R_UN];
+          const amrex::Real rl = qtempl[R_RHO];
+          const amrex::Real rr = qtempr[R_RHO];
+          for (int n = 0; n < NUM_ADV; n++) {
+            pc_lax_cmpflx_passive(
+              ul, ur, rl, rr, qtempl[R_ADV + n], qtempr[R_ADV + n], maxeigval,
+              flux_tmp[UFA + n]);
+          }
+          for (int n = 0; n < NUM_AUX; n++) {
+            pc_lax_cmpflx_passive(
+              ul, ur, rl, rr, qtempl[R_AUX + n], qtempr[R_AUX + n], maxeigval,
+              flux_tmp[UFX + n]);
+          }
+          for (int n = 0; n < NUM_LIN; n++) {
+            pc_lax_cmpflx_passive(
+              ul, ur, 1., 1., qtempl[R_LIN + n], qtempr[R_LIN + n], maxeigval,
+              flux_tmp[ULIN + n]);
+          }
+        }
         for (int ivar = 0; ivar < NVAR; ivar++) {
-          flx[dir](i, j, k, ivar) += flux_tmp[ivar] * area[dir](i, j, k);
+          flx[dir](iv, ivar) += flux_tmp[ivar] * area[dir](iv);
         }
 
 #ifdef PELEC_USE_PLASMA 
@@ -342,96 +279,48 @@ pc_compute_hyp_mol_flux(
         // Calculate number density at the interior cell (0th order approx for now)
         // assumes Y_k at ghost cell is equal to interior value at ext_dir boundary,
         // so doesn't matter which species array we take from for now
-        // TODO: make sure calculation of EoN is in units of Td
         // TODO: Make sure other flux values are updated as well, if necessary
-        // TODO: Make BCs consistent with ambipolar diffusion model when used
 
-        int iv[3] = {i,j,k};
+        amrex::Real ndens = 0.0;
+        double EoN, Te;
+        amrex::Real mwt[NUM_SPECIES];
+        auto eos = pele::physics::PhysicsType::eos();
+        eos.molecular_weight(mwt);
         amrex::Real ionFlux = 0.0;
 
+        // Need to save down ion flux to boundary if using nonlinear coupled system solve
         if (use_NL) {
-           ionFlux_arr[dir](i,j,k) = 0.0;
+           ionFlux_arr[dir](iv) = 0.0;
         }
 
         // overwrite fluxes on all ext_dir boundaries
         if ((bcr[dir] == amrex::BCType::ext_dir) and (iv[dir] == domlo[dir])) {
           // Use EoN to get Te for electron flux at the boundary
-          ExtrapTe(eon(i, j, k, 0), &Te);
-          if(zero_bc_flux == 0 && !ef_ambiDiff){
-            flx[dir](i, j, k, URHO) = 0.0;
+          ExtrapTe(eon(iv, 0), &Te);
+          if(!zero_bc_flux){
+            flx[dir](iv, URHO) = 0.0;
             for(int n=0; n<NUM_SPECIES; n++){
-                flx[dir](i, j, k, UFS + n) = 0.0;
+                flx[dir](iv, UFS + n) = 0.0;
                 if(zero_bc_grad == 1){
-                  flx[dir](i,j,k,UFS+n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
+                  flx[dir](iv,UFS+n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](iv) * area[dir](iv);
 #ifdef PELEC_USE_TWO_TEMP
-                  if(n == E_ID) flx[dir](i,j,k,UFX+5) = (5.0/3.0) * ueler * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
-#endif
-                }
-                else{
-                  if(zero_bc_grad == 2){    // Assume cathode is on domlo
-                    flx[dir](i,j,k,UFS+n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
-                  }
-                  else{
-                    if(n == E_ID && !use_NL){
-                      flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5) * area[dir](i, j, k);
-                    }
-                    if(n != E_ID && K_cc(i,j,k,n) != 0){
-                      if(ion_bc_type == 0){
-                        flx[dir](i, j, k, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*kB*q(i,j,k,QTEMP)) / ((mwt[n]/NA) * constants::PI()) ,0.5) * area[dir](i, j, k);
-                      }
-                      else if(ion_bc_type == 1){
-                        if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) > 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) < 0)){
-                          flx[dir](i, j, k, UFS + n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
-                        }
-                        else{
-                          flx[dir](i, j, k, UFS + n) = 0.0;
-                        }
-                      }
-                      else{
-                        printf("Ion BC type not supported!\n");
-                        exit(1);
-                      }
-                      // Save ion flux for secondary electron emissions and convert to number density
-                      if ( use_NL ) {
-                         ionFlux_arr[dir](i,j,k) += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
-                      } else {
-                         ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
-                      }
-                    }
-                  }
-                }
-                flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
-            }
-            // Subtrat from source since ionFlux is negative and contribution should be positive
-            if (!use_NL && !zero_bc_grad) flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * EFConst::me_cgs;
-          }
-        }
-        if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
-          ExtrapTe(eon(ii, jj, kk, 0), &Te);
-          if(zero_bc_flux == 0 && !ef_ambiDiff){
-            flx[dir](i, j, k, URHO) = 0.0;
-            for(int n=0; n<NUM_SPECIES; n++){
-                flx[dir](i, j, k, UFS + n) = 0.0;
-                if(zero_bc_grad == 1){
-                  flx[dir](i,j,k,UFS+n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
-#ifdef PELEC_USE_TWO_TEMP
-                  if(n == E_ID) flx[dir](i,j,k,UFX+5) = (5.0/3.0) * uelel * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
+                  if(n == E_ID) flx[dir](iv,UFX+5) = (5.0/3.0) * ueler * c[n] * E_edge[dir](iv) * area[dir](iv);
 #endif
                 }
                 else{
                   if(n == E_ID && !use_NL){
-                    flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5) * area[dir](i, j, k);
+                    flx[dir](iv, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*EFConst::kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5) * area[dir](iv);
                   }
                   if(n != E_ID && K_cc(i,j,k,n) != 0){
                     if(ion_bc_type == 0){
-                      flx[dir](i, j, k, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*kB*q(ii,jj,kk,QTEMP)) / ((mwt[n]/NA) * constants::PI()) ,0.5) * area[dir](i, j, k);
+                      flx[dir](iv, UFS + n) = -0.5 * qtempr[R_RHO] * spr[n] * pow( (8.0*EFConst::kB*q(iv,QTEMP)) / ((mwt[n]/EFConst::Na) * constants::PI()) ,0.5) * area[dir](iv);
                     }
                     else if(ion_bc_type == 1){
-                      if((K_cc(i,j,k,n) < 0 && E_edge[dir](i,j,k) < 0) || (K_cc(i,j,k,n) > 0 && E_edge[dir](i,j,k) > 0)){
-                        flx[dir](i, j, k, UFS + n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](i,j,k) * area[dir](i, j, k);
+                      if((K_cc(iv,n) < 0 && E_edge[dir](iv) > 0) || (K_cc(iv,n) > 0 && E_edge[dir](iv) < 0)){
+                        flx[dir](iv, UFS + n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](iv) * area[dir](iv);
                       }
                       else{
-                        flx[dir](i, j, k, UFS + n) = 0.0;
+                        flx[dir](iv, UFS + n) = 0.0;
                       }
                     }
                     else{
@@ -440,24 +329,75 @@ pc_compute_hyp_mol_flux(
                     }
                     // Save ion flux for secondary electron emissions and convert to number density
                     if ( use_NL ) {
-                       ionFlux_arr[dir](i,j,k) += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+                       ionFlux_arr[dir](iv) += flx[dir](iv, UFS + n) / mwt[n] * EFConst::Na;
                     } else {
-                       ionFlux += flx[dir](i, j, k, UFS + n) / mwt[n] * NA;
+                       ionFlux += flx[dir](iv, UFS + n) / mwt[n] * EFConst::Na;
                     }
                   }
                 }
-                flx[dir](i, j, k, URHO) += flx[dir](i, j, k, UFS + n);
+                flx[dir](iv, URHO) += flx[dir](iv, UFS + n);
+            }
+            // Subtrat from source since ionFlux is negative and contribution should be positive
+            if (!use_NL && !zero_bc_grad) flx[dir](iv, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * EFConst::me_cgs;
+          }
+        }
+        if ((bcr[dir+AMREX_SPACEDIM] == amrex::BCType::ext_dir) and (iv[dir] == domhi[dir]+1)) {
+          ExtrapTe(eon(ivm, 0), &Te);
+          if(!zero_bc_flux){
+            flx[dir](iv, URHO) = 0.0;
+            for(int n=0; n<NUM_SPECIES; n++){
+                flx[dir](iv, UFS + n) = 0.0;
+                if(zero_bc_grad == 1){
+                  flx[dir](iv,UFS+n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](iv) * area[dir](iv);
+#ifdef PELEC_USE_TWO_TEMP
+                  if(n == E_ID) flx[dir](iv,UFX+5) = (5.0/3.0) * uelel * c[n] * E_edge[dir](iv) * area[dir](iv);
+#endif
+                }
+                else{
+                  if(zero_bc_grad == 2){    // Assume cathode is on domlo
+                    flx[dir](iv,UFS+n) = qtempr[R_RHO] * spr[n] * c[n] * E_edge[dir](iv) * area[dir](iv);
+                  }
+                  else{
+                    if(n == E_ID && !use_NL){
+                      flx[dir](iv, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*EFConst::kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5) * area[dir](iv);
+                    }
+                    if(n != E_ID && K_cc(iv,n) != 0){
+                      if(ion_bc_type == 0){
+                        flx[dir](iv, UFS + n) = 0.5 * qtempl[R_RHO] * spl[n] * pow( (8.0*EFConst::kB*q(ivm,QTEMP)) / ((mwt[n]/EFConst::Na) * constants::PI()) ,0.5) * area[dir](iv);
+                      }
+                      else if(ion_bc_type == 1){
+                        if((K_cc(iv,n) < 0 && E_edge[dir](iv) < 0) || (K_cc(iv,n) > 0 && E_edge[dir](iv) > 0)){
+                          flx[dir](iv, UFS + n) = qtempl[R_RHO] * spl[n] * c[n] * E_edge[dir](iv) * area[dir](iv);
+                        }
+                        else{
+                          flx[dir](iv, UFS + n) = 0.0;
+                        }
+                      }
+                      else{
+                        printf("Ion BC type not supported!\n");
+                        exit(1);
+                      }
+                      // Save ion flux for secondary electron emissions and convert to number density
+                      if ( use_NL ) {
+                         ionFlux_arr[dir](iv) += flx[dir](iv, UFS + n) / mwt[n] * EFConst::Na;
+                      } else {
+                         ionFlux += flx[dir](iv, UFS + n) / mwt[n] * EFConst::Na;
+                      }
+                    }
+                  }
+                }
+                flx[dir](iv, URHO) += flx[dir](iv, UFS + n);
             }
 
             // Add on secondary electron emission based on ion fluxes
             // It is assumed that electrode boundary is an absolutely absorbing wall
             // Subtract from flux, since ion flux is positive (out of the domain), and a negative flux means a positive electron contribution
-            if (!use_NL && !zero_bc_grad) flx[dir](i, j, k, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * EFConst::me_cgs;
+            if (!use_NL && !zero_bc_grad) flx[dir](iv, UFS + E_ID) -= 2.0 * secondary_em_coef * ionFlux * EFConst::me_cgs;
 
             // Imposed cathode flux (used to test space charge-induced electric field calculations) 
             // Subtracted from flux to ensure electrons move into the domain
             // electron_emit_const provided in [1/cm3]
-            if (!use_NL && !zero_bc_grad) flx[dir](i, j, k, UFS + E_ID) -= electron_emit_const * 0.5 * (pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5)) * EFConst::me_cgs * area[dir](i,j,k);
+            if (!use_NL && !zero_bc_grad) flx[dir](iv, UFS + E_ID) -= electron_emit_const * 0.5 * (pow( (8.0*EFConst::kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5)) * EFConst::me_cgs * area[dir](iv);
           }
         }
 #endif
@@ -465,42 +405,8 @@ pc_compute_hyp_mol_flux(
       });
   }
 
-#ifdef PELEC_USE_EB
-//   // nextra was 3 for EB in PeleC but we are operating on a different
-//   // box here, so this should be zero.
-//   const int nextra = 0;
-// 
-//   const amrex::Real full_area = std::pow(del[0], AMREX_SPACEDIM - 1);
-//   const auto lo = amrex::lbound(cbox);
-//   const auto hi = amrex::ubound(cbox);
-// 
-//   amrex::ParallelFor(nebflux, [=] AMREX_GPU_DEVICE(int L) {
-//     const amrex::IntVect& iv = ebg[L].iv;
-//     if (is_inside(iv, lo, hi, nextra - 1)) {
-//       amrex::Real tmp0 = 0.0;
-//       amrex::Real tmp1 = 0.0;
-//       amrex::Real tmp2 = 0.0;
-//       amrex::Real tmp3 = 0.0;
-//       amrex::Real tmp4 = 0.0;
-//       amrex::Real tmp5 = 0.0;
-//       amrex::Real ustar = 0.0;
-//       riemann(
-//         qtempl[R_RHO], qtempl[R_UN], qtempl[R_UT1], qtempl[R_UT2], qtempl[R_P],
-//         spl, qtempl[R_RHO], qtempr[R_UN], qtempl[R_UT1], qtempl[R_UT2],
-//         qtempl[R_P], spl, bc_test_val, cavg, ustar, flux_tmp[URHO],
-//         flux_tmp[UMX], flux_tmp[UMY], flux_tmp[UMZ], flux_tmp[UEDEN],
-//         flux_tmp[UEINT], tmp0, tmp1, tmp2, tmp3, tmp4, tmp5);
-// 
-//       const amrex::Real tmp_flx_umx = flux_tmp[UMX];
-//       AMREX_D_TERM(flux_tmp[UMX] = -tmp_flx_umx * ebnorm[0];
-//                    , flux_tmp[UMY] = -tmp_flx_umx * ebnorm[1];
-//                    , flux_tmp[UMZ] = -tmp_flx_umx * ebnorm[2];)
-// 
-//       // Compute species flux like passive scalar from intermediate state
-//       for (int n = 0; n < NUM_SPECIES; n++) {
-//         flux_tmp[UFS + n] = flux_tmp[URHO] * qtempl[R_Y + n];
-//       }
-
+  // nextra was 3 for EB in PeleC but we are operating on a different
+  // box here, so this should be zero.
   const int nextra = 0;
 
   const amrex::Real full_area = std::pow(del[0], AMREX_SPACEDIM - 1);
@@ -509,12 +415,13 @@ pc_compute_hyp_mol_flux(
   const amrex::Real* dx      = geom.CellSize();
   const amrex::Real* problo  = geom.ProbLo();
   const amrex::Real* probhi  = geom.ProbHi();
+  const amrex::Box bxg = amrex::grow(cbox, nextra - 1);
 
   amrex::ParallelFor(nebflux, [=] AMREX_GPU_DEVICE(int L) {
     const amrex::IntVect& iv = ebg[L].iv;
     AMREX_D_TERM(const int i = ebg[L].iv[0];, const int j = ebg[L].iv[1];
                  , const int k = ebg[L].iv[2];)
-    if (is_inside(iv, lo, hi, nextra - 1)) {
+    if (bxg.contains(iv)) {
       amrex::Real ebnorm[AMREX_SPACEDIM] = {AMREX_D_DECL(
         ebg[L].eb_normal[0], ebg[L].eb_normal[1], ebg[L].eb_normal[2])};
       const amrex::Real ebnorm_mag = std::sqrt(AMREX_D_TERM(
@@ -536,15 +443,12 @@ pc_compute_hyp_mol_flux(
       // values at the EB face
       // TODO - may need to use better EB face approx
       // TODO figure out efield logic for strong ion BCs
-      // TODO check signage for boundary fluxes
 
       if (use_NL) {
-         ionFlux_eb_arr(i,j,k) = 0.0;
+         ionFlux_eb_arr(iv) = 0.0;
       }
 
       amrex::Real ndens = 0.0;
-      amrex::Real kB = 1.380649e-16; // erg/K
-      amrex::Real NA = 6.0221409e23; // 1/mol
       double EoN, Te;
       amrex::Real mwt[NUM_SPECIES];
       auto eos = pele::physics::PhysicsType::eos();
@@ -552,36 +456,36 @@ pc_compute_hyp_mol_flux(
       amrex::Real ionFlux = 0.0;
 
       // Calculate the electric field normal to the EB face (pointing into the fluid, negative value indicates into the surface)
-      amrex::Real Enorm = (s_cc(i, j, k, UFX+2) * ebnorm[0] + s_cc(i, j, k, UFX+3) * ebnorm[1] + s_cc(i, j, k, UFX+4) * ebnorm[2]);
+      amrex::Real Enorm = (s_cc(iv, UFX+2) * ebnorm[0] + s_cc(iv, UFX+3) * ebnorm[1] + s_cc(iv, UFX+4) * ebnorm[2]);
 
       // overwrite fluxes on all ext_dir boundaries
       // Use EoN to get Te for electron flux at the boundary
-      ExtrapTe(eon(i, j, k, 0), &Te);
-      if(zero_bc_flux == 0 && !ef_ambiDiff){
+      ExtrapTe(eon(iv, 0), &Te);
+      if(!zero_bc_flux){
         flux_tmp[URHO] = 0.0;
         for(int n=0; n<NUM_SPECIES; n++){
             flux_tmp[UFS + n] = 0.0;
             if(zero_bc_grad == 1){
-                flux_tmp[UFS + n] = q(i,j,k,QRHO) * q(i,j,k,QFS + n) * K_cc(i,j,k,n) * Enorm;
+                flux_tmp[UFS + n] = q(iv,QRHO) * q(iv,QFS + n) * K_cc(iv,n) * Enorm;
 #ifdef PELEC_USE_TWO_TEMP
-                if(n == E_ID) flux_tmp[UFX + 5] = (5.0/3.0) * q(i,j,k,QFX+5) * K_cc(i,j,k,n) * Enorm;
+                if(n == E_ID) flux_tmp[UFX + 5] = (5.0/3.0) * q(iv,QFX+5) * K_cc(iv,n) * Enorm;
 #endif
             }
             else{
-              if(zero_bc_grad == 2 && y <= probhi[1] / 2.0){
-                  flux_tmp[UFS + n] = q(i,j,k,QRHO) * q(i,j,k,QFS + n) * K_cc(i,j,k,n) * Enorm;
+              if(zero_bc_grad == 2 && y >= probhi[1] / 2.0){
+                  flux_tmp[UFS + n] = q(iv,QRHO) * q(iv,QFS + n) * K_cc(iv,n) * Enorm;
               }
               else{
                 if(n == E_ID){
-                  flux_tmp[UFS + n] = -0.5 * q(i,j,k,QRHO) * q(i,j,k,  QFS + n) * pow( (8.0*kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5);
+                  flux_tmp[UFS + n] = -0.5 * q(iv,QRHO) * q(iv,  QFS + n) * pow( (8.0*EFConst::kB*Te) / (EFConst::me_cgs * constants::PI()) ,0.5);
                 }
-                if(n != E_ID && K_cc(i,j,k,n) != 0){
+                if(n != E_ID && K_cc(iv,n) != 0){
                   if(ion_bc_type == 0){
-                    flux_tmp[UFS + n] = -0.5 * q(i,j,k,QRHO) * q(i,j,k,QFS + n) * pow( (8.0*kB*q(i,j,k,QTEMP)) / ((mwt[n]/NA) * constants::PI()) ,0.5);
+                    flux_tmp[UFS + n] = -0.5 * q(iv,QRHO) * q(iv,QFS + n) * pow( (8.0*EFConst::kB*q(iv,QTEMP)) / ((mwt[n]/EFConst::Na) * constants::PI()) ,0.5);
                   }
                   else if(ion_bc_type == 1){
-                    if((K_cc(i,j,k,n) < 0 && Enorm > 0) || (K_cc(i,j,k,n) > 0 && Enorm < 0)){
-                      flux_tmp[UFS + n] = q(i,j,k,QRHO) * q(i,j,k,QFS + n) * K_cc(i,j,k,n) * Enorm;
+                    if((K_cc(iv,n) < 0 && Enorm > 0) || (K_cc(iv,n) > 0 && Enorm < 0)){
+                      flux_tmp[UFS + n] = q(iv,QRHO) * q(iv,QFS + n) * K_cc(iv,n) * Enorm;
                     }
                     else{
                       flux_tmp[UFS + n] = 0.0;
@@ -593,9 +497,9 @@ pc_compute_hyp_mol_flux(
                   }
                   // Save ion flux for secondary electron emissions and convert to number density
                   if ( use_NL ) {
-                    ionFlux_eb_arr(i,j,k) += flux_tmp[UFS + n] / mwt[n] * NA;
+                    ionFlux_eb_arr(iv) += flux_tmp[UFS + n] / mwt[n] * EFConst::Na;
                   } else{
-                    ionFlux += flux_tmp[UFS + n] / mwt[n] * NA;
+                    ionFlux += flux_tmp[UFS + n] / mwt[n] * EFConst::Na;
                   }
                 }
               }
@@ -603,7 +507,8 @@ pc_compute_hyp_mol_flux(
             flux_tmp[URHO] += flux_tmp[UFS + n];
         }
         // Negative sign, since flux contribution should be opposite sign from the ionFlux is
-        if(!zero_bc_grad) flux_tmp[UFS + E_ID] -= 2.0 * secondary_em_coef * ionFlux * EFConst::me_cgs;
+        // Only worrying about SE if BC is not zero grad.
+        if(zero_bc_grad == 0 || (zero_bc_grad == 2 && y <= probhi[1] / 2.0)) flux_tmp[UFS + E_ID] -= 2.0 * secondary_em_coef * ionFlux * EFConst::me_cgs;
         // flux_tmp is directed into the EB, so positive values imply electrode losses, and vice versa
         for(int n = 0; n<NUM_SPECIES; n++) flux_tmp[UFS + n] *= -1.0;
 #ifdef PELEC_USE_TWO_TEMP
@@ -617,18 +522,6 @@ pc_compute_hyp_mol_flux(
       for (int n = 0; n < NVAR; n++) {
         ebflux[n * nebflux + L] += flux_tmp[n] * ebg[L].eb_area * full_area;
       }
-      
-      // FLUX FIX TESTING
-      // amrex::Real vol = 1;
-      // for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      //   vol *= geom.CellSize()[dir];
-      // }
-      // amrex::Real volinv = 1.0 / (amrex::max<amrex::Real>(vfrac(i,j,k), 1.0e-12) * vol);
-      // if( amrex::Math::abs(ebflux[(UFS+E_ID) * nebflux + L] * volinv * dt) > q(i,j,k,QRHO)*q(i,j,k,QFS+E_ID) ){
-      //   ebflux[(UFS+E_ID) * nebflux + L] = 0.5 * q(i,j,k,QRHO)*q(i,j,k,QFS+E_ID) / (volinv * dt) ;
-      // }
-
     }
   });
-#endif
 }

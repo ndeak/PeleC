@@ -1,5 +1,5 @@
-#ifndef _PROB_H_
-#define _PROB_H_
+#ifndef PROB_H
+#define PROB_H
 
 #include <AMReX_Print.H>
 #include <AMReX_ParmParse.H>
@@ -74,8 +74,9 @@ pc_initdata(
   state(i, j, k, UEDEN) =
     rho * (eint + 0.5 * (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]));
   state(i, j, k, UTEMP) = prob_parm.T0;
-  for (int n = 0; n < NUM_SPECIES; n++)
+  for (int n = 0; n < NUM_SPECIES; n++) {
     state(i, j, k, UFS + n) = rho * massfrac[n];
+  }
 }
 
 AMREX_GPU_DEVICE

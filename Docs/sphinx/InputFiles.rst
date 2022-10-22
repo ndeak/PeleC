@@ -14,7 +14,7 @@ Also, any entry that can be specified in the inputs file can also be specified o
 
 ::
 
-	mpirun -np 64 ./Pele2d.gnu.DEBUG.MPI.ex inputs amr.restart=sod_x_chk0030 pelec.riemann_solver=3
+	mpirun -np 64 ./Pele2d.gnu.DEBUG.MPI.ex inputs amr.restart=sod_x_chk0030
 
 The available options are divided into groups: those that control primarily AMReX are prefaced with `amr.` while those that are specific to Pele are prefaced with `pelec.`.
 
@@ -54,11 +54,6 @@ These parameters, once read, are available in the `PeleC` object for use from c+
     # ---------------------------------------------------------------
     PeleC specific inputs
     # ---------------------------------------------------------------
-
-    # 0: Collela, Glaz and Ferguson (default)
-    # 1: Collela and Glaz  
-    # 2: HLLC
-    pelec.riemann_solver    = 0     
 
     # >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
     # Interior, UserBC, Symmetry, SlipWall, NoSlipWall
@@ -130,8 +125,10 @@ These parameters, once read, are available in the `PeleC` object for use from c+
     #------------------------
     tagging.denerr = 3             # density value
     tagging.dengrad = 0.01         # gradient of density value
+    tagging.denratio = 1.1         # ratio of adjacent cells density
     tagging.max_denerr_lev = 3     # maximum level at which to use density for tagging
     tagging.max_dengrad_lev = 3    # maximum level at which to use density gradient for tagging
+    tagging.max_denratio_lev = 3   # maximum level at which to use density ratio for tagging
 
     #------------------------
     # CHECKPOINT FILES
@@ -151,7 +148,10 @@ These parameters, once read, are available in the `PeleC` object for use from c+
 
     #pick which all derived variables to plot
     amr.derive_plot_vars  = pressure x_velocity y_velocity
-    
+
+    # we can initialize a solution from a plot file
+    pelec.init_pltfile = "plt00000"
+
     # ---------------------------------------------------------------
     
     # ---------------------------------------------------------------
@@ -160,7 +160,6 @@ These parameters, once read, are available in the `PeleC` object for use from c+
 
     pelec.eb_isothermal = 1     # isothermal wall at EB
     pelec.eb_boundary_T = 300.  # EB wall temperature    
-    eb_verbosity = 1            # verbosity of EB data
 
     
     #------------------------
@@ -174,6 +173,26 @@ These parameters, once read, are available in the `PeleC` object for use from c+
     
     # ---------------------------------------------------------------
 
+
+.. note::
+
+   It is possible to initialize a simulation using a plot file
+   (e.g. `pelec.init_pltfile = "plt00000"`). It uses :math:`\rho`,
+   :math:`u`, :math:`T`, :math:`Y` from a plot file to initialize a
+   new state. The species in the new simulation will be taken from the
+   plot file. The species that are not in the plot file will be set to
+   zero. The species that are in the plot file but are not in the new
+   simulation will be ignored (leading most probably to an error in
+   species not summing to 1). It is therefore assumed that the
+   non-zero species in the plot file used to initialize the simulation
+   form a subset of the species in the simulation. The code will
+   sanitize the species mass fractions to ensure that they fall within
+   the right bounds. It will error out if the species are too far out
+   of bounds (i.e., too far below 0, too far above 1, not summing to
+   1). This check is controlled with `pelec.init_pltfile_massfrac_tol`
+   and defaults to :math:`10^{-8}`.
+
+
 Tagging criteria
 ~~~~~~~~~~~~~~~~
 
@@ -186,6 +205,13 @@ Tagging criteria are used to inform the refinement of flow features. They are ad
    \max(&|f_{i+1,j,k} - f_{i,j,k}|, |f_{i,j,k} - f_{i-1,j,k}|,\\
    &|f_{i,j+1,k} - f_{i,j,k}|, |f_{i,j,k} - f_{i,j-1,k}|,\\
    &|f_{i,j,k+1} - f_{i,j,k}|, |f_{i,j,k} - f_{i,j,k-1}|) \geq v
+
+- `*ratio`: tag cell for refinement when the maximum ratio of the field (currently only supported for density) exceeds this threshold value, i.e.
+
+.. math::
+   \max(&|f_{i+1,j,k} / f_{i,j,k}|, |f_{i,j,k} / f_{i-1,j,k}|,|f_{i,j,k} / f_{i+1,j,k}|, |f_{i-1,j,k} / f_{i,j,k}|,\\
+   &|f_{i,j+1,k} / f_{i,j,k}|, |f_{i,j,k} / f_{i,j-1,k}|,|f_{i,j,k} / f_{i,j+1,k}|, |f_{i,j-1,k} / f_{i,j,k}|,\\
+   &|f_{i,j,k+1} / f_{i,j,k}|, |f_{i,j,k} / f_{i,j,k-1}|,|f_{i,j,k} / f_{i,j,k+1}|, |f_{i,j,k-1} / f_{i,j,k}|) \geq v
 
 - `max_*_level`: maximum level for use of this tag (beyond this level, this tag will not be used for refinement).
 
@@ -201,3 +227,9 @@ Additionally, tagging is supported for a user-specified species which can functi
 
 Users can specify their own tagging criteria in the `prob.H` of their case. An example of this is provided in the Taylor-Green regression test.
    
+Diagnostic Output
+~~~~~~~~~~~~~~~~~
+
+The verbosity flags `pelec.v` and `amr.v` control the extent of output related to the reacting flow solver and AMR grid printed during the simulation. When `pelec.v >= 1`, additional controls allow for fine tuning of the diagnostic output. The input flags `pelec.sum_interval` (number of coarse steps) and `pelec.sum_per` (simulation time) control how often integrals of conserved state quantities over the domain are computed and output. Additionally, if the `pelec.track_extrema` flag is set, the minima and maxima of several important derived quantities will be output whenever the integrals are output. By default, this includes the minimum and maximum across all massfractions, indicated by `massfrac`, but the `pelec.extrema_spec_name` can be set to `ALL` or an individual species name if this diagnostic for indiviudal species is of interest.
+
+To aid in the analysis of the diagnostic data, it can also be saved to log files. To do this, set `amr.data_log = datlog extremalog`, which will save the integrated values to `datlog` and the extrema to `extremalog`, if they are being computed based on the values of the flags described above. Additional problem-specific logs can also be created. Gridding information can also be recorded to a file specified with the `amr.grid_log` option. 

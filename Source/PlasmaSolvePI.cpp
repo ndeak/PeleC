@@ -1,8 +1,6 @@
 #include <PeleC.H>
 #include <AMReX_MLABecLaplacian.H>
-#ifdef AMREX_USE_EB
 #include <AMReX_MLEBABecLap.H>
-#endif
 #include <Plasma_K.H>
 #include <PlasmaBCFill.H>
 #include <Plasma.H>
@@ -35,12 +33,8 @@ PeleC::solvePI ( Real time,
     info.setConsolidation(1);
     info.setMetricTerm(false);
 
-#ifdef AMREX_USE_EB
     const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
     MLEBABecLap helmholtzOP({geom}, {grids}, {dmap}, info, {ebf});
-#else
-    MLABecLaplacian helmholtzOP({geom}, {grids}, {dmap}, info);
-#endif
 
     helmholtzOP.setMaxOrder(2);
 
@@ -64,12 +58,10 @@ PeleC::solvePI ( Real time,
     MultiFab helmholtzRHS(grids,dmap,1,0,MFInfo(),Factory());
 
     // Zero Dirichlet conditions used for all PI components at EB
-#ifdef AMREX_USE_EB
     MultiFab PI_BC(grids, dmap, 1, 0, MFInfo(), Factory());
     PI_BC.setVal(0.0);
     MultiFab beta(grids, dmap, 1, 0, MFInfo(), Factory());
     beta.setVal(1.0);
-#endif
 
     // Quenching pressure factor, see Pancheshnyi "Photoionization produced by low-current discharges in O2, air, N2 and CO2" (2015)
     // FIXME fix hard-coded to assume atmospheric pressure 
@@ -223,9 +215,7 @@ PeleC::solvePI ( Real time,
       helmholtzOP.setLevelBC(0, &PI_borders);
 
       // Fill in zero Dirichlet BCs at electrodes for now..
-#ifdef PELEC_USE_EB
       helmholtzOP.setEBDirichlet(0,PI_BC,beta);
-#endif
       /////////////////////////////////////   
       // Setup a MG solver
       /////////////////////////////////////   

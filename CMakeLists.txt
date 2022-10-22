@@ -11,19 +11,19 @@ include(PeleCUtils)
 
 #General options for all executables in the project
 set(PELEC_DIM "3" CACHE STRING "Number of physical dimensions")
-option(PELEC_ENABLE_AMREX_EB "Enable EB in AMReX library" ON)
-option(PELEC_ENABLE_ALL_WARNINGS "Enable all compiler warnings" ON)
+option(PELEC_ENABLE_AMREX_PARTICLES "Enable particles in AMReX library" OFF)
 option(PELEC_ENABLE_CLANG_TIDY "Enable clang-tidy analysis" OFF)
 option(PELEC_ENABLE_CPPCHECK "Enable cppcheck analysis" OFF)
-option(PELEC_ENABLE_WERROR "Treat compiler warnings as errors" OFF)
 option(PELEC_ENABLE_MASA "Enable tests that require MASA" OFF)
-option(PELEC_ENABLE_SUNDIALS "Enable SUNDIALS as ODE solver" OFF)
 option(PELEC_ENABLE_FCOMPARE "Enable building fcompare when not testing" OFF)
-option(PELEC_ENABLE_TESTS "Enable regression and unit tests" OFF)
 option(PELEC_ENABLE_FCOMPARE_FOR_TESTS "Check test plots against gold files" OFF)
+option(PELEC_SAVE_GOLDS "Enable saving of gold files to a specified directory" OFF)
 option(PELEC_ENABLE_SANITIZE_FOR_TESTS "Currently only disables certain long running MMS tests if set" OFF)
 option(PELEC_ENABLE_FPE_TRAP_FOR_TESTS "Enable FPE trapping in tests" ON)
 option(PELEC_ENABLE_TINY_PROFILE "Enable tiny profiler in AMReX" OFF)
+option(PELEC_ENABLE_HDF5 "Enable plot file output using HDF5" OFF)
+option(PELEC_ENABLE_HDF5_ZFP "Enable ZFP compression in HDF5" OFF)
+option(PELEC_ENABLE_ASCENT "Enable Ascent in-situ visualization" OFF)
 set(PELEC_PRECISION "DOUBLE" CACHE STRING "Floating point precision SINGLE or DOUBLE")
 
 #Options for performance
@@ -34,11 +34,15 @@ option(PELEC_ENABLE_HIP "Enable HIP" OFF)
 option(PELEC_ENABLE_DPCPP "Enable DPC++" OFF)
 
 #Options for C++
-set(CMAKE_CXX_STANDARD 14)
+if(PELEC_ENABLE_HIP OR PELEC_ENABLE_DPCPP)
+  set(CMAKE_CXX_STANDARD 17)
+else()
+  set(CMAKE_CXX_STANDARD 14)
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(PELEC_ENABLE_TESTS AND PELEC_ENABLE_FCOMPARE_FOR_TESTS)
+if(PELEC_ENABLE_FCOMPARE_FOR_TESTS)
   set(PELEC_ENABLE_FCOMPARE ON)
 endif()
 
@@ -53,9 +57,17 @@ if(PELEC_ENABLE_CUDA)
   endif()
 endif()
 
-if((PELEC_DIM EQUAL 1) AND PELEC_ENABLE_AMREX_EB)
-  set(PELEC_ENABLE_AMREX_EB OFF)
-  message(WARNING "Disabling EB for ${PELEC_DIM}D.")
+if(PELEC_DIM EQUAL 1)
+  message(FATAL_ERROR "PeleC does not enable 1D.")
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  set(PELEC_ENABLE_FPE_TRAP_FOR_TESTS OFF)
+  message(WARNING "Disabling FPE trapping for tests when using AppleClang.")
+endif()
+
+if(PELEC_ENABLE_HDF5_ZFP AND (NOT PELEC_ENABLE_HDF5))
+   message(FATAL_ERROR "HDF5 must be enabled to use ZFP compression in HDF5 plot files")
 endif()
 
 ########################### AMReX #####################################
@@ -64,7 +76,7 @@ message(STATUS "AMReX Configure Section")
 set(AMREX_SUBMOD_LOCATION "${CMAKE_SOURCE_DIR}/Submodules/AMReX")
 include(SetAmrexOptions)
 list(APPEND CMAKE_MODULE_PATH "${AMREX_SUBMOD_LOCATION}/Tools/CMake")
-if(PELEC_ENABLE_CUDA)
+if(PELEC_ENABLE_CUDA AND (CMAKE_VERSION VERSION_LESS 3.20))
   include(AMReX_SetupCUDA)
 endif()
 add_subdirectory(${AMREX_SUBMOD_LOCATION})
@@ -74,31 +86,22 @@ include(SetAmrexCompileFlags)
 
 message(STATUS "AMReX-Hydro Configure Section")
 set(AMREX_HYDRO_SUBMOD_LOCATION "${CMAKE_SOURCE_DIR}/Submodules/AMReX-Hydro")
+include(SetAmrexHydroOptions)
+add_subdirectory(${AMREX_HYDRO_SUBMOD_LOCATION})
 
 ########################## SUNDIALS ###################################
 
-if((PELEC_ODE_INTEGRATOR MATCHES "^(arkode|cvode)$") AND (NOT PELEC_ENABLE_SUNDIALS))
-  message(FATAL_ERROR "SUNDIALS must be enabled for arkode and cvode ODE integrators")
-endif()
-
-if(NOT (PELEC_ODE_INTEGRATOR MATCHES "^(arkode|cvode)$"))
-  set(PELEC_ODE_INTEGRATOR rk64)
-endif()
-
-if(PELEC_ENABLE_SUNDIALS)
-  message(STATUS "SUNDIALS Configure Section")
-  set(SUNDIALS_SUBMOD_LOCATION "${CMAKE_SOURCE_DIR}/Submodules/sundials")
-  include(SetSundialsOptions)
-  #BUILD_TESTING is an old CMake keyword so don't clear it in sundials configure
-  set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
-  add_subdirectory(${SUNDIALS_SUBMOD_LOCATION})
-endif()
+message(STATUS "SUNDIALS Configure Section")
+set(SUNDIALS_SUBMOD_LOCATION "${CMAKE_SOURCE_DIR}/Submodules/sundials")
+include(SetSundialsOptions)
+#BUILD_TESTING is an old CMake keyword so don't clear it in sundials configure
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+add_subdirectory(${SUNDIALS_SUBMOD_LOCATION})
 
 ########################### MASA #####################################
 
 if(PELEC_ENABLE_MASA)
   message(STATUS "MASA Configure Section")
-  set(CMAKE_PREFIX_PATH ${MASA_DIR} ${CMAKE_PREFIX_PATH})
   find_package(MASA QUIET REQUIRED)
   if(MASA_FOUND)
     message(STATUS "Found MASA = ${MASA_DIR}")
@@ -118,30 +121,19 @@ message(STATUS "CMAKE_SYSTEM_NAME = ${CMAKE_SYSTEM_NAME}")
 message(STATUS "CMAKE_CXX_COMPILER_ID = ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "CMAKE_CXX_COMPILER_VERSION = ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "CMAKE_BUILD_TYPE = ${CMAKE_BUILD_TYPE}")
-message(STATUS "ODE Integrator = ${PELEC_ODE_INTEGRATOR}")
-if(PELEC_ENABLE_WERROR)
-  message(STATUS "Enabling Werror")
-endif()
 
 message(STATUS "PELEC_PRECISION = ${PELEC_PRECISION}")
-if("${PELEC_PRECISION}" STREQUAL "SINGLE" AND PELEC_ENABLE_AMREX_EB)
-  message(FATAL_ERROR "Single precision currently not allowed in AMReX with EB enabled")
-endif()
 if("${PELEC_PRECISION}" STREQUAL "SINGLE" AND PELEC_ENABLE_MASA)
   message(FATAL_ERROR "Single precision currently not allowed in AMReX with MASA enabled")
 endif()
 
 init_code_checks()
 
-#Turn on rpath stuff
 include(SetRpath)
 
-#Build pelec executables and link to amrex library
 add_subdirectory(Exec)
 
-if(PELEC_ENABLE_TESTS)
-  enable_testing()
-  include(CTest)
-  add_subdirectory("Submodules/GoogleTest")
-  add_subdirectory(Tests)
-endif()
+enable_testing()
+include(CTest)
+#add_subdirectory("Submodules/GoogleTest")
+add_subdirectory(Tests)

@@ -1,8 +1,6 @@
 #include <PeleC.H>
 #include <AMReX_MLABecLaplacian.H>
-#ifdef AMREX_USE_EB
 #include <AMReX_MLEBABecLap.H>
-#endif
 #include <Plasma_K.H>
 #include <PlasmaBCFill.H>
 #include <Plasma.H>
@@ -28,14 +26,10 @@ PeleC::nEDiffuseImplicit ( Real time,
   info.setAgglomeration(1);
   info.setConsolidation(1);
   info.setMetricTerm(false);
-#ifdef PELEC_USE_EB
   const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
   MLEBABecLap     nEOp({geom}, {grids}, {dmap}, info, {ebf});
-#else
-  MLABecLaplacian nEOp({geom}, {grids}, {dmap}, info);
-#endif
 
-  amrex::Print() << "Solving for electron drift/diffusion \n";
+  amrex::Print() << "Solving for electron diffusion \n";
 
   // Build a nE with 1 GC properly filled from Sbord MF passed in
   MultiFab Sborder(grids, dmap, 1, 1, amrex::MFInfo(), Factory());

@@ -1,6 +1,7 @@
 #include "PeleC.H"
 #include "PelePhysics.H"
 #include "Derive.H"
+#include "PeleC.H"
 #include "IndexDefines.H"
 #include <AMReX_PhysBCFunct.H>
 
@@ -16,7 +17,7 @@ pc_dervelx(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto velx = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -36,7 +37,7 @@ pc_dervely(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto vely = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -56,7 +57,7 @@ pc_dervelz(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto velz = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -76,7 +77,7 @@ pc_dermagvel(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto magvel = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -100,7 +101,7 @@ pc_dermagmom(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto magmom = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -123,7 +124,7 @@ pc_derkineng(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto kineng = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -147,7 +148,7 @@ pc_dereint1(
   const int /*level*/)
 {
   // Compute internal energy from (rho E).
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto e = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -173,7 +174,7 @@ pc_dereint2(
   const int /*level*/)
 {
   // Compute internal energy from (rho e).
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto e = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -193,7 +194,7 @@ pc_derlogden(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto logden = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -213,12 +214,33 @@ pc_derspec(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto spec = derfab.array();
 
   amrex::ParallelFor(
     bx, NUM_SPECIES, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
       spec(i, j, k, n) = dat(i, j, k, UFS + n) / dat(i, j, k, URHO);
+    });
+}
+
+void
+pc_deradv(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int /*dcomp*/,
+  int /*ncomp*/,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& /*geomdata*/,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  const int /*level*/)
+{
+  auto const dat = datfab.const_array();
+  auto adv = derfab.array();
+
+  amrex::ParallelFor(
+    bx, NUM_ADV, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
+      adv(i, j, k, n) = dat(i, j, k, UFA + n) / dat(i, j, k, URHO);
     });
 }
 
@@ -234,14 +256,22 @@ pc_dermagvort(
   const int* /*bcrec*/,
   int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto vort = derfab.array();
 
   const amrex::Box& gbx = amrex::grow(bx, 1);
 
-  amrex::FArrayBox local(gbx, 3);
-  amrex::Elixir local_eli = local.elixir();
+  amrex::FArrayBox local(gbx, 3, amrex::The_Async_Arena());
   auto larr = local.array();
+
+  const auto& flag_fab = amrex::getEBCellFlagFab(datfab);
+  const auto& typ = flag_fab.getType(bx);
+  if (typ == amrex::FabType::covered) {
+    derfab.setVal<amrex::RunOn::Device>(0.0, bx);
+    return;
+  }
+  const auto& flags = flag_fab.const_array();
+  const bool all_regular = typ == amrex::FabType::regular;
 
   // Convert momentum to velocity.
   amrex::ParallelFor(gbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -257,25 +287,29 @@ pc_dermagvort(
 
   // Calculate vorticity.
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    AMREX_D_TERM(vort(i, j, k) = 0.0 * dx;
-                 , const amrex::Real vx =
-                     0.5 * (larr(i + 1, j, k, 1) - larr(i - 1, j, k, 1)) / dx;
-                 const amrex::Real uy =
-                   0.5 * (larr(i, j + 1, k, 0) - larr(i, j - 1, k, 0)) / dy;
-                 const amrex::Real v3 = vx - uy;
-                 , const amrex::Real wx =
-                     0.5 * (larr(i + 1, j, k, 2) - larr(i - 1, j, k, 2)) / dx;
+    AMREX_D_TERM(int im; int ip;, int jm; int jp;, int km; int kp;)
 
-                 const amrex::Real wy =
-                   0.5 * (larr(i, j + 1, k, 2) - larr(i, j - 1, k, 2)) / dy;
+    // if fab is all regular -> call regular idx and weights
+    // otherwise
+    AMREX_D_TERM(get_idx(i, 0, all_regular, flags(i, j, k), im, ip);
+                 , get_idx(j, 1, all_regular, flags(i, j, k), jm, jp);
+                 , get_idx(k, 2, all_regular, flags(i, j, k), km, kp);)
+    AMREX_D_TERM(const amrex::Real wi = get_weight(im, ip);
+                 , const amrex::Real wj = get_weight(jm, jp);
+                 , const amrex::Real wk = get_weight(km, kp);)
 
-                 const amrex::Real uz =
-                   0.5 * (larr(i, j, k + 1, 0) - larr(i, j, k - 1, 0)) / dz;
-                 const amrex::Real vz =
-                   0.5 * (larr(i, j, k + 1, 1) - larr(i, j, k - 1, 1)) / dz;
-
-                 const amrex::Real v1 = wy - vz;
-                 const amrex::Real v2 = uz - wx;);
+    AMREX_D_TERM(
+      vort(i, j, k) = 0.0 * dx;
+      ,
+      const amrex::Real vx = wi * (larr(ip, j, k, 1) - larr(im, j, k, 1)) / dx;
+      const amrex::Real uy = wj * (larr(i, jp, k, 0) - larr(i, jm, k, 0)) / dy;
+      const amrex::Real v3 = vx - uy;
+      ,
+      const amrex::Real wx = wi * (larr(ip, j, k, 2) - larr(im, j, k, 2)) / dx;
+      const amrex::Real wy = wj * (larr(i, jp, k, 2) - larr(i, jm, k, 2)) / dy;
+      const amrex::Real uz = wk * (larr(i, j, kp, 0) - larr(i, j, km, 0)) / dz;
+      const amrex::Real vz = wk * (larr(i, j, kp, 1) - larr(i, j, km, 1)) / dz;
+      const amrex::Real v1 = wy - vz; const amrex::Real v2 = uz - wx;);
     vort(i, j, k) = sqrt(AMREX_D_TERM(0., +v3 * v3, +v1 * v1 + v2 * v2));
   });
 }
@@ -292,24 +326,40 @@ pc_derdivu(
   const int* /*bcrec*/,
   int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto divu = derfab.array();
+
+  const auto& flag_fab = amrex::getEBCellFlagFab(datfab);
+  const auto& typ = flag_fab.getType(bx);
+  if (typ == amrex::FabType::covered) {
+    derfab.setVal<amrex::RunOn::Device>(0.0, bx);
+    return;
+  }
+  const auto& flags = flag_fab.const_array();
+  const bool all_regular = typ == amrex::FabType::regular;
 
   AMREX_D_TERM(const amrex::Real dx = geomdata.CellSize(0);
                , const amrex::Real dy = geomdata.CellSize(1);
                , const amrex::Real dz = geomdata.CellSize(2););
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    AMREX_D_TERM(int im; int ip;, int jm; int jp;, int km; int kp;)
+    AMREX_D_TERM(get_idx(i, 0, all_regular, flags(i, j, k), im, ip);
+                 , get_idx(j, 1, all_regular, flags(i, j, k), jm, jp);
+                 , get_idx(k, 2, all_regular, flags(i, j, k), km, kp);)
+    AMREX_D_TERM(const amrex::Real wi = get_weight(im, ip);
+                 , const amrex::Real wj = get_weight(jm, jp);
+                 , const amrex::Real wk = get_weight(km, kp);)
+
     AMREX_D_TERM(
-      const amrex::Real uhi = dat(i + 1, j, k, UMX) / dat(i + 1, j, k, URHO);
-      const amrex::Real ulo = dat(i - 1, j, k, UMX) / dat(i - 1, j, k, URHO);
-      , const amrex::Real vhi = dat(i, j + 1, k, UMY) / dat(i, j + 1, k, URHO);
-      const amrex::Real vlo = dat(i, j - 1, k, UMY) / dat(i, j - 1, k, URHO);
-      , const amrex::Real whi = dat(i, j, k + 1, UMZ) / dat(i, j, k + 1, URHO);
-      const amrex::Real wlo = dat(i, j, k - 1, UMZ) / dat(i, j, k - 1, URHO););
-    divu(i, j, k) =
-      0.5 *
-      (AMREX_D_TERM((uhi - ulo) / dx, +(vhi - vlo) / dy, +(whi - wlo) / dz));
+      const amrex::Real uhi = dat(ip, j, k, UMX) / dat(ip, j, k, URHO);
+      const amrex::Real ulo = dat(im, j, k, UMX) / dat(im, j, k, URHO);
+      , const amrex::Real vhi = dat(i, jp, k, UMY) / dat(i, jp, k, URHO);
+      const amrex::Real vlo = dat(i, jm, k, UMY) / dat(i, jm, k, URHO);
+      , const amrex::Real whi = dat(i, j, kp, UMZ) / dat(i, j, kp, URHO);
+      const amrex::Real wlo = dat(i, j, km, UMZ) / dat(i, j, km, URHO););
+    divu(i, j, k) = AMREX_D_TERM(
+      wi * (uhi - ulo) / dx, +wj * (vhi - vlo) / dy, +wk * (whi - wlo) / dz);
   });
 }
 
@@ -327,14 +377,22 @@ pc_derenstrophy(
 {
   // This routine will derive enstrophy  = 1/2 rho (x_vorticity^2 +
   // y_vorticity^2 + z_vorticity^2)
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto enstrophy = derfab.array();
 
   const amrex::Box& gbx = amrex::grow(bx, 1);
 
-  amrex::FArrayBox local(gbx, 3);
-  amrex::Elixir local_eli = local.elixir();
+  amrex::FArrayBox local(gbx, 3, amrex::The_Async_Arena());
   auto larr = local.array();
+
+  const auto& flag_fab = amrex::getEBCellFlagFab(datfab);
+  const auto& typ = flag_fab.getType(bx);
+  if (typ == amrex::FabType::covered) {
+    derfab.setVal<amrex::RunOn::Device>(0.0, bx);
+    return;
+  }
+  const auto& flags = flag_fab.const_array();
+  const bool all_regular = typ == amrex::FabType::regular;
 
   // Convert momentum to velocity.
   amrex::ParallelFor(gbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -350,25 +408,29 @@ pc_derenstrophy(
 
   // Calculate enstrophy.
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-    AMREX_D_TERM(enstrophy(i, j, k) = 0.0 * dx;
-                 , const amrex::Real vx =
-                     0.5 * (larr(i + 1, j, k, 1) - larr(i - 1, j, k, 1)) / dx;
-                 const amrex::Real uy =
-                   0.5 * (larr(i, j + 1, k, 0) - larr(i, j - 1, k, 0)) / dy;
-                 const amrex::Real v3 = vx - uy;
-                 , const amrex::Real wx =
-                     0.5 * (larr(i + 1, j, k, 2) - larr(i - 1, j, k, 2)) / dx;
+    AMREX_D_TERM(int im; int ip;, int jm; int jp;, int km; int kp;)
+    AMREX_D_TERM(get_idx(i, 0, all_regular, flags(i, j, k), im, ip);
+                 , get_idx(j, 1, all_regular, flags(i, j, k), jm, jp);
+                 , get_idx(k, 2, all_regular, flags(i, j, k), km, kp);)
+    AMREX_D_TERM(const amrex::Real wi = get_weight(im, ip);
+                 , const amrex::Real wj = get_weight(jm, jp);
+                 , const amrex::Real wk = get_weight(km, kp);)
 
-                 const amrex::Real wy =
-                   0.5 * (larr(i, j + 1, k, 2) - larr(i, j - 1, k, 2)) / dy;
+    AMREX_D_TERM(
+      enstrophy(i, j, k) = 0.0 * dx;
+      ,
+      const amrex::Real vx = wi * (larr(ip, j, k, 1) - larr(im, j, k, 1)) / dx;
+      const amrex::Real uy = wj * (larr(i, jp, k, 0) - larr(i, jm, k, 0)) / dy;
+      const amrex::Real v3 = vx - uy;
+      ,
+      const amrex::Real wx = wi * (larr(ip, j, k, 2) - larr(im, j, k, 2)) / dx;
 
-                 const amrex::Real uz =
-                   0.5 * (larr(i, j, k + 1, 0) - larr(i, j, k - 1, 0)) / dz;
-                 const amrex::Real vz =
-                   0.5 * (larr(i, j, k + 1, 1) - larr(i, j, k - 1, 1)) / dz;
+      const amrex::Real wy = wj * (larr(i, jp, k, 2) - larr(i, jm, k, 2)) / dy;
 
-                 const amrex::Real v1 = wy - vz;
-                 const amrex::Real v2 = uz - wx;);
+      const amrex::Real uz = wk * (larr(i, j, kp, 0) - larr(i, j, km, 0)) / dz;
+      const amrex::Real vz = wk * (larr(i, j, kp, 1) - larr(i, j, km, 1)) / dz;
+
+      const amrex::Real v1 = wy - vz; const amrex::Real v2 = uz - wx;);
     enstrophy(i, j, k) = 0.5 * dat(i, j, k, URHO) *
                          (AMREX_D_TERM(0., +v3 * v3, +v1 * v1 + v2 * v2));
   });
@@ -402,7 +464,7 @@ pc_dermolefrac(
   const int /*level*/)
 {
   // Derive the mole fractions of the species
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto spec = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -433,7 +495,7 @@ pc_dersoundspeed(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto cfab = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -463,7 +525,7 @@ pc_derentropy(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  // auto const dat = datfab.array();
+  // auto const dat = datfab.const_array();
   auto sfab = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -486,7 +548,7 @@ pc_dermachnumber(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto mach = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -519,7 +581,7 @@ pc_derpres(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto pfab = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -550,7 +612,7 @@ pc_dertemp(
   const int* /*bcrec*/,
   const int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto tfab = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -571,7 +633,7 @@ pc_derspectrac(
   const int /*level*/,
   const int idx)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto spectrac = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -591,7 +653,7 @@ pc_derradialvel(
   const int* /*bcrec*/,
   int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto rvel = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
@@ -629,7 +691,7 @@ pc_dercp(
   const int* /*bcrec*/,
   int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto cp_arr = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -658,7 +720,7 @@ pc_dercv(
   const int* /*bcrec*/,
   int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto cv_arr = derfab.array();
 
   amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -675,6 +737,153 @@ pc_dercv(
   });
 }
 
+void
+PeleC::pc_derviscosity(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int /*dcomp*/,
+  int /*ncomp*/,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& /*geomdata*/,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int /*level*/)
+{
+  auto const dat = datfab.const_array();
+  auto mu_arr = derfab.array();
+  auto const* ltransparm = trans_parms.device_trans_parm();
+
+  amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    amrex::Real massfrac[NUM_SPECIES];
+    const amrex::Real rho = dat(i, j, k, URHO);
+    const amrex::Real rhoInv = 1.0 / rho;
+    const amrex::Real T = dat(i, j, k, UTEMP);
+
+    for (int n = 0; n < NUM_SPECIES; n++) {
+      massfrac[n] = dat(i, j, k, UFS + n) * rhoInv;
+    }
+    auto trans = pele::physics::PhysicsType::transport();
+    amrex::Real mu = 0.0, dum1 = 0.0, dum2 = 0.0;
+    const bool get_xi = false, get_mu = true, get_lam = false,
+               get_Ddiag = false;
+    trans.transport(
+      get_xi, get_mu, get_lam, get_Ddiag, T, rho, massfrac, nullptr, mu, dum1,
+      dum2, ltransparm);
+    mu_arr(i, j, k) = mu;
+  });
+}
+
+void
+PeleC::pc_derbulkviscosity(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int /*dcomp*/,
+  int /*ncomp*/,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& /*geomdata*/,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int /*level*/)
+{
+  auto const dat = datfab.const_array();
+  auto xi_arr = derfab.array();
+  auto const* ltransparm = trans_parms.device_trans_parm();
+
+  amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    amrex::Real massfrac[NUM_SPECIES];
+    const amrex::Real rho = dat(i, j, k, URHO);
+    const amrex::Real rhoInv = 1.0 / rho;
+    const amrex::Real T = dat(i, j, k, UTEMP);
+
+    for (int n = 0; n < NUM_SPECIES; n++) {
+      massfrac[n] = dat(i, j, k, UFS + n) * rhoInv;
+    }
+    auto trans = pele::physics::PhysicsType::transport();
+    amrex::Real xi = 0.0, dum1 = 0.0, dum2 = 0.0;
+    const bool get_xi = true, get_mu = false, get_lam = false,
+               get_Ddiag = false;
+    trans.transport(
+      get_xi, get_mu, get_lam, get_Ddiag, T, rho, massfrac, nullptr, dum1, xi,
+      dum2, ltransparm);
+    xi_arr(i, j, k) = xi;
+  });
+}
+
+void
+PeleC::pc_derconductivity(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int /*dcomp*/,
+  int /*ncomp*/,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& /*geomdata*/,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int /*level*/)
+{
+  auto const dat = datfab.const_array();
+  auto lam_arr = derfab.array();
+  auto const* ltransparm = trans_parms.device_trans_parm();
+
+  amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    amrex::Real massfrac[NUM_SPECIES];
+    const amrex::Real rho = dat(i, j, k, URHO);
+    const amrex::Real rhoInv = 1.0 / rho;
+    const amrex::Real T = dat(i, j, k, UTEMP);
+
+    for (int n = 0; n < NUM_SPECIES; n++) {
+      massfrac[n] = dat(i, j, k, UFS + n) * rhoInv;
+    }
+    auto trans = pele::physics::PhysicsType::transport();
+    amrex::Real lam = 0.0, dum1 = 0.0, dum2 = 0.0;
+    const bool get_xi = false, get_mu = false, get_lam = true,
+               get_Ddiag = false;
+    trans.transport(
+      get_xi, get_mu, get_lam, get_Ddiag, T, rho, massfrac, nullptr, dum1, dum2,
+      lam, ltransparm);
+    lam_arr(i, j, k) = lam;
+  });
+}
+
+void
+PeleC::pc_derdiffusivity(
+  const amrex::Box& bx,
+  amrex::FArrayBox& derfab,
+  int /*dcomp*/,
+  int /*ncomp*/,
+  const amrex::FArrayBox& datfab,
+  const amrex::Geometry& /*geomdata*/,
+  amrex::Real /*time*/,
+  const int* /*bcrec*/,
+  int /*level*/)
+{
+  auto const dat = datfab.const_array();
+  auto d_arr = derfab.array();
+  auto const* ltransparm = trans_parms.device_trans_parm();
+
+  amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+    amrex::Real massfrac[NUM_SPECIES];
+    amrex::Real ddiag[NUM_SPECIES] = {0.0};
+    const amrex::Real rho = dat(i, j, k, URHO);
+    const amrex::Real rhoInv = 1.0 / rho;
+    const amrex::Real T = dat(i, j, k, UTEMP);
+
+    for (int n = 0; n < NUM_SPECIES; n++) {
+      massfrac[n] = dat(i, j, k, UFS + n) * rhoInv;
+    }
+    auto trans = pele::physics::PhysicsType::transport();
+    amrex::Real dum1 = 0.0, dum2 = 0.0, dum3 = 0.0;
+    const bool get_xi = false, get_mu = false, get_lam = false,
+               get_Ddiag = true;
+    trans.transport(
+      get_xi, get_mu, get_lam, get_Ddiag, T, rho, massfrac, ddiag, dum1, dum2,
+      dum3, ltransparm);
+    for (int n = 0; n < NUM_SPECIES; n++) {
+      d_arr(i, j, k, n) = ddiag[n];
+    }
+  });
+}
+
 #ifdef PELEC_USE_MASA
 void
 pc_derrhommserror(
@@ -688,7 +897,7 @@ pc_derrhommserror(
   const int* /*bcrec*/,
   int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto rhommserror = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
@@ -718,7 +927,7 @@ pc_derummserror(
   const int* /*bcrec*/,
   int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto ummserror = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
@@ -750,7 +959,7 @@ pc_dervmmserror(
   const int* /*bcrec*/,
   int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto vmmserror = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
@@ -782,7 +991,7 @@ pc_derwmmserror(
   const int* /*bcrec*/,
   int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto wmmserror = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =
@@ -814,7 +1023,7 @@ pc_derpmmserror(
   const int* /*bcrec*/,
   int /*level*/)
 {
-  auto const dat = datfab.array();
+  auto const dat = datfab.const_array();
   auto pmmserror = derfab.array();
 
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo =

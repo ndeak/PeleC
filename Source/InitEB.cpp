@@ -1,8 +1,10 @@
 #include <memory>
 
+#include "hydro_redistribution.H"
 #include "EB.H"
 #include "prob.H"
 #include "Utilities.H"
+#include "Geometry.H"
 
 #if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
 #include <thrust/unique.h>
@@ -17,13 +19,17 @@ PeleC::ebInitialized()
 }
 
 void
-PeleC::init_eb(
-  const amrex::Geometry& /*level_geom*/,
-  const amrex::BoxArray& /*ba*/,
-  const amrex::DistributionMapping& /*dm*/)
+PeleC::init_eb()
 {
+  if (!eb_in_domain) {
+    return;
+  }
+
   // Build the geometry information; this is done for each new set of grids
   initialize_eb2_structs();
+
+  // Set up CC signed distance container to control EB refinement
+  initialize_signed_distance();
 }
 
 static
@@ -222,7 +228,6 @@ void cylinderpintall_top_profile(std::vector<amrex::RealVect> &points) {
 
 // Set up PeleC EB Datastructures from AMReX EB2 constructs
 // At the end of this routine, the following structures are populated:
-//   - FabArray ebmask
 //  - MultiFAB vfrac
 //  - sv_eb_bndry_geom
 
@@ -232,28 +237,17 @@ PeleC::initialize_eb2_structs()
   BL_PROFILE("PeleC::initialize_eb2_structs()");
   amrex::Print() << "Initializing EB2 structs" << std::endl;
 
-  // NOTE: THIS NEEDS TO BE REPLACED WITH A FLAGFAB
-
-  // 1->regular, 0->irregular, -1->covered, 2->outside
-  ebmask.define(grids, dmap, 1, 0);
-
   static_assert(
     std::is_standard_layout<EBBndryGeom>::value,
     "EBBndryGeom is not standard layout");
-
-  const amrex::MultiCutFab* bndrycent;
-  std::array<const amrex::MultiCutFab*, AMREX_SPACEDIM> eb2areafrac;
-  std::array<const amrex::MultiCutFab*, AMREX_SPACEDIM> facecent;
 
   const auto& ebfactory =
     dynamic_cast<amrex::EBFArrayBoxFactory const&>(Factory());
 
   // These are the data sources
-  vfrac.clear();
-  vfrac.define(grids, dmap, 1, numGrow(), amrex::MFInfo(), Factory());
   amrex::MultiFab::Copy(vfrac, ebfactory.getVolFrac(), 0, 0, 1, numGrow());
-  bndrycent = &(ebfactory.getBndryCent());
-  eb2areafrac = ebfactory.getAreaFrac();
+  const amrex::MultiCutFab* bndrycent = &(ebfactory.getBndryCent());
+  areafrac = ebfactory.getAreaFrac();
   facecent = ebfactory.getFaceCent();
 
   // First pass over fabs to fill sparse per cut-cell ebg structures
@@ -280,77 +274,52 @@ PeleC::initialize_eb2_structs()
     amrex::Abort();
   }
 
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
   for (amrex::MFIter mfi(vfrac, false); mfi.isValid(); ++mfi) {
-    amrex::BaseFab<int>& mfab = ebmask[mfi];
     const amrex::Box tbox = mfi.growntilebox();
     const amrex::EBCellFlagFab& flagfab = flags[mfi];
 
     amrex::FabType typ = flagfab.getType(tbox);
     int iLocal = mfi.LocalIndex();
 
-    if (typ == amrex::FabType::regular) {
-      mfab.setVal<amrex::RunOn::Device>(1);
-    } else if (typ == amrex::FabType::covered) {
-      mfab.setVal<amrex::RunOn::Device>(-1);
+    if ((typ == amrex::FabType::regular) || (typ == amrex::FabType::covered)) {
+      // do nothing
     } else if (typ == amrex::FabType::singlevalued) {
-      int Ncut = 0;
-      for (amrex::BoxIterator bit(tbox); bit.ok(); ++bit) {
-        const amrex::EBCellFlag& flag = flagfab(bit(), 0);
-
-        if (!(flag.isRegular() || flag.isCovered())) {
-          Ncut++;
-        }
-      }
-
+      const int Ncut = flagfab.getNumCutCells(tbox);
       sv_eb_bndry_geom[iLocal].resize(Ncut);
-      int ivec = 0;
-      for (amrex::BoxIterator bit(tbox); bit.ok(); ++bit) {
-        const amrex::EBCellFlag& flag = flagfab(bit(), 0);
-
-        if (!(flag.isRegular() || flag.isCovered())) {
-          EBBndryGeom* d_sv_eb_bndry_geom = sv_eb_bndry_geom[iLocal].data();
-          amrex::IntVect captured_bit = bit();
-          // Serial loop on the GPU
-          amrex::ParallelFor(1, [=] AMREX_GPU_DEVICE(int /*dummy*/) {
-            d_sv_eb_bndry_geom[ivec].iv = captured_bit;
-          });
-          ivec++;
-
-          if (mfab.box().contains(bit())) {
-            mfab(bit()) = 0;
-          }
-        } else {
-          if (flag.isRegular()) {
-            if (mfab.box().contains(bit())) {
-              mfab(bit()) = 1;
-            }
-          } else if (flag.isCovered()) {
-            if (mfab.box().contains(bit())) {
-              mfab(bit()) = -1;
-            }
-          } else {
-            if (mfab.box().contains(bit())) {
-              mfab(bit()) = 2;
+      auto const& flag_arr = flags.const_array(mfi);
+      EBBndryGeom* d_sv_eb_bndry_geom = sv_eb_bndry_geom[iLocal].data();
+      const auto lo = amrex::lbound(tbox);
+      const auto hi = amrex::ubound(tbox);
+      amrex::ParallelFor(1, [=] AMREX_GPU_DEVICE(int /*dummy*/) noexcept {
+        int ivec = 0;
+        for (int i = lo.x; i <= hi.x; ++i) {
+          for (int j = lo.y; j <= hi.y; ++j) {
+            for (int k = lo.z; k <= hi.z; ++k) {
+              const amrex::IntVect iv(AMREX_D_DECL(i, j, k));
+              const amrex::EBCellFlag& flag = flag_arr(iv);
+              if (!(flag.isRegular() || flag.isCovered())) {
+                d_sv_eb_bndry_geom[ivec].iv = iv;
+                ivec++;
+              }
             }
           }
         }
-      }
+      });
 
       // int Nebg = sv_eb_bndry_geom[iLocal].size();
 
       // Now fill the sv_eb_bndry_geom
       auto const& vfrac_arr = vfrac.array(mfi);
       auto const& bndrycent_arr = bndrycent->array(mfi);
-      AMREX_D_TERM(auto const& eb2areafrac_arr_0 = eb2areafrac[0]->array(mfi);
-                   , auto const& eb2areafrac_arr_1 = eb2areafrac[1]->array(mfi);
-                   ,
-                   auto const& eb2areafrac_arr_2 = eb2areafrac[2]->array(mfi);)
+      AMREX_D_TERM(auto const& areafrac_arr_0 = areafrac[0]->array(mfi);
+                   , auto const& areafrac_arr_1 = areafrac[1]->array(mfi);
+                   , auto const& areafrac_arr_2 = areafrac[2]->array(mfi);)
       pc_fill_sv_ebg(
         tbox, Ncut, vfrac_arr, bndrycent_arr,
-        AMREX_D_DECL(eb2areafrac_arr_0, eb2areafrac_arr_1, eb2areafrac_arr_2),
+        AMREX_D_DECL(areafrac_arr_0, areafrac_arr_1, areafrac_arr_2),
         sv_eb_bndry_geom[iLocal].data());
 
       sv_eb_bndry_grad_stencil[iLocal].resize(Ncut);
@@ -385,10 +354,10 @@ PeleC::initialize_eb2_structs()
       sv_eb_flux[iLocal].define(sv_eb_bndry_grad_stencil[iLocal], NVAR);
       sv_eb_bcval[iLocal].define(sv_eb_bndry_grad_stencil[iLocal], QVAR);
 
-      if (eb_isothermal && (diffuse_temp != 0 || diffuse_enth != 0)) {
+      if (eb_isothermal && (diffuse_temp || diffuse_enth)) {
         sv_eb_bcval[iLocal].setVal(eb_boundary_T, QTEMP);
       }
-      if (eb_noslip && diffuse_vel == 1) {
+      if (eb_noslip && diffuse_vel) {
         sv_eb_bcval[iLocal].setVal(0, QU, AMREX_SPACEDIM);
       }
 
@@ -416,7 +385,7 @@ PeleC::initialize_eb2_structs()
       }
     }
 
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
     for (amrex::MFIter mfi(vfrac, false); mfi.isValid(); ++mfi) {
@@ -427,7 +396,7 @@ PeleC::initialize_eb2_structs()
 
       if (typ == amrex::FabType::regular || typ == amrex::FabType::covered) {
       } else if (typ == amrex::FabType::singlevalued) {
-        const auto afrac_arr = (*eb2areafrac[dir])[mfi].array();
+        const auto afrac_arr = (*areafrac[dir])[mfi].array();
         const auto facecent_arr = (*facecent[dir])[mfi].array();
 
         // This used to be an std::set for cut_faces (it ensured
@@ -473,7 +442,8 @@ PeleC::initialize_eb2_structs()
           thrust::device, v_all_cut_faces.data(),
           v_all_cut_faces.data() + v_all_cut_faces_size);
         amrex::IntVect* unique_result_end = thrust::unique(
-          v_all_cut_faces.data(), v_all_cut_faces.data() + v_all_cut_faces_size,
+          thrust::device, v_all_cut_faces.data(),
+          v_all_cut_faces.data() + v_all_cut_faces_size,
           thrust::equal_to<amrex::IntVect>());
         const int count_result =
           thrust::distance(v_all_cut_faces.data(), unique_result_end);
@@ -526,24 +496,39 @@ PeleC::define_body_state()
   if (!body_state_set) {
     bool foundPt = false;
     const amrex::MultiFab& S = get_new_data(State_Type);
-    AMREX_ASSERT(S.boxArray() == ebmask.boxArray());
-    AMREX_ASSERT(S.DistributionMap() == ebmask.DistributionMap());
+    auto const& fact =
+      dynamic_cast<amrex::EBFArrayBoxFactory const&>(Factory());
+    auto const& flags = fact.getMultiEBCellFlagFab();
 
     for (amrex::MFIter mfi(S, false); mfi.isValid() && !foundPt; ++mfi) {
       const amrex::Box vbox = mfi.validbox();
-      const amrex::BaseFab<int>& m = ebmask[mfi];
-      const amrex::FArrayBox& fab = S[mfi];
-      AMREX_ASSERT(m.box().contains(vbox));
+      auto const& farr = S.const_array(mfi);
+      auto const& flag_arr = flags.const_array(mfi);
 
-      for (amrex::BoxIterator bit(vbox); bit.ok() && !foundPt; ++bit) {
-        const amrex::IntVect& iv = bit();
-        if (m(iv, 0) == 1) {
-          foundPt = true;
-          for (int n = 0; n < S.nComp(); ++n) {
-            body_state[n] = fab(iv, n);
+      const auto lo = amrex::lbound(vbox);
+      const auto hi = amrex::ubound(vbox);
+      amrex::Gpu::DeviceVector<amrex::Real> local_body_state(NVAR, -1);
+      amrex::Real* p_body_state = local_body_state.begin();
+      amrex::ParallelFor(1, [=] AMREX_GPU_DEVICE(int /*dummy*/) noexcept {
+        bool found = false;
+        for (int i = lo.x; i <= hi.x && !found; ++i) {
+          for (int j = lo.y; j <= hi.y && !found; ++j) {
+            for (int k = lo.z; k <= hi.z && !found; ++k) {
+              const amrex::IntVect iv(AMREX_D_DECL(i, j, k));
+              if (flag_arr(iv).isRegular()) {
+                found = true;
+                for (int n = 0; n < NVAR; ++n) {
+                  p_body_state[n] = farr(iv, n);
+                }
+              }
+            }
           }
         }
-      }
+      });
+      amrex::Gpu::copy(
+        amrex::Gpu::deviceToHost, local_body_state.begin(),
+        local_body_state.end(), body_state.begin());
+      foundPt = body_state[0] != -1;
     }
 
     // Find proc with lowest rank to find valid point, use that for all
@@ -558,7 +543,7 @@ PeleC::define_body_state()
     }
     AMREX_ASSERT(body_rank >= 0);
     amrex::ParallelDescriptor::Bcast(
-      &(body_state[0]), body_state.size(), body_rank);
+      &(body_state[0]), body_state.size(), body_rank); // NOLINT
     body_state_set = true;
   }
 }
@@ -576,22 +561,20 @@ PeleC::set_body_state(amrex::MultiFab& S)
     define_body_state();
   }
 
-  int covered_val = -1;
+  auto const& fact = dynamic_cast<amrex::EBFArrayBoxFactory const&>(Factory());
+  auto const& flags = fact.getMultiEBCellFlagFab();
 
-#ifdef _OPENMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-  for (amrex::MFIter mfi(S, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-    const amrex::Box& vbox = mfi.tilebox();
-    auto const& Sar = S.array(mfi);
-    auto const& mask = ebmask.array(mfi);
-    auto const captured_body_state = body_state;
-    amrex::ParallelFor(
-      vbox, NVAR, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
-        pc_set_body_state(
-          i, j, k, n, mask, captured_body_state, covered_val, Sar);
-      });
-  }
+  auto const& sarrs = S.arrays();
+  auto const& flagarrs = flags.const_arrays();
+  auto const captured_body_state = body_state;
+  const amrex::IntVect ngs(0);
+  amrex::ParallelFor(
+    S, ngs, NVAR,
+    [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k, int n) noexcept {
+      pc_set_body_state(
+        i, j, k, n, flagarrs[nbx], captured_body_state, sarrs[nbx]);
+    });
+  amrex::Gpu::synchronize();
 }
 
 void
@@ -604,40 +587,28 @@ PeleC::zero_in_body(amrex::MultiFab& S) const
   }
 
   amrex::GpuArray<amrex::Real, NVAR> zeros = {0.0};
-  int covered_val = -1;
+  auto const& fact = dynamic_cast<amrex::EBFArrayBoxFactory const&>(Factory());
+  auto const& flags = fact.getMultiEBCellFlagFab();
 
-#ifdef _OPENMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-  for (amrex::MFIter mfi(S, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-    const amrex::Box& vbox = mfi.tilebox();
-    auto const& Sar = S.array(mfi);
-    auto const& mask = ebmask.array(mfi);
-    amrex::ParallelFor(
-      vbox, NVAR, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
-        pc_set_body_state(i, j, k, n, mask, zeros, covered_val, Sar);
-      });
-  }
-}
-
-std::string
-convertIntGG(int number)
-{
-  std::stringstream ss; // create a stringstream
-  ss << number;         // add number to the stream
-  return ss.str();      // return a string with the contents of the stream
+  auto const& sarrs = S.arrays();
+  auto const& flagarrs = flags.const_arrays();
+  const amrex::IntVect ngs(0);
+  amrex::ParallelFor(
+    S, ngs, NVAR,
+    [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k, int n) noexcept {
+      pc_set_body_state(i, j, k, n, flagarrs[nbx], zeros, sarrs[nbx]);
+    });
+  amrex::Gpu::synchronize();
 }
 
 // Sets up implicit function using EB2 infrastructure
 void
 initialize_EB2(
   const amrex::Geometry& geom,
-  const int
-#ifdef LinePistonCylinder
-    required_level
-#endif
-  ,
-  const int max_level)
+  const int eb_max_level,
+  const int max_level,
+  const amrex::Vector<amrex::IntVect>& ref_ratio,
+  const amrex::IntVect& max_grid_size)
 {
   BL_PROFILE("PeleC::initialize_EB2()");
 
@@ -647,325 +618,18 @@ initialize_EB2(
   std::string geom_type("all_regular");
   ppeb2.query("geom_type", geom_type);
 
-  int max_coarsening_level = max_level; // Because there are no mg solvers here
+  int max_coarsening_level = 0;
+  for (int lev = 0; lev < max_level; ++lev) {
+    max_coarsening_level +=
+      (ref_ratio[lev] == 2 ? 1
+                           : 2); // Since EB always coarsening by factor of 2
+  }
 
   // Custom types defined here - all_regular, plane, sphere, etc, will get
-  // picked up by default (see AMReX_BE2.cpp around L100 )
-  if (geom_type == "flat_plate") {
-    amrex::Print() << "flat plate  geometry not currently supported. \n";
-    amrex::Abort();
-  } else if (geom_type == "ramp") {
-    amrex::Print() << "ramp geometry\n";
-    int upDir;
-    int indepVar;
-    amrex::Real startPt;
-    amrex::Real slope;
-    ppeb2.get("up_dir", upDir);
-    ppeb2.get("indep_var", indepVar);
-    ppeb2.get("start_pt", startPt);
-    ppeb2.get("ramp_slope", slope);
-
-    amrex::RealArray normal;
-    normal.fill(0.0);
-    normal[upDir] = 1.0;
-    normal[indepVar] = -slope;
-
-    amrex::RealArray point;
-    point.fill(0.0);
-    point[upDir] = -slope * startPt;
-
-    // bool normalInside = true;
-
-    amrex::EB2::PlaneIF ramp(point, normal);
-    auto gshop = amrex::EB2::makeShop(ramp);
-    amrex::EB2::Build(gshop, geom, max_level, max_level);
-  } else if (geom_type == "combustor") {
-    amrex::ParmParse pp("combustor");
-
-    amrex::Real fwl;
-    pp.get("far_wall_loc", fwl);
-
-    amrex::EB2::PlaneIF farwall(
-      {AMREX_D_DECL(fwl, 0., 0.)}, {AMREX_D_DECL(1., 0., 0.)});
-
-    amrex::Vector<amrex::Real> pl1pt;
-    amrex::Vector<amrex::Real> pl2pt;
-    amrex::Vector<amrex::Real> pl2nm;
-    amrex::Vector<amrex::Real> pl3pt;
-    pp.getarr("ramp_plane1_point", pl1pt);
-    pp.getarr("ramp_plane2_point", pl2pt);
-    pp.getarr("ramp_plane2_normal", pl2nm);
-    pp.getarr("ramp_plane3_point", pl3pt);
-
-    amrex::EB2::PlaneIF r0(
-      {AMREX_D_DECL(pl1pt[0], pl1pt[1], 0.)}, {AMREX_D_DECL(0., -1., 0.)});
-    amrex::EB2::PlaneIF r1(
-      {AMREX_D_DECL(pl2pt[0], pl2pt[1], 0.)},
-      {AMREX_D_DECL(pl2nm[0], pl2nm[1], 0.)});
-    amrex::EB2::PlaneIF r2(
-      {AMREX_D_DECL(pl3pt[0], pl3pt[1], 0.)}, {AMREX_D_DECL(1., 0., 0.)});
-    auto ramp = amrex::EB2::makeIntersection(r0, r1, r2);
-
-    amrex::Vector<amrex::Real> pipelo;
-    amrex::Vector<amrex::Real> pipehi;
-    pp.getarr("pipe_lo", pipelo);
-    pp.getarr("pipe_hi", pipehi);
-
-    amrex::EB2::BoxIF pipe(
-      {AMREX_D_DECL(pipelo[0], pipelo[1], -1.)},
-      {AMREX_D_DECL(pipehi[0], pipehi[1], 1.)}, false);
-
-    // where does plane 1 and plane 2 intersect?
-    amrex::Real k2 = amrex::Math::abs(pl2nm[0] / pl2nm[1]);
-    amrex::Real secty = pl2pt[1] + k2 * (pl3pt[0] - pl2pt[0]);
-    // How much do we cut?
-    amrex::Real dx = geom.CellSize(0);
-    amrex::Real dycut =
-      4. * (1. + max_coarsening_level) * std::min(dx, k2 * dx);
-    amrex::EB2::BoxIF flat_corner(
-      {AMREX_D_DECL(pl3pt[0], 0., -1.)},
-      {AMREX_D_DECL(1.e10, secty + dycut, 1.)}, false);
-
-    auto polys = amrex::EB2::makeUnion(farwall, ramp, pipe, flat_corner);
-
-    amrex::Real lenx = amrex::DefaultGeometry().ProbLength(0);
-    amrex::Real leny = amrex::DefaultGeometry().ProbLength(1);
-    auto pr = amrex::EB2::translate(
-      amrex::EB2::lathe(polys), {AMREX_D_DECL(lenx * 0.5, leny * 0.5, 0.)});
-
-    auto gshop = amrex::EB2::makeShop(pr);
-    amrex::EB2::Build(gshop, geom, max_coarsening_level, max_coarsening_level);
-  } else if (geom_type == "ICE_PistonBowl") {
-    // amrex::RealArray point;
-    // amrex::RealArray normal;
-
-    amrex::RealArray center;
-    center[0] = 0.04 - 0.0125 - 0.02;
-    center[1] = 0.0;
-    center[2] = 0.0;
-
-    amrex::Real radius;
-    radius = 0.02;
-
-    bool has_fluid_inside = false;
-    amrex::EB2::SphereIF sf(radius, center, has_fluid_inside);
-
-    amrex::EB2::CylinderIF cf1(
-      0.04, 0.09, 0, {AMREX_D_DECL(0.045, 0.0, 0.0)}, true);
-    amrex::EB2::CylinderIF cf2(
-      0.04, 0.125, 0, {AMREX_D_DECL(-0.0125 - 0.02, 0.0, 0.0)}, false);
-    amrex::EB2::CylinderIF cf3(
-      0.03, 0.125, 0, {AMREX_D_DECL(-0.0125 - 0.02, 0.0, 0.0)}, false);
-    auto pipe = amrex::EB2::makeDifference(cf2, cf3);
-    amrex::EB2::CylinderIF cf4(
-      0.03, 0.10, 0, {AMREX_D_DECL(-0.0125 - 0.02, 0.0, 0.0)}, false);
-
-    amrex::RealArray center2;
-    center2[0] = 0.0;
-    center2[1] = 0.0;
-    center2[2] = 0.0;
-
-    amrex::Real radius2;
-    radius2 = 0.09;
-
-    bool has_fluid_inside2 = true;
-    amrex::EB2::SphereIF sf2(radius2, center2, has_fluid_inside2);
-
-    auto polys = amrex::EB2::makeUnion(cf1, pipe, cf4, sf, sf2);
-
-    auto gshop = amrex::EB2::makeShop(polys);
-    amrex::EB2::Build(
-      gshop, geom, max_coarsening_level, max_coarsening_level, 4);
-  } else if (geom_type == "extruded_triangles") {
-    // setting some constants
-    // the polygon is triangle
-    // we can only do a maximum of 5 triangles (change if needed)
-    const int npts_in_tri = 3;
-    const int max_tri = 5;
-
-    // number of user defined triangles
-    int num_tri;
-
-    amrex::ParmParse pp("extruded_triangles");
-    amrex::Vector<amrex::Array<amrex::Real, AMREX_SPACEDIM>> alltri(
-      npts_in_tri * max_tri);
-
-    // initalize all triangles with some dummy values
-    // that fall outside of the domain
-    const amrex::Real* problo;
-    const amrex::Real* probhi;
-    amrex::Real maxlen;
-
-    problo = geom.ProbLo();
-    probhi = geom.ProbHi();
-
-    maxlen = std::max(
-      std::max(geom.ProbLength(0), geom.ProbLength(1)), geom.ProbLength(2));
-
-    // setting all triangles to be waaay outside the domain initially
-    for (int itri = 0; itri < max_tri; itri++) {
-      alltri[npts_in_tri * itri + 0][0] = problo[0] + 100.0 * maxlen;
-      alltri[npts_in_tri * itri + 0][1] = problo[1] - 100.0 * maxlen;
-      alltri[npts_in_tri * itri + 0][2] = 0.0;
-
-      alltri[npts_in_tri * itri + 1][0] = probhi[0] + 100.0 * maxlen;
-      alltri[npts_in_tri * itri + 1][1] = problo[1] - 100.0 * maxlen;
-      alltri[npts_in_tri * itri + 1][2] = 0.0;
-
-      alltri[npts_in_tri * itri + 2][0] = probhi[0] + 100.0 * maxlen;
-      alltri[npts_in_tri * itri + 2][1] = problo[1] + 100.0 * maxlen;
-      alltri[npts_in_tri * itri + 2][2] = 0.0;
-    }
-
-    // get user defined number of triangles
-    pp.get("num_tri", num_tri);
-
-    for (int itri = 0; itri < num_tri; itri++) {
-      amrex::Array<amrex::Real, AMREX_SPACEDIM> point{
-        AMREX_D_DECL(0.0, 0.0, 0.0)};
-
-      for (int ipt = 0; ipt < npts_in_tri; ipt++) {
-        std::string pointstr =
-          "tri_" + convertIntGG(itri) + "_point_" + convertIntGG(ipt);
-        amrex::Vector<amrex::Real> vecpt;
-        pp.getarr(pointstr.c_str(), vecpt, 0, AMREX_SPACEDIM);
-        for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
-          point[dir] = vecpt[dir];
-        }
-        alltri[npts_in_tri * itri + ipt] = point;
-      }
-    }
-
-    // intersection of the 3 planes in a triangle for all triangles
-    amrex::Vector<std::unique_ptr<amrex::EB2::IntersectionIF<
-      amrex::EB2::PlaneIF, amrex::EB2::PlaneIF, amrex::EB2::PlaneIF>>>
-      impfunc_triangles(max_tri);
-
-    for (int itri = 0; itri < max_tri; itri++) {
-      // make sure points are in anti clockwise direction to set the inside of
-      // the triangle as solid phase correctly
-      amrex::Array<amrex::Real, AMREX_SPACEDIM> norm0;
-      amrex::Array<amrex::Real, AMREX_SPACEDIM> norm1;
-      amrex::Array<amrex::Real, AMREX_SPACEDIM> norm2;
-
-      amrex::Array<amrex::Real, AMREX_SPACEDIM> point0;
-      amrex::Array<amrex::Real, AMREX_SPACEDIM> point1;
-      amrex::Array<amrex::Real, AMREX_SPACEDIM> point2;
-
-      point0 = alltri[npts_in_tri * itri + 0];
-      point1 = alltri[npts_in_tri * itri + 1];
-      point2 = alltri[npts_in_tri * itri + 2];
-
-      norm0[0] = -(point1[1] - point0[1]);
-      norm0[1] = (point1[0] - point0[0]);
-      norm0[2] = 0.0;
-
-      norm1[0] = -(point2[1] - point1[1]);
-      norm1[1] = (point2[0] - point1[0]);
-      norm1[2] = 0.0;
-
-      norm2[0] = -(point0[1] - point2[1]);
-      norm2[1] = (point0[0] - point2[0]);
-      norm2[2] = 0.0;
-
-      // normalize so that magnitude is 1
-      amrex::Real norm = sqrt(norm0[0] * norm0[0] + norm0[1] * norm0[1]);
-      norm0[0] = norm0[0] / norm;
-      norm0[1] = norm0[1] / norm;
-
-      // normalize so that magnitude is 1
-      norm = sqrt(norm1[0] * norm1[0] + norm1[1] * norm1[1]);
-      norm1[0] = norm1[0] / norm;
-      norm1[1] = norm1[1] / norm;
-
-      // normalize so that magnitude is 1
-      norm = sqrt(norm2[0] * norm2[0] + norm2[1] * norm2[1]);
-      norm2[0] = norm2[0] / norm;
-      norm2[1] = norm2[1] / norm;
-
-      amrex::EB2::PlaneIF plane0(point0, norm0);
-      amrex::EB2::PlaneIF plane1(point1, norm1);
-      amrex::EB2::PlaneIF plane2(point2, norm2);
-
-      impfunc_triangles[itri] = std::make_unique<amrex::EB2::IntersectionIF<
-        amrex::EB2::PlaneIF, amrex::EB2::PlaneIF, amrex::EB2::PlaneIF>>(
-
-        plane0, plane1, plane2);
-    }
-
-    auto alltri_IF = amrex::EB2::makeUnion(
-      *impfunc_triangles[0], *impfunc_triangles[1], *impfunc_triangles[2],
-      *impfunc_triangles[3], *impfunc_triangles[4]);
-
-    auto alltri_extrude_IF = amrex::EB2::extrude(alltri_IF, 2); // along z
-
-    auto gshop = amrex::EB2::makeShop(alltri_extrude_IF);
-    amrex::EB2::Build(gshop, geom, max_coarsening_level, max_coarsening_level);
-  } else if (geom_type == "Line-Piston-Cylinder") {
-#ifdef LinePistonCylinder
-    EBLinePistonCylinder(geom, required_level, max_level);
-#else
-    amrex::Abort("Line-Piston-Cylinder geom_type not supported");
-#endif
-  } else if (geom_type == "polygon_revolution") {
-    amrex::Print() << "polygon_revolution  geometry not currently supported. "
-                      " combustor?\n";
-    amrex::Abort();
-    amrex::Print() << "creating geometry from polygon surfaces of revolution"
-                   << std::endl;
-    // bool insideRegular = false;
-
-    // Data for polygons making up nozzle
-    amrex::Vector<amrex::Vector<amrex::RealArray>> polygons;
-    // For building each polygon - unlike original PeleEB, don't scale by
-    // domain size
-    int num_poly;
-    ppeb2.get("num_poly", num_poly);
-    polygons.resize(num_poly);
-    for (int ipoly = 0; ipoly < num_poly; ipoly++) {
-      std::string nptsstr = "poly_" + convertIntGG(ipoly) + "_num_pts";
-      int num_pts;
-      ppeb2.get(nptsstr.c_str(), num_pts);
-      amrex::Vector<amrex::RealArray> polygon(num_pts);
-      for (int ipt = 0; ipt < num_pts; ipt++) {
-        amrex::RealArray point;
-        point.fill(0.0);
-        std::string pointstr =
-          "poly_" + convertIntGG(ipoly) + "_point_" + convertIntGG(ipt);
-        amrex::Vector<amrex::Real> vecpt;
-        ppeb2.getarr(pointstr.c_str(), vecpt, 0, AMREX_SPACEDIM);
-        for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
-          point[dir] = vecpt[dir];
-        }
-        polygon[ipt] = point;
-      }
-      polygons[ipoly] = polygon;
-    }
-    amrex::Vector<amrex::EB2::PlaneIF> planes;
-    for (int ipoly = 0; ipoly < num_poly; ipoly++) {
-      const amrex::Vector<amrex::RealArray>& polygon = polygons[ipoly];
-      int numPts = polygon.size(); // Number of pts in this polygon
-      for (int n = 0; n < numPts; n++) {
-        // The normal and point is space used to specify each half plane/space
-        amrex::RealArray normal;
-        normal.fill(0.0);
-        amrex::RealArray point;
-
-        // Set the normal remembering that the last point connects to the
-        // first point
-        normal[0] = -(polygon[(n + 1) % numPts][1] - polygon[n][1]);
-        normal[1] = (polygon[(n + 1) % numPts][0] - polygon[n][0]);
-
-        point = polygon[n];
-        amrex::EB2::PlaneIF plane(point, normal);
-        planes.push_back(plane);
-      }
-    }
-
-    // PolygonIF pf(planes);
-    // auto gshop = EB2::makeShop(pf);
-    // EB2::Build(gshop, geom, max_level, max_level);
-  } else if (geom_type == "moving_plane") {
+  // picked up by default (see AMReX_EB2.cpp around L100 )
+  amrex::Vector<std::string> amrex_defaults(
+    {"all_regular", "box", "cylinder", "plane", "sphere", "torus", "parser"});
+  if (geom_type == "moving_plane") {
     amrex::RealArray point;
     point[0] = 0.5;
     point[1] = 0.0;
@@ -985,9 +649,7 @@ initialize_EB2(
     auto gshop = amrex::EB2::makeShop(pipe);
 
     amrex::EB2::Build(gshop, geom, max_coarsening_level, max_coarsening_level);
-  }
-  else if (geom_type == "pins")
-  {
+  } else if (geom_type == "pins") {
       // FIXME : UPDATE MAX COARSENING LEVEL FOR THIS CASE
       //setting some constants
       //we can only do a maximum of 2 pins (change if needed)
@@ -1050,9 +712,7 @@ initialize_EB2(
       auto gshop = amrex::EB2::makeShop(allpin_IF);
       amrex::EB2::Build(gshop, geom, max_level, max_level);
       // amrex::EB2::Build(gshop, geom, max_level+1, max_level+30);
-  }
-  else if (geom_type == "boxes")
-  {
+  } else if (geom_type == "boxes") {
       //setting some constants
       //we can only do a maximum of 2 boxes (change if needed)
       const int max_box=2;
@@ -1120,9 +780,7 @@ initialize_EB2(
       // amrex::EB2::Build(gshop, geom, max_level, max_level);
       amrex::EB2::Build(gshop, geom, max_level+3, max_level+30);
       // amrex::EB2::Build(gshop, geom, max_level+3, max_level+30);
-  }
-  else if (geom_type == "sandia_pins")
-  {
+  } else if (geom_type == "sandia_pins") {
       const int max_pin=2;
       
       //number of user defined pins
@@ -1196,9 +854,7 @@ initialize_EB2(
       auto gshop = amrex::EB2::makeShop(allpin_IF);
       amrex::EB2::Build(gshop, geom, max_level, max_level);
       // amrex::EB2::Build(gshop, geom, max_level+2, max_level+30);
-  }
-  else if (geom_type == "cylinder_pins")
-  {
+  } else if (geom_type == "cylinder_pins") {
       const int max_pin=2;
       
       //number of user defined pins
@@ -1273,9 +929,7 @@ initialize_EB2(
       amrex::EB2::Build(gshop, geom, max_level, max_level);
       // amrex::EB2::Build(gshop, geom, 1, 1);
       // amrex::EB2::Build(gshop, geom, max_level+1, max_level+30);
-  }
-  else if (geom_type == "cylinder_pins_spline")
-  {
+  } else if (geom_type == "cylinder_pins_spline") {
     amrex::EB2::SplineIF bottomPin;
     amrex::EB2::SplineIF topPin;
     amrex::RealVect p;
@@ -1329,9 +983,7 @@ initialize_EB2(
     // auto TopBottomPins = amrex::EB2::makeUnion(revolveBottomPin);
     auto gshop = amrex::EB2::makeShop(TopBottomPins);
     amrex::EB2::Build(gshop, geom, max_level, max_level);
-  }
-  else if (geom_type == "cylinder_pins_tall_spline")
-  {
+  } else if (geom_type == "cylinder_pins_tall_spline") {
     amrex::EB2::SplineIF bottomPin;
     amrex::EB2::SplineIF topPin;
     amrex::RealVect p;
@@ -1385,9 +1037,7 @@ initialize_EB2(
     // auto TopBottomPins = amrex::EB2::makeUnion(revolveBottomPin);
     auto gshop = amrex::EB2::makeShop(TopBottomPins);
     amrex::EB2::Build(gshop, geom, max_level, max_level);
-  }
-  else if (geom_type == "rboxes")
-  {
+  } else if (geom_type == "rboxes") {
       //setting some constants
       //we can only do a maximum of 2 boxes (change if needed)
       const int max_box=2;
@@ -1456,9 +1106,7 @@ initialize_EB2(
 
       auto gshop = amrex::EB2::makeShop(allbox_IF);
       amrex::EB2::Build(gshop, geom, max_level, max_level);
-  } 
-  else if (geom_type == "spheres")
-  {
+  } else if (geom_type == "spheres") {
       //setting some constants
       //we can only do a maximum of 2 spheres (change if needed)
       const int max_sphere=2;
@@ -1540,7 +1188,305 @@ initialize_EB2(
 #else
     amrex::Abort("converging-nozzle geom_type not supported");
 #endif
+  } else if (!(std::find(amrex_defaults.begin(), amrex_defaults.end(), geom_type) !=
+        amrex_defaults.end())) {
+    std::unique_ptr<pele::pelec::Geometry> geometry(
+      pele::pelec::Geometry::create(geom_type));
+    geometry->build(geom, max_coarsening_level);
   } else {
     amrex::EB2::Build(geom, max_level, max_level);
   }
+
+  // Add finer level, might be inconsistent with the coarser level created
+  // above.
+  if (geom_type != "chkfile") {
+    amrex::EB2::addFineLevels(max_level - eb_max_level);
+  }
+
+  bool write_chk_geom = false;
+  ppeb2.query("write_chk_geom", write_chk_geom);
+  if (write_chk_geom) {
+    const auto& is = amrex::EB2::IndexSpace::top();
+    const auto& eb_level = is.getLevel(geom);
+    std::string chkfile = "chk_geom";
+    ppeb2.query("chkfile", chkfile);
+
+    eb_level.write_to_chkpt_file(
+      chkfile, amrex::EB2::ExtendDomainFace(), max_grid_size[0]);
+  }
+}
+
+void
+PeleC::initialize_signed_distance()
+{
+  BL_PROFILE("PeleC::initialize_signed_distance()");
+  if (level == 0) {
+    const auto& ebfactory =
+      dynamic_cast<amrex::EBFArrayBoxFactory const&>(Factory());
+    signed_dist_0.define(grids, dmap, 1, 1, amrex::MFInfo(), ebfactory);
+
+    // Estimate the maximum distance we need in terms of level 0 dx:
+    auto extentFactor = static_cast<amrex::Real>(parent->nErrorBuf(0));
+    for (int ilev = 1; ilev <= parent->maxLevel(); ++ilev) {
+      extentFactor += static_cast<amrex::Real>(parent->nErrorBuf(ilev)) /
+                      std::pow(
+                        static_cast<amrex::Real>(parent->refRatio(ilev - 1)[0]),
+                        static_cast<amrex::Real>(ilev));
+    }
+    extentFactor *= tagging_parm->detag_eb_factor;
+
+    amrex::MultiFab signDist(
+      convert(grids, amrex::IntVect::TheUnitVector()), dmap, 1, 1,
+      amrex::MFInfo(), ebfactory);
+    amrex::FillSignedDistance(signDist, true);
+
+    const auto& sd_ccs = signed_dist_0.arrays();
+    const auto& sd_nds = signDist.const_arrays();
+    const amrex::IntVect ngs(signed_dist_0.nGrow());
+    amrex::ParallelFor(
+      signed_dist_0, ngs,
+      [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k) noexcept {
+        const auto& sd_cc = sd_ccs[nbx];
+        const auto& sd_nd = sd_nds[nbx];
+        const amrex::Real fac = AMREX_D_PICK(0.5, 0.25, 0.125);
+        sd_cc(i, j, k) = AMREX_D_TERM(
+          sd_nd(i, j, k) + sd_nd(i + 1, j, k),
+          +sd_nd(i, j + 1, k) + sd_nd(i + 1, j + 1, k),
+          +sd_nd(i, j, k + 1) + sd_nd(i + 1, j, k + 1) +
+            sd_nd(i, j + 1, k + 1) + sd_nd(i + 1, j + 1, k + 1));
+        sd_cc(i, j, k) *= fac;
+      });
+    amrex::Gpu::synchronize();
+
+    signed_dist_0.FillBoundary(parent->Geom(0).periodicity());
+    extend_signed_distance(&signed_dist_0, extentFactor);
+  }
+}
+
+void
+PeleC::eb_distance(const int lev, amrex::MultiFab& signDistLev)
+{
+  BL_PROFILE("PeleC::eb_distance()");
+  if (lev == 0) {
+    amrex::MultiFab::Copy(signDistLev, signed_dist_0, 0, 0, 1, 0);
+    return;
+  }
+
+  // A pair of MF to hold crse & fine dist data
+  amrex::Array<std::unique_ptr<amrex::MultiFab>, 2> MFpair;
+
+  // dummy bcs
+  amrex::Vector<amrex::BCRec> bcrec_dummy(1);
+  for (int dir = 0; dir < AMREX_SPACEDIM; dir++) {
+    bcrec_dummy[0].setLo(dir, INT_DIR);
+    bcrec_dummy[0].setHi(dir, INT_DIR);
+  }
+
+  // Interpolate on successive levels up to lev
+  const auto& pc_0lev = getLevel(0);
+  for (int ilev = 1; ilev <= lev; ++ilev) {
+
+    // Use MF EB interp
+    auto& interpolater = amrex::eb_mf_lincc_interp;
+
+    // Get signDist on coarsen fineBA
+    const auto& pc_ilev = getLevel(ilev);
+    const auto& grids_ilev = pc_ilev.grids;
+    const auto& dmap_ilev = pc_ilev.DistributionMap();
+    amrex::BoxArray coarsenBA(grids_ilev.size());
+    for (int j = 0, N = coarsenBA.size(); j < N; ++j) {
+      coarsenBA.set(
+        j, interpolater.CoarseBox(grids_ilev[j], parent->refRatio(ilev - 1)));
+    }
+    amrex::MultiFab coarsenSignDist(coarsenBA, dmap_ilev, 1, 0);
+    coarsenSignDist.setVal(0.0);
+    const amrex::MultiFab* crseSignDist =
+      (ilev == 1) ? &pc_0lev.signed_dist_0 : MFpair[0].get();
+    coarsenSignDist.ParallelCopy(*crseSignDist, 0, 0, 1);
+
+    // Interpolate on current ilev
+    amrex::MultiFab* currentSignDist;
+    if (ilev < lev) {
+      const auto& ebfactory =
+        dynamic_cast<amrex::EBFArrayBoxFactory const&>(pc_ilev.Factory());
+      MFpair[1] = std::make_unique<amrex::MultiFab>(
+        grids_ilev, dmap_ilev, 1, 0, amrex::MFInfo(), ebfactory);
+    }
+    currentSignDist = (ilev == lev) ? &signDistLev : MFpair[1].get();
+
+    interpolater.interp(
+      coarsenSignDist, 0, *currentSignDist, 0, 1, amrex::IntVect(0),
+      parent->Geom(ilev - 1), parent->Geom(ilev), parent->Geom(ilev).Domain(),
+      parent->refRatio(ilev - 1), {bcrec_dummy}, 0);
+
+    // Swap MFpair
+    if (ilev < lev) {
+      std::swap(MFpair[0], MFpair[1]);
+    }
+  }
+}
+
+// Extend the cell-centered based signed distance function
+void
+PeleC::extend_signed_distance(
+  amrex::MultiFab* signDist, amrex::Real extendFactor)
+{
+  // This is a not-so-pretty piece of code that'll take AMReX cell-averaged
+  // signed distance and propagates it manually up to the point where we need to
+  // have it for derefining.
+  BL_PROFILE("PeleC::extend_signed_distance()");
+  const auto geomdata = parent->Geom(0).data();
+  amrex::Real maxSignedDist = signDist->max(0);
+  const auto& ebfactory =
+    dynamic_cast<amrex::EBFArrayBoxFactory const&>(signDist->Factory());
+  const auto& flags = ebfactory.getMultiEBCellFlagFab();
+  int nGrowFac = flags.nGrow() + 1;
+
+  // First set the region far away at the max value we need
+  auto const& sd_ccs = signDist->arrays();
+  const amrex::IntVect ngs(signDist->nGrow());
+  amrex::ParallelFor(
+    *signDist, ngs,
+    [=] AMREX_GPU_DEVICE(int nbx, int i, int j, int k) noexcept {
+      const auto& sd_cc = sd_ccs[nbx];
+      if (sd_cc(i, j, k) >= maxSignedDist - 1e-12) {
+        const amrex::Real* dx = geomdata.CellSize();
+        sd_cc(i, j, k) = nGrowFac * dx[0] * extendFactor;
+      }
+    });
+  amrex::Gpu::synchronize();
+
+  // Iteratively compute the distance function in boxes, propagating accross
+  // boxes using ghost cells If needed, increase the number of loop to extend
+  // the reach of the distance function
+  const int nMaxLoop = 4;
+  for (int dloop = 1; dloop <= nMaxLoop; dloop++) {
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+    for (amrex::MFIter mfi(*signDist, amrex::TilingIfNotGPU()); mfi.isValid();
+         ++mfi) {
+      const amrex::Box& bx = mfi.tilebox();
+      const amrex::Box& gbx = grow(bx, 1);
+      if (flags[mfi].getType(gbx) == amrex::FabType::covered) {
+        continue;
+      }
+      auto const& sd_cc = signDist->array(mfi);
+      ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        const auto glo = amrex::lbound(gbx);
+        const auto ghi = amrex::ubound(gbx);
+        const amrex::Real* dx = geomdata.CellSize();
+        const amrex::Real extendedDist = dx[0] * extendFactor;
+        if (sd_cc(i, j, k) >= maxSignedDist - 1e-12) {
+          amrex::Real closestEBDist = 1e12;
+          for (int kk = glo.z; kk <= ghi.z; ++kk) {
+            for (int jj = glo.y; jj <= ghi.y; ++jj) {
+              for (int ii = glo.x; ii <= ghi.x; ++ii) {
+                if ((i != ii) || (j != jj) || (k != kk)) {
+                  if (sd_cc(ii, jj, kk) > 0.0) {
+                    const amrex::Real distToCell = std::sqrt(AMREX_D_TERM(
+                      ((i - ii) * dx[0] * (i - ii) * dx[0]),
+                      +((j - jj) * dx[1] * (j - jj) * dx[1]),
+                      +((k - kk) * dx[2] * (k - kk) * dx[2])));
+                    const amrex::Real distToEB = distToCell + sd_cc(ii, jj, kk);
+                    if (distToEB < closestEBDist) {
+                      closestEBDist = distToEB;
+                    }
+                  }
+                }
+              }
+            }
+          }
+          if (closestEBDist < 1e10) {
+            sd_cc(i, j, k) = closestEBDist;
+          } else {
+            sd_cc(i, j, k) = extendedDist;
+          }
+        }
+      });
+    }
+    signDist->FillBoundary(parent->Geom(0).periodicity());
+  }
+}
+
+void
+PeleC::InitialRedistribution(
+  const amrex::Real time,
+  const amrex::Vector<amrex::BCRec> bcs,
+  amrex::MultiFab& S_new)
+{
+  BL_PROFILE("PeleC::InitialRedistribution()");
+
+  // Don't redistribute if there is no EB or if the redistribution type is
+  // anything other than StateRedist
+  if ((!eb_in_domain) || (redistribution_type != "StateRedist")) {
+    return;
+  }
+
+  if (verbose != 0) {
+    amrex::Print() << "Doing initial redistribution... " << std::endl;
+  }
+
+  // Initial data are set at new time step
+  amrex::MultiFab tmp(
+    grids, dmap, S_new.nComp(), numGrow(), amrex::MFInfo(), Factory());
+
+  amrex::MultiFab::Copy(tmp, S_new, 0, 0, S_new.nComp(), S_new.nGrow());
+  FillPatch(*this, tmp, numGrow(), time, State_Type, 0, S_new.nComp());
+  EB_set_covered(tmp, 0.0);
+
+  amrex::Gpu::DeviceVector<amrex::BCRec> d_bcs(bcs.size());
+  amrex::Gpu::copy(
+    amrex::Gpu::hostToDevice, bcs.begin(), bcs.end(), d_bcs.begin());
+
+  for (amrex::MFIter mfi(S_new, amrex::TilingIfNotGPU()); mfi.isValid();
+       ++mfi) {
+    const amrex::Box& bx = mfi.validbox();
+
+    auto const& fact =
+      dynamic_cast<amrex::EBFArrayBoxFactory const&>(S_new.Factory());
+
+    auto const& flags = fact.getMultiEBCellFlagFab()[mfi];
+    amrex::Array4<const amrex::EBCellFlag> const& flag_arr =
+      flags.const_array();
+
+    if (
+      (flags.getType(amrex::grow(bx, 1)) != amrex::FabType::covered) &&
+      (flags.getType(amrex::grow(bx, 1)) != amrex::FabType::regular)) {
+      amrex::Array4<const amrex::Real> AMREX_D_DECL(fcx, fcy, fcz), ccc,
+        AMREX_D_DECL(apx, apy, apz);
+
+      AMREX_D_TERM(fcx = facecent[0]->const_array(mfi);
+                   , fcy = facecent[1]->const_array(mfi);
+                   , fcz = facecent[2]->const_array(mfi););
+
+      ccc = fact.getCentroid().const_array(mfi);
+
+      AMREX_D_TERM(apx = areafrac[0]->const_array(mfi);
+                   , apy = areafrac[1]->const_array(mfi);
+                   , apz = areafrac[2]->const_array(mfi););
+
+      const auto& sarr = S_new.array(mfi);
+      const auto& tarr = tmp.array(mfi);
+      Redistribution::ApplyToInitialData(
+        bx, NVAR, sarr, tarr, flag_arr, AMREX_D_DECL(apx, apy, apz),
+        vfrac.const_array(mfi), AMREX_D_DECL(fcx, fcy, fcz), ccc,
+        d_bcs.dataPtr(), geom, redistribution_type, eb_srd_max_order);
+
+      // Make sure rho is same as sum rhoY after redistribution
+      amrex::ParallelFor(
+        bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          amrex::Real drhoYsum = 0.0;
+          for (int n = 0; n < NUM_SPECIES; n++) {
+            drhoYsum += sarr(i, j, k, UFS + n) - tarr(i, j, k, UFS + n);
+          }
+          sarr(i, j, k, URHO) = tarr(i, j, k, URHO) + drhoYsum;
+        });
+      amrex::ParallelFor(
+        bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+          pc_check_initial_species(i, j, k, sarr);
+        });
+    }
+  }
+  set_body_state(S_new);
 }

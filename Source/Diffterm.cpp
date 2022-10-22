@@ -17,14 +17,11 @@ pc_compute_diffusion_flux(
   const amrex::GpuArray<const amrex::Array4<const amrex::Real>, AMREX_SPACEDIM>
     area,
   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> del,
-  const int do_harmonic
-#ifdef PELEC_USE_EB
-  ,
+  const int do_harmonic,
   const amrex::FabType typ,
   const int Ncut,
   const EBBndryGeom* ebg,
   const amrex::Array4<amrex::EBCellFlag const>& flags
-#endif
 #ifdef PELEC_USE_PLASMA
   ,
   const int ef_ambiDiff,
@@ -43,24 +40,23 @@ pc_compute_diffusion_flux(
       amrex::Box ebox = amrex::surroundingNodes(box, dir);
       if (dir == 0) {
         // cppcheck-suppress redundantAssignment
-        AMREX_D_TERM(d2 = 1.;, d1 = del[1];, d2 = del[2];);
+        AMREX_D_TERM(d2 = 1.0;, d1 = del[1];, d2 = del[2];);
       } else if (dir == 1) {
         // cppcheck-suppress redundantAssignment
-        AMREX_D_TERM(d2 = 1.;, d1 = del[0];, d2 = del[2];);
+        AMREX_D_TERM(d2 = 1.0;, d1 = del[0];, d2 = del[2];);
       } else if (dir == 2) {
         d1 = del[0];
         d2 = del[1];
       }
 
-      amrex::FArrayBox tander_ec(ebox, GradUtils::nCompTan);
-      amrex::Elixir tander_eli = tander_ec.elixir();
+      amrex::FArrayBox tander_ec(
+        ebox, GradUtils::nCompTan, amrex::The_Async_Arena());
       auto const& tander = tander_ec.array();
       amrex::ParallelFor(
         ebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
           pc_compute_tangential_vel_derivs(i, j, k, q, dir, d1, d2, tander);
         });
 
-#ifdef PELEC_USE_EB
       // Reset tangential derivatives to avoid using covered (invalid) data
       if (typ == amrex::FabType::singlevalued) {
         if (Ncut > 0) {
@@ -72,7 +68,6 @@ pc_compute_diffusion_flux(
         amrex::Abort(
           "multi-valued eb tangential derivatives to be implemented");
       }
-#endif
 
       amrex::ParallelFor(
         ebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {

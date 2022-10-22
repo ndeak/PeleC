@@ -4,28 +4,41 @@
 #include <AMReX_ParmParse.H>
 #include <AMReX_ParallelDescriptor.H>
 #include <AMReX_AmrLevel.H>
-
-#ifdef AMREX_USE_EB
 #include <AMReX_EB2.H>
+
+// Defined and initialized when in gnumake, but not defined in cmake and
+// initialization done manually
+#ifndef AMREX_USE_SUNDIALS
+#include <AMReX_Sundials.H>
 #endif
 
 #include "PeleC.H"
+#include "PeleCAmr.H"
 
 std::string inputs_name;
 
-#ifdef PELEC_USE_EB
-void
-initialize_EB2(const amrex::Geometry& geom, int required_level, int max_level);
-#endif
+void initialize_EB2(
+  const amrex::Geometry& geom,
+  const int eb_max_level,
+  const int max_level,
+  const amrex::Vector<amrex::IntVect>& ref_ratio,
+  const amrex::IntVect& max_grid_size);
 
 amrex::LevelBld* getLevelBld();
+
+void
+override_default_parameters()
+{
+  amrex::ParmParse pp("eb2");
+  if (not pp.contains("geom_type")) {
+    std::string geom_type("all_regular");
+    pp.add("geom_type", geom_type);
+  }
+}
 
 int
 main(int argc, char* argv[])
 {
-  // Use this to trap NaNs in C++
-  // feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW);
-
   if (argc <= 1) {
     amrex::Abort("Error: no inputs file provided on command line.");
   }
@@ -41,10 +54,16 @@ main(int argc, char* argv[])
   }
 
   // Make sure to catch new failures.
-  amrex::Initialize(argc, argv);
+  amrex::Initialize(
+    argc, argv, true, MPI_COMM_WORLD, override_default_parameters);
+// Defined and initialized when in gnumake, but not defined in cmake and
+// initialization done manually
+#ifndef AMREX_USE_SUNDIALS
+  amrex::sundials::Initialize(amrex::OpenMP::get_max_threads());
+#endif
 
   // Save the inputs file name for later.
-  if (!strchr(argv[1], '=')) {
+  if (strchr(argv[1], '=') == nullptr) {
     inputs_name = argv[1];
   }
 
@@ -104,26 +123,24 @@ main(int argc, char* argv[])
   }
 
   // Initialize random seed after we're running in parallel.
-  auto* amrptr = new amrex::Amr(getLevelBld());
+  auto* amrptr = new PeleCAmr(getLevelBld());
 
-#if defined(AMREX_USE_EB) && !defined(PELEC_USE_EB)
-  amrex::Print() << "Initializing EB2 as all_regular because AMReX has EB "
-                    "enabled, but PeleC does not"
-                 << std::endl;
-  std::string geom_type("all_regular");
-  amrex::EB2::Build(
-    amrptr->Geom(amrptr->maxLevel()), amrptr->maxLevel(), amrptr->maxLevel());
-#elif defined(AMREX_USE_EB) && defined(PELEC_USE_EB)
   amrex::AmrLevel::SetEBSupportLevel(
     amrex::EBSupport::full); // need both area and volume fractions
   amrex::AmrLevel::SetEBMaxGrowCells(
     5, 5,
     5); // 5 focdr ebcellflags, 4 for vfrac, 2 is not used for EBSupport::volume
+
   initialize_EB2(
-    amrptr->Geom(amrptr->maxLevel()), amrptr->maxLevel(), amrptr->maxLevel());
-#endif
+    amrptr->Geom(PeleC::getEBMaxLevel()), PeleC::getEBMaxLevel(),
+    amrptr->maxLevel(), amrptr->refRatio(),
+    amrptr->maxGridSize(amrptr->maxLevel()));
 
   amrptr->init(strt_time, stop_time);
+
+#ifdef AMREX_USE_ASCENT
+  amrptr->doInSituViz(amrptr->levelSteps(0));
+#endif
 
   // If we set the regrid_on_restart flag and if we are *not* going to take
   // a time step then we want to go ahead and regrid here.
@@ -136,11 +153,14 @@ main(int argc, char* argv[])
 
   amrex::Real dRunTime2 = amrex::ParallelDescriptor::second();
 
-  while (amrptr->okToContinue() &&
+  while ((amrptr->okToContinue() != 0) &&
          (amrptr->levelSteps(0) < max_step || max_step < 0) &&
          (amrptr->cumTime() < stop_time || stop_time < 0.0)) {
     // Do a timestep
     amrptr->coarseTimeStep(stop_time);
+#ifdef AMREX_USE_ASCENT
+    amrptr->doInSituViz(amrptr->levelSteps(0));
+#endif
   }
 
   // Write final checkpoint
@@ -202,6 +222,11 @@ main(int argc, char* argv[])
   BL_PROFILE_VAR_STOP(pmain);
   BL_PROFILE_SET_RUN_TIME(dRunTime2);
 
+// Defined and finalized when in gnumake, but not defined in cmake and
+// finalization done manually
+#ifndef AMREX_USE_SUNDIALS
+  amrex::sundials::Finalize();
+#endif
   amrex::Finalize();
 
   return 0;
