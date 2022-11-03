@@ -235,9 +235,13 @@ pc_compute_hyp_mol_flux(
 
           
 #ifdef PELEC_USE_TWO_TEMP
-          // FIXME: make electron energy advective flux consistent with electron number density treatment
-          flux_tmp[UFX + 5] = (ustar + drift_tmp[E_ID] > 0.0) ? (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * uelel : (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * ueler;
-          flux_tmp[UFX + 5] = (ustar + drift_tmp[E_ID] == 0.0)? (5.0/3.0) * (tmp0 + drift_tmp[E_ID]) * 0.5 * (uelel + ueler) : flux_tmp[UFX + 5];
+          // Find the electron temperature at the cell edge
+          amrex::Real Te_edge = 0.5 * (q(iv,UFX+6) + q(ivm,UFX+6));
+
+          // Calculate electron energy flux based on electron flux
+          // Assuming flux_Ue = flux_nE * (3/2) * kB * Te   =>  * (5/3 factor)
+          // TODO: Is it ok to do this?
+          flux_tmp[UFX+6] = (flux_tmp[UFS+E_ID] / EFConst::me_cgs) * EFConst::kB * Te_edge * (5.0/2.0);
 #endif
 #endif
         } else {

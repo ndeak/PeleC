@@ -1818,13 +1818,30 @@ PeleC::errorEst(
       }
 
       if (eb_in_domain) {
+#ifdef PELEC_USE_PLASMA
+        // Tagging volume fraction
+        // Custom code to attempt to only highly refine EB in regions closer to domain interior (hard-coded for y-direction for now..)
+        if (level < tagging_parm->max_vfracerr_lev) {
+          const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+          const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> problo = geom.ProbLoArray();
+          amrex::ParallelFor(
+            tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+              amrex::Real y = problo[1] + (j + 0.5)*dx[1];
+              if(level < tagging_parm->vfrac_coarse || (y < tagging_parm->vfrac_top && y > tagging_parm->vfrac_bottom)){
+                tag_error_bounds(i, j, k, tag_arr, vfrac_arr, 0.0, 1.0, tagval);
+              } 
+            });
+        }
+#else
         // Tagging volume fraction
         if (level < tagging_parm->max_vfracerr_lev) {
           amrex::ParallelFor(
             tilebox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+              
               tag_error_bounds(i, j, k, tag_arr, vfrac_arr, 0.0, 1.0, tagval);
             });
 
+          // Redundant code? Commenting out for now to test partial EB tagging
           const int local_i = mfi.LocalIndex();
           const auto Nebg = sv_eb_bndry_geom[local_i].size();
           EBBndryGeom* ebg = sv_eb_bndry_geom[local_i].data();
@@ -1835,6 +1852,7 @@ PeleC::errorEst(
             }
           });
         }
+#endif
       }
 
 #ifdef PELEC_USE_PLASMA
@@ -2263,13 +2281,17 @@ PeleC::computeTemp(amrex::MultiFab& S, int ng)
 
 #ifdef PELEC_USE_TWO_TEMP
     // Fix any negative electron energies and recompute T
-    amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      amrex::Real kB = 1.380649e-16;             // erg/K
-      amrex::Real me_g = 9.10938356e-28;         // electron mass (g)
-      amrex::Real ne = (sarr(i,j,k,UFS+E_ID) > 1.0e-35) ? sarr(i,j,k,UFS+E_ID)/me_g : 1.0e-35/me_g;
-      sarr(i,j,k,Uele) = (sarr(i,j,k,Uele) > 1.0e-20 ) ? sarr(i,j,k,Uele) : (sarr(i,j,k,Tele) >= sarr(i,j,k,UTEMP)) ? (3.0/2.0)*kB*ne*sarr(i,j,k,Tele) : (3.0/2.0)*kB*ne*sarr(i,j,k,UTEMP);
-      sarr(i,j,k,Tele) = sarr(i,j,k,Uele) * (2.0/3.0) * 1.0/(kB * ne);
-    });
+    for (amrex::MFIter mfi(S, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const auto& sarr = S.array(mfi);
+      const amrex::Box& bx = mfi.growntilebox(ng);
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+        amrex::Real kB = 1.380649e-16;             // erg/K
+        amrex::Real me_g = 9.10938356e-28;         // electron mass (g)
+        amrex::Real ne = (sarr(i,j,k,UFS+E_ID) > 1.0e-35) ? sarr(i,j,k,UFS+E_ID)/me_g : 1.0e-35/me_g;
+        sarr(i,j,k,Uele) = (sarr(i,j,k,Uele) > 1.0e-20 ) ? sarr(i,j,k,Uele) : (sarr(i,j,k,Tele) >= sarr(i,j,k,UTEMP)) ? (3.0/2.0)*kB*ne*sarr(i,j,k,Tele) : (3.0/2.0)*kB*ne*sarr(i,j,k,UTEMP);
+        sarr(i,j,k,Tele) = sarr(i,j,k,Uele) * (2.0/3.0) * 1.0/(kB * ne);
+      });
+    }
 #endif
   amrex::Gpu::synchronize();
 }

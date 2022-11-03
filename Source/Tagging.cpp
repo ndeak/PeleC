@@ -67,6 +67,11 @@ PeleC::read_tagging_params()
   pp.query("pin_tip_lev", tagging_parm->pin_tip_lev);
   pp.query("pin_tip_rad", tagging_parm->pin_tip_rad);
   pp.query("pin_tip_h", tagging_parm->pin_tip_h);
+
+  pp.query("vfrac_coarse", tagging_parm->vfrac_coarse);
+  pp.query("vfrac_top",tagging_parm->vfrac_top);
+  pp.query("vfrac_bottom",tagging_parm->vfrac_bottom);
+
 #ifdef PELEC_USE_TWO_TEMP
   pp.query("Telegraderr", tagging_parm->Telegraderr);
   pp.query("max_Telegrad_lev", tagging_parm->max_Telegrad_lev);

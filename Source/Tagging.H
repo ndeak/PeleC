@@ -65,6 +65,11 @@ struct TaggingParm
   int pin_tip_lev = 0;
   amrex::Real pin_tip_rad = 0.05;
   amrex::Real pin_tip_h = 0.1;
+
+  int vfrac_coarse = 10;
+  amrex::Real vfrac_top = 1.0e10;
+  amrex::Real vfrac_bottom = -1.0;
+
 #ifdef PELEC_USE_TWO_TEMP
   amrex::Real Telegraderr = 1.0e10;
   int max_Telegrad_lev = 10;
