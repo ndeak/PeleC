@@ -735,7 +735,11 @@ PeleC::getMOLSrcTerm(
             vbox, S.nComp(), Dterm, Dterm_tmp, S.const_array(mfi), scratch,
             flag_arr, AMREX_D_DECL(apx, apy, apz), vfrac.const_array(mfi),
             AMREX_D_DECL(fcx, fcy, fcz), ccc, d_bcs.dataPtr(), geom, dt,
-            redistribution_type, UFS, NUM_SPECIES, UFX+2, NUM_E, mwt, eb_srd_max_order, voltar);
+            redistribution_type, 
+#ifdef PELEC_USE_PLASMA
+            UFS, NUM_SPECIES, UFX+2, NUM_E, mwt, 
+#endif
+            eb_srd_max_order, voltar);
         }
 
         // Make sure div is zero in covered cells

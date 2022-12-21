@@ -19,12 +19,42 @@ PeleC::solveEF ( Real time,
 {
    BL_PROFILE("PeleC::solveEF()");
 
-   amrex::Print() << "Solving for electric field \n";
-
    Real prev_time = state[State_Type].prevTime();
 
 // Get current PhiV
    MultiFab& Ucurr = (time == prev_time) ? get_old_data(State_Type) : get_new_data(State_Type);
+
+   if(!ef_solve_efield){
+    for (amrex::MFIter mfi(Ucurr, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+       const amrex::Box& tbox = mfi.tilebox();
+       int ng = Ucurr.nGrow();
+       const amrex::Box gbox = amrex::grow(tbox, ng);
+       const auto Sfab = Ucurr.array(mfi);
+       amrex::ParallelFor(
+         tbox, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+           Sfab(i, j, k, UFX+2) = 0.0;
+           Sfab(i, j, k, UFX+3) = 0.0;
+#if AMREX_SPACEDIM == 3
+           Sfab(i, j, k, UFX+4) = 0.0;
+#endif
+      });
+    }
+
+    gphi.clear();
+    gphi.define(this,1,numGrow());
+    gradPhiV = gphi.get();
+
+    gradPhiV[0]->setVal(0.0);
+    gradPhiV[1]->setVal(0.0);
+#if AMREX_SPACEDIM == 3
+    gradPhiV[2]->setVal(0.0);
+#endif
+    Efield_edge = {AMREX_D_DECL(gradPhiV[0], gradPhiV[1], gradPhiV[2])};
+
+    return;
+   }
+
+   amrex::Print() << "Solving for electric field \n";
 
 // Build a PhiV with 1 GC properly filled. FillPatch not working in this case.
    MultiFab Sborder(grids, dmap, 1, 1, amrex::MFInfo(), Factory());

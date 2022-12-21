@@ -99,6 +99,7 @@ int PeleC::ef_use_joule_heating = 1;
 int PeleC::ef_use_radiative_losses = 0;
 int PeleC::streamer_test = 0;
 int PeleC::ef_use_SG = 0;
+int PeleC::ef_solve_efield = 1;
 amrex::Real PeleC::ef_pulse_delay = 3.0e-9;
 amrex::Real PeleC::ef_pulse_rise = 5.0e-9;
 amrex::Real PeleC::ef_pulse_plateau = 12.0e-9;

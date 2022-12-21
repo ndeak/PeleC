@@ -416,9 +416,11 @@ pc_compute_hyp_mol_flux(
   const amrex::Real full_area = std::pow(del[0], AMREX_SPACEDIM - 1);
   const auto lo = amrex::lbound(cbox);
   const auto hi = amrex::ubound(cbox);
+#ifdef PELEC_USE_PLASMA
   const amrex::Real* dx      = geom.CellSize();
   const amrex::Real* problo  = geom.ProbLo();
   const amrex::Real* probhi  = geom.ProbHi();
+#endif
   const amrex::Box bxg = amrex::grow(cbox, nextra - 1);
 
   amrex::ParallelFor(nebflux, [=] AMREX_GPU_DEVICE(int L) {
@@ -433,7 +435,6 @@ pc_compute_hyp_mol_flux(
       for (amrex::Real& dir : ebnorm) {
         dir /= ebnorm_mag;
       }
-      amrex::Real y = problo[1] + (j + 0.5)*dx[1];
 
 
       amrex::Real flux_tmp[NVAR] = {0.0};
@@ -458,6 +459,7 @@ pc_compute_hyp_mol_flux(
       auto eos = pele::physics::PhysicsType::eos();
       eos.molecular_weight(mwt);
       amrex::Real ionFlux = 0.0;
+      amrex::Real y = problo[1] + (j + 0.5)*dx[1];
 
       // Calculate the electric field normal to the EB face (pointing into the fluid, negative value indicates into the surface)
       amrex::Real Enorm = (s_cc(iv, UFX+2) * ebnorm[0] + s_cc(iv, UFX+3) * ebnorm[1] + s_cc(iv, UFX+4) * ebnorm[2]);

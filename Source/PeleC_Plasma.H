@@ -44,6 +44,7 @@
   static int         ef_ambiDiff;                            // Use an ambipolar diffusion model for charged particle transport?
   static int         streamer_test;                          // Use model from "Comparison of six simulation codesfor positive streamers in air"
   static int         ef_use_SG;                              // Use Scharfetter-Gummel scheme (1 for original, 2 for modified)
+  static int         ef_solve_efield;                        // Switch to solve efield or set all components to zero
 
   // Transport options
   static int         ef_constEleTransport;                   // Use constant electron mobility (and diffusivity, via Einsten relation)
