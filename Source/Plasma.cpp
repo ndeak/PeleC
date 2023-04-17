@@ -65,6 +65,12 @@ PeleC::plasma_init()
     pp.query("use_radiative_losses", ef_use_radiative_losses);
     pp.query("use_SG", ef_use_SG);
     pp.query("solve_efield", ef_solve_efield);
+    
+    // Energy limiter added by Alfredo 3/28
+    pp.query("energy_limiter", ef_energy_limiter);
+    pp.query("energy_zero", ef_ezero);
+    pp.query("energy_max", ef_energy_max);
+    //Energy limiter ends
 
     pp.query("JFNK_newtonTol",ef_newtonTol);
     pp.query("JFNK_maxNewton",ef_maxNewtonIter);

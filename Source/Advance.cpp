@@ -185,6 +185,32 @@ PeleC::do_mol_advance(
     ef_fluxCurrent(Sborder, KSpec_old, Efield, coeffs_old);
   }
 
+  // ----------Energy deposition limiter---------------
+  
+  //int finest_level = parent->finestLevel();
+  //bool local_flag = true;
+  //const int ef_energy_limiter = 1;
+  //amrex::Real ef_ezero = 0.0;
+  //amrex::Real ef_energy_max = 100000;
+
+  if (ef_energy_limiter != 0){
+
+    if((ef_Etot-ef_ezero) > ef_energy_max){
+       pulse_peak = 0.0;
+       //amrex::Real Efactormult = 0.0;
+       amrex::Real Vnew = 0.0;
+       ProbParmDevice* lprobparm = d_prob_parm_device;
+       //Efactormult = pow(0.9999,e_counter);
+       //Efactormult = 0.0;
+       //Vnew = (lprobparm->PhiV_top)*Efactormult;
+       lprobparm->PhiV_top =  Vnew;
+       lprobparm->PhiV_bottom = 0.0;
+       //amrex::Print() << "\n ... New Voltage =  " << Vnew << "\n";
+       //amrex::Print() << "\n ... Factor =  " << Efactormult << "\n";
+    }
+  }
+ // --------------------------------------------------
+
   // Explicit calculation of the electrode voltage via transmission line and Sato equations
   // NOTE: we are only ready to calculate everything at the finest level (otherwise we dont have complete flux current)
   // NOTE: assumes finest grid level always present
@@ -204,6 +230,7 @@ PeleC::do_mol_advance(
       setCurrVoltage(time);
     }
   }
+
 
   // Compute PhiV
   const ProbParmDevice* lprobparm = d_prob_parm_device;
@@ -514,6 +541,37 @@ PeleC::do_mol_advance(
       });
     }
   }
+
+  // Alfredo Duarte addition 3/28 energy limiter
+  if (ef_energy_limiter != 0){
+    // Calculate total energy
+    int finest_level = parent->finestLevel();
+    if(level == finest_level) {
+       amrex::Real tot_E = 0.0;
+       bool local_flag = true;
+      for (int lev = 0; lev <= finest_level; lev++) {
+        PeleC& pc_lev = getLevel(lev);
+        tot_E += pc_lev.volWgtSum("rho_e", time, local_flag);
+      }
+
+      // Sum across processors
+      const int nfoo = 1;
+      amrex::Real foo[nfoo] = {tot_E};
+      amrex::ParallelDescriptor::ReduceRealSum(foo, nfoo);
+
+      // Reassign sum values
+      int i = 0;
+      tot_E = foo[i++];
+      ef_Etot = tot_E;
+      //if((ef_Etot-ef_ezero) > ef_energy_max){
+      //e_counter = e_counter +1;
+      //}
+      amrex::Print() << "\n Total energy =  " << ef_Etot << "\n";
+      amrex::Print() << "\n Energy deposited =  " << (ef_Etot-ef_ezero) << "\n";
+      //amrex::Print() << "\n e_counter =  " << e_counter << "\n ";
+    }
+  }
+
 
   // ndead addition - add to monitor file
   if(monitor_file){

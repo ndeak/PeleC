@@ -32,7 +32,12 @@
   static int         ef_sigmoid_pulse;                      // Use a sigmoid pulse with pulse_fwhm/2.0 rise time, and pulse_fwhm plateau?
   static amrex::Real ef_pulse_delay;                        // Delay time for sigmoid pulse profile (s)
   static amrex::Real ef_pulse_rise;                         // Rise time for the sigmoid pulse profile (s)
-  static amrex::Real ef_pulse_plateau;                       // Plateau time for the sigmoid pulse profile (s)
+  static amrex::Real ef_pulse_plateau;                      // Plateau time for the sigmoid pulse profile (s)
+  static int         ef_energy_limiter;                     // Use energy limiter to turn off e-field?
+  static int         e_counter;                     // Use energy limiter to turn off e-field?
+  static amrex::Real ef_ezero;                              // Reference energy to zero the deposited energy
+  static amrex::Real ef_Etot;                              // Reference energy to zero the deposited energy
+  static amrex::Real ef_energy_max;                         // Maximum desired desposited energy
   static amrex::Real pulse_sigma;     
   static amrex::Real curr_voltage;                          // Voltage at time t=n (erg/C)
   static amrex::Real dfact;

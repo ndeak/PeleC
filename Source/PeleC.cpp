@@ -103,6 +103,13 @@ int PeleC::ef_solve_efield = 1;
 amrex::Real PeleC::ef_pulse_delay = 3.0e-9;
 amrex::Real PeleC::ef_pulse_rise = 5.0e-9;
 amrex::Real PeleC::ef_pulse_plateau = 12.0e-9;
+// Added by Alfredo on 3/28/2023 Energy limiter
+int PeleC::ef_energy_limiter = 0;
+int PeleC::e_counter = 0;
+amrex::Real PeleC::ef_ezero = 0.0;
+amrex::Real PeleC::ef_energy_max = 1.0e10;
+amrex::Real PeleC::ef_Etot = 0.0;
+// Energy limiter ends
 int PeleC::ion_bc_type = 0;
 int PeleC::O2_idx = 0;
 int PeleC::N2_idx = 0;
