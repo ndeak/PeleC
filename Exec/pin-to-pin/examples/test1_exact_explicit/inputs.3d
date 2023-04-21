@@ -1,6 +1,6 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
 max_step = 100000
-stop_time = 100.0
+stop_time = 16.0e-9
 
 # PROBLEM SIZE & GEOMETRY
 geometry.is_periodic =  0  0  0
@@ -36,11 +36,11 @@ prob.Pr = 0.7
 # Problem setup
 pelec.eb_boundary_T = 300.0
 pelec.eb_isothermal = 0
-pelec.chem_integrator = 2
+pelec.chem_integrator = "ReactorCvode"
 ode.implicit_solve = 1
 #ode.iverbose = 4
 ode.analytical_jacobian = 0
-cvode.solve_type = "dense"
+cvode.solve_type = "dense_direct"
 pelec.redistribution_type = "StateRedist"
 pelec.allow_negative_energy = 1
 pelec.allow_small_energy = 1
@@ -81,7 +81,7 @@ pelec.cfl            = 0.3     # cfl number for hyperbolic system
 pelec.init_shrink    = 1.0    # scale back initial timestep
 pelec.change_max     = 1.05     # maximum increase in dt over successive steps
 #pelec.fixed_dt = 1.0e-12
-pelec.max_dt = 1.0e-12
+pelec.max_dt = 5.0e-12
 
 # DIAGNOSTICS & VERBOSITY
 pelec.sum_interval   = 1       # timesteps between computing mass
@@ -91,7 +91,7 @@ ef.Poisson_verbose      = 0
 #amr.grid_log         = grdlog  # name of grid logging file
 
 # REFINEMENT / REGRIDDING
-amr.max_level       = 7       # maximum level number allowed
+amr.max_level       = 5       # maximum level number allowed
 amr.ref_ratio       = 2 2 2 2 # refinement ratio
 amr.regrid_int      = 2       # how often to regrid
 amr.blocking_factor = 8       # block factor in grid generation
@@ -99,27 +99,33 @@ amr.max_grid_size   = 64
 amr.subcycling_mode = None
 
 # TAGGING
-tagging.efielderr = 300
-tagging.max_efield_lev = 6
+tagging.efielderr = 120
+tagging.max_efield_lev = 4
 tagging.negraderr = 1.0e-16
 tagging.max_negrad_lev = 0
 tagging.o4graderr = 1.0e-10
-tagging.max_o4grad_lev = 10
-tagging.efieldgraderr = 10.0
-tagging.max_efieldgrad_lev = 0
+tagging.max_o4grad_lev = 0
+tagging.efieldgraderr = 20.0
+tagging.max_efieldgrad_lev = 5
 tagging.max_vfracerr_lev = 8
-tagging.plasma_channel_lev = 0
 tagging.pin_tip_lev = 0
+tagging.plasma_channel_lev = 5
+tagging.plasma_channel_bottom = 0.95
+tagging.plasma_channel_top = 1.05
+tagging.plasma_channel_rmax = 0.05
+tagging.plasma_channel_r0 = 1.25
+
+
 
 # CHECKPOINT FILES
 amr.checkpoint_files_output = 1
 amr.check_file      = chk      # root name of checkpoint file
-amr.check_per        = 0.5e-9
+amr.check_per        = 1.0e-9
 
 # PLOTFILES
 amr.plot_files_output = 1
 amr.plot_file       = plt
-amr.plot_per        = 1.0e-9
+amr.plot_per        = 0.5e-9
 #amr.derive_plot_vars=pressure x_velocity y_velocity z_velocity vfrac
 amr.derive_plot_vars = pressure
 amr.plot_vars  =  density Temp rho_E rho_e phiV nE Efieldx Efieldy Efieldz
@@ -127,7 +133,7 @@ pelec.plot_massfrac = false
 pelec.plot_vfrac = true
 pelec.plot_rhoy = false
 ef.plot_numdens = true
-pelec.monitor_file = true
+pelec.monitor_file = false
 ef.pac_mechanism = 0          # 0 for air, 1 for original PAC mechanism, 2 for PAC mechanism with negative ions
 
 # EB TEST CASE 1 (PLATE TO PLATE, ALIGNED W X-Z PLANE)
