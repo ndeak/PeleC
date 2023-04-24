@@ -1,5 +1,5 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
-max_step = 100000
+max_step = 500000
 stop_time = 16.0e-9
 
 # PROBLEM SIZE & GEOMETRY
@@ -100,7 +100,7 @@ amr.subcycling_mode = None
 
 # TAGGING
 tagging.efielderr = 120
-tagging.max_efield_lev = 4
+tagging.max_efield_lev = 5
 tagging.negraderr = 1.0e-16
 tagging.max_negrad_lev = 0
 tagging.o4graderr = 1.0e-10
@@ -110,9 +110,9 @@ tagging.max_efieldgrad_lev = 5
 tagging.max_vfracerr_lev = 8
 tagging.pin_tip_lev = 0
 tagging.plasma_channel_lev = 5
-tagging.plasma_channel_bottom = 0.95
+tagging.plasma_channel_bottom = 0.9
 tagging.plasma_channel_top = 1.05
-tagging.plasma_channel_rmax = 0.05
+tagging.plasma_channel_rmax = 0.08
 tagging.plasma_channel_r0 = 1.25
 
 
@@ -162,6 +162,6 @@ ebd.boundary_grad_stencil_type = 0
 # ebd.boundary_grad_stencil_type = 0
 
 #fabarray.mfiter_tile_size = 1024 1024 1024
-amrex.fpe_trap_invalid = 1
-amrex.fpe_trap_zero = 1
-amrex.fpe_trap_overflow = 1
+#amrex.fpe_trap_invalid = 1
+#amrex.fpe_trap_zero = 1
+#amrex.fpe_trap_overflow = 1

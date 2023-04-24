@@ -1,0 +1,22 @@
+#!/bin/bash
+#SBATCH -N 8
+#SBATCH -n 448
+#SBATCH -o myjob.%j.out
+#SBATCH -J off-quarter-domain
+#SBATCH -p normal
+#SBATCH -A CTS22014
+#SBATCH -t 08:00:00
+
+module load gcc
+module load python3/3.9.2
+module list
+pwd
+date
+
+PELECHOME=/work2/07638/aduarteg/frontera/research/repositories/plasma/amrexclean/PeleC/Exec/pin-to-pin/examples/test1_exact_explicit 
+
+ibrun $PELECHOME/PeleC3d.gnu.MPI.ex inputs.3d
+
+python3 amplots2d.py
+python3 plots1d.py
+python3 streamerComparisonPlots.py

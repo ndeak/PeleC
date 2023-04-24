@@ -43,8 +43,8 @@ yt.add_field(
 
 pltlist = glob.glob('plt?????')
 pltlist = sorted(pltlist)
-pltlist = pltlist[0::2]
-fieldlist = ["Efieldmag","n(E)"]
+pltlist = pltlist[0::4]
+fieldlist = ["Efieldmag","n(E)","n(O2+)"]
 
 t = []
 Emaxloc = []
@@ -56,8 +56,8 @@ q_tot = []
 ext = ".png"
 
 xyedge = [1.25 , 1.25]
-dx = 1e-6*1e4
-ystart = 0.6
+dx = 3e-6*1e2
+ystart = 0.0
 yend = 1.25
 ## 1-d FIGS data and plot
 for i in pltlist:
@@ -96,21 +96,33 @@ for i in pltlist:
           cmax = 1500
    
        ## 1-D slice axial
+       #dssmooth=ds.covering_grid(4, [0.0, 0.0, 0.0], ds.domain_dimensions * 2**4)   
        ray = ds.ortho_ray(1, (xyedge[0]-dx, xyedge[1]-dx))
        srt = np.argsort(ray["index", "y"])
+       tcurr = str(float(ds.current_time.to_value('ns')))
+       print(tcurr)
+       tstr = "t = "+tcurr[0:4]
        if logbool:
           fig1 = plt.figure(1)
-          plt.semilogy(np.array(ray["index", "y"][srt]), 1e6*1e-12*np.array(ray[field][srt]))
+          plt.semilogy(np.array(ray["index", "y"][srt]), 1e6*1e-12*np.array(ray[field][srt]),label=tstr)
           plt.ylabel("Ne/10$^{12}$ [m$^{-3}$]")
+          plt.ylim([1.0,1.0e11])
+       elif field=="n(O2+)":
+          fig3 = plt.figure(3)
+          plt.semilogy(np.array(ray["index", "y"][srt]), 1e6*1e-12*np.array(ray[field][srt]),label=tstr)
+          plt.ylabel("N+/10$^{12}$ [m$^{-3}$]")
+          plt.ylim([1.0,1.0e11])
        else:
           fig2 = plt.figure(2)
-          plt.plot(np.array(ray["index", "y"][srt]), 1e-6*1e-7*np.array(ray[field][srt]))
+          plt.plot(np.array(ray["index", "y"][srt]), 1e-6*1e-7*np.array(ray[field][srt]),label=tstr)
           plt.ylabel("E [MV/cm]")
        plt.xlim([ystart,yend])
+       plt.legend()
        plt.xlabel('y [cm]')
        plotname = i+"_Axis"+field+ext
 fig1.savefig("neaxis.png")
 fig2.savefig("Efieldaxis.png")
+fig3.savefig("npaxis.png")
 plt.clf()
 
 # L(t) plot
