@@ -261,12 +261,12 @@ PeleC::getMOLSrcTerm(
             }
       */
       // Compute transport coefficients, coincident with Q
-#ifndef PELEC_USE_PLASMA
+//#ifndef PELEC_USE_PLASMA
       auto const& coe_cc = coeff_cc.array();
-#else
-      auto const& coe_cc = coeffs_old.array(mfi);
-#endif
-#ifndef PELEC_USE_PLASMA
+//#else
+//      auto const& coe_cc = coeffs_old.array(mfi);
+//#endif
+//#ifndef PELEC_USE_PLASMA
       {
         auto const& qar_yin = q.array(QFS);
         auto const& qar_Tin = q.array(QTEMP);
@@ -285,7 +285,7 @@ PeleC::getMOLSrcTerm(
             coe_lambda, ltransparm);
         });
       }
-#endif
+//#endif
 
       amrex::FArrayBox flux_ec[AMREX_SPACEDIM];
       const amrex::Box eboxes[AMREX_SPACEDIM] = {AMREX_D_DECL(
