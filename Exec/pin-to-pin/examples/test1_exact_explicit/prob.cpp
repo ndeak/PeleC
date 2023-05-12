@@ -29,6 +29,7 @@ amrex_probinit(
   pp.query("vy_in", PeleC::h_prob_parm_device->vy_in);
   pp.query("Re_L", PeleC::h_prob_parm_device->Re_L);
   pp.query("Pr", PeleC::h_prob_parm_device->Pr);
+  pp.query("n0", PeleC::h_prob_parm_device->n0);
   pp.query("phiV_top", PeleC::h_prob_parm_device->PhiV_top);
   pp.query("phiV_bottom", PeleC::h_prob_parm_device->PhiV_bottom);
 

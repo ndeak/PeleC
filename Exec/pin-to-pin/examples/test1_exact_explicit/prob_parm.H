@@ -14,6 +14,7 @@ struct ProbParmDevice
   amrex::Real vy_in = 0.0;
   amrex::Real Re_L = 0.0;
   amrex::Real Pr = 0.0;
+  amrex::Real n0 = 1.0e13;  // in [1/m3]
   amrex::Real PhiV_top = 0.0;
   amrex::Real PhiV_bottom = 0.0;
   amrex::GpuArray<amrex::Real, NUM_SPECIES> massfrac = {{1.0}};

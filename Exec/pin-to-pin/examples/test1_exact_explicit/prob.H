@@ -64,11 +64,28 @@ pc_initdata(
   amrex::Real mwt[NUM_SPECIES];
   eos.molecular_weight(mwt);
 
+  //NOTE: The background level of ionization is assumed to be in 1/m3
+  amrex::Real mwO2 = 31.99;// g/mol
+  amrex::Real mwN2 = 28.01;// g/mol
+  amrex::Real me   = 9.1093837e-28;// g
+  amrex::Real mol  = 6.02214e23;// g
+  amrex::Real kb   = 1.380649e-23;// g
+  amrex::Real masstot;// g
+  amrex::Real Ntot;// g
+  amrex::Real nkernel;// g
+
+  Ntot = (prob_parm.p/10)/(kb*prob_parm.T); // particles 1/m3
+  Ntot = Ntot-2*prob_parm.n0;  
+  masstot = (mwO2*Ntot*0.2/mol) + (mwN2*Ntot*0.8/mol) + prob_parm.n0*me +prob_parm.n0/mol*mwO2;
+  nkernel = (5.0e18/mol*mwO2)/masstot;
+
   // Kernel of positive space charge
-  mfs[0] = 7.7787881e-18;    // E
-  mfs[3] = 4.53391e-13;    // O2+
+  mfs[0] = prob_parm.n0*me/masstot;    // E
+//  mfs[0] = 7.7787881e-18;    // E
+  mfs[3] = prob_parm.n0/mol*mwO2/masstot;    // O2+
+//  mfs[3] = 4.53391e-13;    // O2+
   amrex::Real r = pow(pow(x - 1.25, 2) + pow(z - 1.25, 2), 0.5);
-  mfs[3] += 2.266955e-7 * exp(-( pow(r,2) + pow(y - 1.0,2) ) / pow(0.04,2));
+  mfs[3] += nkernel * exp(-( pow(r,2) + pow(y - 1.0,2) ) / pow(0.04,2));
 
   // Adjust N2 mass fraction
   mfs[2] = 1.0 - mfs[0] - mfs[1] - mfs[3];
