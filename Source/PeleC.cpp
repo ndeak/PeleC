@@ -71,6 +71,7 @@ int PeleC::ef_debug = 0;
 int PeleC::ef_use_NLsolve = 0;
 int PeleC::ef_use_nEimplicit = 0;
 int PeleC::ef_use_nEDiffImp = 0;
+int PeleC::ef_use_nEDiffImp_dosolve = 0;
 int PeleC::ef_use_PETSC_direct = 0;
 int PeleC::ef_diffT_jfnk = 1;
 int PeleC::ef_maxNewtonIter = 50;
@@ -105,6 +106,8 @@ amrex::Real PeleC::ef_pulse_rise = 5.0e-9;
 amrex::Real PeleC::ef_pulse_plateau = 12.0e-9;
 // Added by Alfredo on 3/28/2023 Energy limiter
 int PeleC::ef_energy_limiter = 0;
+int PeleC::first_step = 1;
+amrex::Real PeleC::ef_C_dielectric = 10.0;
 int PeleC::e_counter = 0;
 amrex::Real PeleC::ef_ezero = 0.0;
 amrex::Real PeleC::ef_energy_max = 1.0e10;
@@ -1076,7 +1079,7 @@ PeleC::estTimeStep(amrex::Real /*dt_old*/)
     // Tried factors of 50 and 100, but solution instability was observed 
     amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
     amrex::Real min_diele = (min_dielectric == 0) ? 1000:min_dielectric;
-    estdt_hydro = (ef_semiImpEfield) ? amrex::min<amrex::Real>(estdt_hydro, 10.0*min_diele):amrex::min<amrex::Real>(estdt_hydro, min_diele);
+    estdt_hydro = (ef_semiImpEfield) ? amrex::min<amrex::Real>(estdt_hydro, ef_C_dielectric*min_diele):amrex::min<amrex::Real>(estdt_hydro, min_diele);
 #endif
 
     // Determine if this is more restrictive than the maximum timestep limiting

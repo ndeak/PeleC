@@ -13,6 +13,7 @@
   static int         ef_use_NLsolve;                        // Switch nonlinear solve ON/OFF
   static int         ef_use_nEimplicit;                     // Switch nE implicit linear system solve ON/OFF
   static int         ef_use_nEDiffImp;                      // Switch implicit diffusion for electrons ON/OFF
+  static int         ef_use_nEDiffImp_dosolve;                      // Switch implicit diffusion for electrons ON/OFF
   static bool        def_harm_avg_cen2edge;                 // Face averaging type
   static int         ion_bc_type;                           // Sets the ion electrode loss type (0 = weak efield approx., 1 = strong efield approx.)
   static int         zero_bc_flux;                          // Set to 1 to zero out all electrode fluxes for electrons and ions
@@ -33,7 +34,9 @@
   static amrex::Real ef_pulse_delay;                        // Delay time for sigmoid pulse profile (s)
   static amrex::Real ef_pulse_rise;                         // Rise time for the sigmoid pulse profile (s)
   static amrex::Real ef_pulse_plateau;                      // Plateau time for the sigmoid pulse profile (s)
+  static amrex::Real ef_C_dielectric;                      // Plateau time for the sigmoid pulse profile (s)
   static int         ef_energy_limiter;                     // Use energy limiter to turn off e-field?
+  static int         first_step;                     // Use energy limiter to turn off e-field?
   static int         e_counter;                     // Use energy limiter to turn off e-field?
   static amrex::Real ef_ezero;                              // Reference energy to zero the deposited energy
   static amrex::Real ef_Etot;                              // Reference energy to zero the deposited energy
@@ -232,6 +235,7 @@
   void nEDiffuseImplicit (amrex::Real time,
                 amrex::Real dt, 
                 const amrex::MultiFab & Sbord,
+//                const amrex::MultiFab & Sbordold,
                       amrex::MultiFab & forcing);
 
 #ifdef PELEC_USE_TWO_TEMP
@@ -251,7 +255,7 @@
   void ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time);
 
   // Version of ef transport that fits inside Diffusion.cpp loop
-  void ef_calc_transport(amrex::Box const& bx,
+  void ef_calc_transportNew(amrex::Box const& bx,
                          amrex::Array4<const amrex::Real> const& rhoY_in,
                          amrex::Array4<const amrex::Real> const& EoN_in,
                          amrex::Array4<amrex::Real> const& Ke_out,

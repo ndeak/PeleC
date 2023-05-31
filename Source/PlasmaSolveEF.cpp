@@ -205,7 +205,7 @@ PeleC::solveEF ( Real time,
 // Linear operator (EB aware if need be)
     const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
     MLEBABecLap poissonOP({geom}, {grids}, {dmap}, info, {ebf});
-
+  // amrex::Print() << "So far so good! \n";
    poissonOP.setMaxOrder(2);
 
 // Boundary conditions for the linear operator.
@@ -214,6 +214,7 @@ PeleC::solveEF ( Real time,
    setBCPhiV(bc_lo,bc_hi);
    poissonOP.setDomainBC(bc_lo,bc_hi);   
 
+ //  amrex::Print() << "Doing great! \n";
 // Get the coarse level data for AMR cases.
    std::unique_ptr<MultiFab> phiV_crse;
    if (level > 0) {
@@ -224,12 +225,14 @@ PeleC::solveEF ( Real time,
       poissonOP.setCoarseFineBC(phiV_crse.get(), crse_ratio[0]);
    }
 
+  // amrex::Print() << "Still good! \n";
 // Pass the phiV with physical BC filled.
    poissonOP.setLevelBC(0, &phiV_borders);
 
 // Setup solver coefficient: general form is (ascal * acoef - bscal * div bcoef grad ) phi = rhs   
 // For simple Poisson solve: ascal, acoef = 0 and bscal, bcoef = 1
 // For semi-implicit solve, problem becomes a variable coefficient Poisson problem
+  // amrex::Print() << "OK! \n";
    MultiFab acoef(grids, dmap, 1, 0, MFInfo(), Factory());
    acoef.setVal(0.0);
    poissonOP.setACoeffs(0, acoef);
@@ -346,14 +349,16 @@ PeleC::solveEF ( Real time,
 /////////////////////////////////////   
    MLMG mlmg(poissonOP);
 
-   phiV_alias.setVal(0.0); // initial guess for phi
+   //phiV_alias.setVal(0.0); // initial guess for phi
 
    // relative and absolute tolerances for linear solve
    const Real tol_rel = ef_PoissonTol;
-   amrex::Print() << "max charge tol = " << chargeDistrib.norm0()*ef_PoissonTol << " , max phiV tol = " << prob_parm.PhiV_top*ef_PoissonTol << ", abs tol = 1.0e-5\n"; 
-   const Real tol_abs = std::max(std::max(chargeDistrib.norm0(),phiV_alias.norm0()) * ef_PoissonTol, 1.0e-5);
+   amrex::Print() << "max charge tol = " << chargeDistrib.norm0()*ef_PoissonTol << " , max phiV tol = " << prob_parm.PhiV_top*ef_PoissonTol << ", abs tol = 1.0e-2\n"; 
+   const Real tol_abs = std::max(std::max(chargeDistrib.norm0(),phiV_alias.norm0()) * ef_PoissonTol, 1.0e-2);
 
    mlmg.setVerbose(ef_PoissonVerbose);
+   mlmg.setBottomVerbose(ef_PoissonVerbose);
+   mlmg.setBottomTolerance(1e-3);
    mlmg.setMaxIter(1000);
        
    // Solve linear system
@@ -467,6 +472,9 @@ PeleC::gapCapacitance (Real time)
    info.setConsolidation(1);
    info.setMetricTerm(false);
 
+
+   //amrex::Print() << "So far so good! \n";
+
 // Linear operator (EB aware if need be)
     const auto& ebf = &dynamic_cast<EBFArrayBoxFactory const&>((parent->getLevel(level)).Factory());
     MLEBABecLap poissonOP({geom}, {grids}, {dmap}, info, {ebf});
@@ -478,6 +486,8 @@ PeleC::gapCapacitance (Real time)
    std::array<LinOpBCType,AMREX_SPACEDIM> bc_hi;
    setBCPhiV(bc_lo,bc_hi);
    poissonOP.setDomainBC(bc_lo,bc_hi);   
+   
+   //amrex::Print() << "Still good! \n";
 
 // Get the coarse level data for AMR cases.
    std::unique_ptr<MultiFab> phiV_crse;
@@ -488,6 +498,9 @@ PeleC::gapCapacitance (Real time)
       MultiFab::Copy(*phiV_crse, Coarse_State,PhiV,0,1,0);
       poissonOP.setCoarseFineBC(phiV_crse.get(), crse_ratio[0]);
    }
+
+
+   //amrex::Print() << "Doing great! \n";
 
 // Pass the phiV with physical BC filled.
    poissonOP.setLevelBC(0, &phiV_borders);

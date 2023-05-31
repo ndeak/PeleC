@@ -186,14 +186,7 @@ PeleC::do_mol_advance(
   }
 
   // ----------Energy deposition limiter---------------
-  
-  //int finest_level = parent->finestLevel();
-  //bool local_flag = true;
-  //const int ef_energy_limiter = 1;
-  //amrex::Real ef_ezero = 0.0;
-  //amrex::Real ef_energy_max = 100000;
-
-  if (ef_energy_limiter != 0){
+  if ((ef_energy_limiter != 0)&&(first_step==2)){
 
     if((ef_Etot-ef_ezero) > ef_energy_max){
        pulse_peak = 0.0;
@@ -205,7 +198,8 @@ PeleC::do_mol_advance(
        //Vnew = (lprobparm->PhiV_top)*Efactormult;
        lprobparm->PhiV_top =  Vnew;
        lprobparm->PhiV_bottom = 0.0;
-       //amrex::Print() << "\n ... New Voltage =  " << Vnew << "\n";
+       amrex::Print() << "\n ... ATTENTION: VOLTAGE IS BEING LIMITED\n";
+       //parent->levelSteps(0) = 1e16;
        //amrex::Print() << "\n ... Factor =  " << Efactormult << "\n";
     }
   }
@@ -569,9 +563,9 @@ PeleC::do_mol_advance(
       amrex::Print() << "\n Total energy =  " << ef_Etot << "\n";
       amrex::Print() << "\n Energy deposited =  " << (ef_Etot-ef_ezero) << "\n";
       //amrex::Print() << "\n e_counter =  " << e_counter << "\n ";
+      first_step = 2;
     }
   }
-
 
   // ndead addition - add to monitor file
   if(monitor_file){

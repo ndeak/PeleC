@@ -1134,7 +1134,8 @@ void PeleC::writeMonitorFile(amrex::MultiFab& S, const amrex::Real *mwt, amrex::
         for (int lev = 0; lev <= finest_level; lev++) {
           PeleC& pc_lev = getLevel(lev);
 
-          mcations += (pc_lev.volWgtSum("rho_O2+", time, local_flag) + pc_lev.volWgtSum("rho_N2+", time, local_flag) + pc_lev.volWgtSum("rho_O4+", time, local_flag) + pc_lev.volWgtSum("rho_N4+", time, local_flag) + pc_lev.volWgtSum("rho_O2pN2", time, local_flag));
+          //mcations += (pc_lev.volWgtSum("rho_O2+", time, local_flag) + pc_lev.volWgtSum("rho_N2+", time, local_flag) + pc_lev.volWgtSum("rho_O4+", time, local_flag) + pc_lev.volWgtSum("rho_N4+", time, local_flag) + pc_lev.volWgtSum("rho_O2pN2", time, local_flag));
+          mcations += (pc_lev.volWgtSum("rho_O2+", time, local_flag) + pc_lev.volWgtSum("rho_N2+", time, local_flag));
           manions += pc_lev.volWgtSum("rho_O2-", time, local_flag);
           tot_E += pc_lev.volWgtSum("rho_e", time, local_flag);
         }
