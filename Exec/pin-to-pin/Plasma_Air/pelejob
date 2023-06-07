@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH -N 16
+#SBATCH -n 896
+#SBATCH -o myjob.%j.out
+#SBATCH -J PeleCPlasma
+#SBATCH -p normal
+#SBATCH -A CTS21022
+#SBATCH -t 48:00:00
+
+module load gcc valgrind
+
+module list
+pwd
+date
+
+
+#mpirun -n 3584 ./PeleC3d.gnu.MPI.ex inputs.3d
+mpirun -n 896 ./PeleC3d.gnu.MPI.ex inputs.3d amr.restart=/scratch1/04361/ndeak/pelec_check-7lev-300K-1atm-parabolicPinsFP-1p25mmh-50um-2p5mm-sigmoidPulse-13kVanode-2nsdt-2nsrt-1nspt-1MHz-PACMorrowIonNoCap-zeroGradBC-adiabatic/chk26857/
+#mpirun -n 2240 ./PeleC3d.gnu.MPI.ex inputs.prof amr.restart=/scratch1/04361/ndeak/pelec_check-7lev-300K-1atm-parabolicPinsFP-1p25mmh-50um-2p5mm-sigmoidPulse-11kVanode-2nsdt-2nsrt-1nspt-1MHz-PACMorrowIonNoCap-zeroGradBC-adiabatic-impnEDiff/chk01217/
