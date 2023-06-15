@@ -1,0 +1,140 @@
+# ------------------  INPUTS TO MAIN PROGRAM  -------------------
+max_step = 100000
+stop_time = 100.0e-9
+
+# PROBLEM SIZE & GEOMETRY
+geometry.is_periodic =  1 0 1
+geometry.coord_sys   =  0       # 0 => cart
+geometry.prob_lo     =  0    0    0 
+#geometry.prob_hi     =  1.0  1.0  1.0     # EB test case 2
+geometry.prob_hi     =  0.25  0.25  0.25     # EB test case 2
+amr.n_cell           =  4 4 4
+#amr.n_cell           =  8 8 8
+
+
+# >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
+# Interior, UserBC, Symmetry, SlipWall, NoSlipWall
+# >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
+
+pelec.lo_bc       =  "Interior" "SlipWall" "Interior"
+pelec.hi_bc       =  "Interior" "SlipWall" "Interior"
+
+
+#pelec.lo_bc       =  "Symmetry" "SlipWall" "Symmetry"
+#pelec.hi_bc       =  "Symmetry" "SlipWall" "Symmetry"
+
+# Problem setup
+pelec.eb_boundary_T = 1000.
+pelec.eb_isothermal = 0
+pelec.chem_integrator = "ReactorCvode"
+ode.implicit_solve = 1
+#ode.iverbose = 4
+ode.analytical_jacobian = 0
+cvode.solve_type =  "GMRES"
+pelec.allow_negative_energy = 1
+pelec.allow_small_energy = 1
+pelec.add_ext_src = 1
+
+# Plasma variables
+pelec.ion_bc_type = 1             # ion BC type (0 -> weak efield BCs, 1 -> strong efield BCs)
+pelec.zero_bc_grad = 1            # attempt to impose 0 gradient BCs at all electrode surfaces for charged particles
+pelec.secondary_em_coef = 0.05    # secondary electron emission coefficient
+pelec.pulse_freq = 1000.0e3            # pulse frequency (Hz)
+pelec.pulse_fwhm = 10.0e-9             # pulse FWHM (s)
+pelec.pulse_peak = 4825.0e7        # peak potential of the driven electrode (erg/C)
+#pelec.pulse_peak = 0.0        # peak potential of the driven electrode (erg/C)
+pelec.pulse_timing = 10.0e-9          # timing of the first pulse peak (s)
+#pelec.pulse_timing = 0.0e-9          # timing of the first pulse peak (s)
+pelec.pulse_num = 1              # number of pulses
+pelec.pulse_dt = 1.0e-12           # dt around each pulse (s)
+ef.use_nonLinearSolve = 0       
+ef.constVoltage = 0              # Use a constant applied (equal to the pulse_peak value)
+ef.sigmoid_pulse = 1
+ef.pulse_delay = 3.0e-9
+ef.pulse_rise = 5.0e-9
+ef.pulse_plateau = 12.0e-9
+ef.semiImpEfield = 1
+ef.use_nEDiffImp = 1
+
+# WHICH PHYSICS
+pelec.do_hydro = 0
+pelec.do_mol = 1
+pelec.do_react = 1
+pelec.diffuse_temp = 0
+pelec.diffuse_vel  = 0
+pelec.diffuse_spec = 0
+pelec.diffuse_enth = 0
+ef.do_drift = 0
+pelec.zero_bc_flux = 0          # overwrites ion_bc_type, sets species fluxes at electrodes to zero
+ef.noSpaceCharge = 1             # Solve Poisson problem without space charge effects
+ef.do_photoionization = 0
+ef.ion_rate_type = 2
+ef.solve_efield = 1
+ef.use_joule_heating = 1
+
+# TIME STEP CONTROL
+pelec.dt_cutoff      = 5.e-20  # level 0 timestep below which we halt
+pelec.cfl            = 1.0     # cfl number for hyperbolic system
+pelec.init_shrink    = 0.01    # scale back initial timestep
+pelec.change_max     = 1.1     # maximum increase in dt over successive steps
+#pelec.fixed_dt = 1.0e-11
+pelec.max_dt = 1.0e-9
+pelec.initial_dt = 1.0e-12
+
+# DIAGNOSTICS & VERBOSITY
+pelec.sum_interval   = 1       # timesteps between computing mass
+pelec.v              = 1       # verbosity in PeleC cpp files
+amr.v                = 1       # verbosity in Amr.cpp
+
+# REFINEMENT / REGRIDDING
+amr.max_level       = 0       # maximum level number allowed
+amr.ref_ratio       = 2 2 2 2 # refinement ratio
+amr.regrid_int      = 2       # how often to regrid
+amr.blocking_factor = 4       # block factor in grid generation
+amr.max_grid_size   = 64 
+amr.subcycling_mode = None
+
+# CHECKPOINT FILES
+amr.checkpoint_files_output = 1
+amr.check_file      = chk      # root name of checkpoint file
+#amr.check_per       = 1.0e-6       # amount of time between checkpoints
+amr.check_int        = 500
+
+# PLOTFILES
+amr.plot_files_output = 1
+amr.plot_file       = plt
+amr.plot_int        = 50
+#amr.plot_per        = 1.0e-9
+amr.derive_plot_vars = pressure
+amr.plot_vars  =  density Temp rho_E rho_e phiV nE Efieldx Efieldy Efieldz
+pelec.plot_massfrac = false
+pelec.plot_vfrac = true
+pelec.plot_rhoy = false
+ef.plot_numdens = true
+ef.constEleTransport = 1
+ef.eleMobility = 5.0e24
+ef.C_dielectric = 1000.0
+
+pelec.monitor_file = true
+ef.pac_mechanism = 2            # 1 for original PAC mechanism, 2 for PAC mechanism with negative ions
+
+prob.p = 1013250.0
+#prob.rho = 0.0011719
+prob.T = 300.0
+#prob.eint = -9.3571267e+08 
+prob.vx_in =  0.0
+prob.vy_in =  0.0
+prob.Re_L = 1.0
+prob.Pr = 0.7
+#prob.phiV_bottom = 24463.e7
+prob.phiV_bottom = 12231.e3
+
+# Cylindrical pin-to-pin geometry
+eb2.use_eb2 = 1
+eb2.geom_type = all_regular
+ebd.boundary_grad_stencil_type = 0
+
+#fabarray.mfiter_tile_size = 1024 1024 1024
+#amrex.fpe_trap_invalid = 1
+#amrex.fpe_trap_zero = 1
+#amrex.fpe_trap_overflow = 1

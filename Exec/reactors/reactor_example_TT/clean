@@ -1,0 +1,6 @@
+#!/bin/bash
+rm -rf plt*
+rm -rf chk*
+rm -rf Backtrace*
+rm -rf myjob*
+rm -rf Monitor*
