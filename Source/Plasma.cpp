@@ -496,76 +496,76 @@ void PeleC::ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time)
 }
 
 // TODO: finish working on version of ef transport calc that can be folded more cleanly into Diffusion.cpp
- void PeleC::ef_calc_transportNew(amrex::Box const& bx,
-                               amrex::Array4<const amrex::Real> const& rhoY_in,
-                               amrex::Array4<const amrex::Real> const& EoN_in,
-                               amrex::Array4<amrex::Real> const& Ke_out,
-                               amrex::Array4<amrex::Real> const& rhoDe_out,
-                               amrex::Array4<amrex::Real> const& K_out
- ) {
-   BL_PROFILE("PeleC::ef_calc_transport()");
-  
-   // ndeak note - since only MOL is being used for now, it is assumed all data MFs are at time t=n
- 
-   if ( ef_verbose ) amrex::Print() << " Compute EF transport prop.\n";
- 
-   // ndeak add - get BCs for species (used in center->edge extrap)
-   amrex::Real mwt[NUM_SPECIES];
-   auto eos = pele::physics::PhysicsType::eos();
-   eos.molecular_weight(mwt);   // CGS
- 
-   Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
-   int useNL   = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
-   amrex::ParallelFor(bx, [=]
-   AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-   {
-      getKappaE(i,j,k,E_ID,Ke_out,EoN_in,rhoY_in,mwt);
-      getDiffE(i,j,k,E_ID,useNL,factor,rhoY_in,rhoDe_out,EoN_in,mwt);
-      getKappaSp(i,j,k, zk_num, K_out);
-   });
- 
-   if ( ef_use_NLsolve ) {
-//      // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
-//      // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
-//      // TODO: does cen2edg_cpp need to be modified to take into account EBs?
-//      const Box& domain = geom.Domain();
-//      bool use_harmonic_avg = def_harm_avg_cen2edge ? true : false;
-//      const BCRec& bcrec = get_desc_lst()[State_Type].getBC(nE);
-//  #ifdef _OPENMP
-//  #pragma omp parallel if (Gpu::notInLaunchRegion())
-//  #endif
-//       for (MFIter mfi(De_cc,TilingIfNotGPU()); mfi.isValid();++mfi)
-//       {
-//          for (int dir = 0; dir < AMREX_SPACEDIM; dir++)
-//          {
-//             const Box ebx = mfi.nodaltilebox(dir);
-//             const Box& edomain = amrex::surroundingNodes(domain,dir);
-//             const auto& diff_c  = De_cc.array(mfi);
-//             const auto& diff_ed = De_ec[dir]->array(mfi);
-//             const auto& kappa_c  = Ke_cc.array(mfi);
-//             const auto& kappa_ed = Ke_ec[dir]->array(mfi);
-//             const auto bc_lo = bcrec.lo(dir);
-//             const auto bc_hi = bcrec.hi(dir);
-//             amrex::ParallelFor(ebx, [dir, bc_lo, bc_hi, use_harmonic_avg, diff_c, diff_ed,
-//                                      kappa_c, kappa_ed, edomain]
-//             AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-//             {
-//                int idx[3] = {i,j,k};
-//                bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && idx[dir] <= edomain.smallEnd(dir) );
-//                bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && idx[dir] >= edomain.bigEnd(dir) );
-//                cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, diff_c, diff_ed);
-//                cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, kappa_c, kappa_ed);
-//             });
-//          }
-//       }
-//       if ( ef_debug ) {
-//          VisMF::Write(*De_ec[0],"DeEcX_Lvl"+std::to_string(level));
-//          VisMF::Write(*De_ec[1],"DeEcY_Lvl"+std::to_string(level));
-//          VisMF::Write(*Ke_ec[0],"KeEcX_Lvl"+std::to_string(level));
-//          VisMF::Write(*Ke_ec[1],"KeEcY_Lvl"+std::to_string(level));
-//       }
-   }
- }
+// void PeleC::ef_calc_transportNew(amrex::Box const& bx,
+//                               amrex::Array4<const amrex::Real> const& rhoY_in,
+//                               amrex::Array4<const amrex::Real> const& EoN_in,
+//                               amrex::Array4<amrex::Real> const& Ke_out,
+//                               amrex::Array4<amrex::Real> const& rhoDe_out,
+//                               amrex::Array4<amrex::Real> const& K_out
+// ) {
+//   BL_PROFILE("PeleC::ef_calc_transport()");
+//  
+//   // ndeak note - since only MOL is being used for now, it is assumed all data MFs are at time t=n
+// 
+//   if ( ef_verbose ) amrex::Print() << " Compute EF transport prop.\n";
+// 
+//   // ndeak add - get BCs for species (used in center->edge extrap)
+//   amrex::Real mwt[NUM_SPECIES];
+//   auto eos = pele::physics::PhysicsType::eos();
+//   eos.molecular_weight(mwt);   // CGS
+// 
+//   Real factor = EFConst::PP_RU_CGS / ( EFConst::Na * EFConst::elemCharge );
+//   int useNL   = (ef_use_NLsolve || ef_use_nEimplicit) ? 1:0;
+//   amrex::ParallelFor(bx, [=]
+//   AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+//   {
+//      getKappaE(i,j,k,E_ID,Ke_out,EoN_in,rhoY_in,mwt);
+//      getDiffE(i,j,k,E_ID,useNL,factor,rhoY_in,rhoDe_out,EoN_in,mwt);
+//      getKappaSp(i,j,k, zk_num, K_out);
+//   });
+// 
+//   if ( ef_use_NLsolve ) {
+////      // CC -> EC transport coeffs. These are PeleC class object used in the non-linear residual.
+////      // ndeak TODO: check to make sure we are checking all the necessary BCTypes for on_lo/hi
+////      // TODO: does cen2edg_cpp need to be modified to take into account EBs?
+////      const Box& domain = geom.Domain();
+////      bool use_harmonic_avg = def_harm_avg_cen2edge ? true : false;
+////      const BCRec& bcrec = get_desc_lst()[State_Type].getBC(nE);
+////  #ifdef _OPENMP
+////  #pragma omp parallel if (Gpu::notInLaunchRegion())
+////  #endif
+////       for (MFIter mfi(De_cc,TilingIfNotGPU()); mfi.isValid();++mfi)
+////       {
+////          for (int dir = 0; dir < AMREX_SPACEDIM; dir++)
+////          {
+////             const Box ebx = mfi.nodaltilebox(dir);
+////             const Box& edomain = amrex::surroundingNodes(domain,dir);
+////             const auto& diff_c  = De_cc.array(mfi);
+////             const auto& diff_ed = De_ec[dir]->array(mfi);
+////             const auto& kappa_c  = Ke_cc.array(mfi);
+////             const auto& kappa_ed = Ke_ec[dir]->array(mfi);
+////             const auto bc_lo = bcrec.lo(dir);
+////             const auto bc_hi = bcrec.hi(dir);
+////             amrex::ParallelFor(ebx, [dir, bc_lo, bc_hi, use_harmonic_avg, diff_c, diff_ed,
+////                                      kappa_c, kappa_ed, edomain]
+////             AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+////             {
+////                int idx[3] = {i,j,k};
+////                bool on_lo = ( ( bc_lo == amrex::BCType::ext_dir ) && idx[dir] <= edomain.smallEnd(dir) );
+////                bool on_hi = ( ( bc_hi == amrex::BCType::ext_dir ) && idx[dir] >= edomain.bigEnd(dir) );
+////                cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, diff_c, diff_ed);
+////                cen2edg_cpp( i, j, k, dir, 1, use_harmonic_avg, on_lo, on_hi, kappa_c, kappa_ed);
+////             });
+////          }
+////       }
+////       if ( ef_debug ) {
+////          VisMF::Write(*De_ec[0],"DeEcX_Lvl"+std::to_string(level));
+////          VisMF::Write(*De_ec[1],"DeEcY_Lvl"+std::to_string(level));
+////          VisMF::Write(*Ke_ec[0],"KeEcX_Lvl"+std::to_string(level));
+////          VisMF::Write(*Ke_ec[1],"KeEcY_Lvl"+std::to_string(level));
+////       }
+//   }
+// }
 
 // Setup BC conditions for linear Poisson solve on PhiV. Directly copied from the diffusion one ...
 void PeleC::ef_set_PoissonBC(std::array<LinOpBCType,AMREX_SPACEDIM> &mlmg_lobc,

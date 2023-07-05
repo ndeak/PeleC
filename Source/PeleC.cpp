@@ -806,10 +806,16 @@ PeleC::initData()
       });
     amrex::Gpu::synchronize();
   } else {
-    initLevelDataFromPlt(level, init_pltfile, S_new);
+  //  initLevelDataFromPlt(level, init_pltfile, S_new);
+          if (init_pltfile_from_lm){
+             initLevelDataFromPlt(level, init_pltfile, S_new, true);
+          } else {
+             initLevelDataFromPlt(level, init_pltfile, S_new);
+        }
   }
-
-  enforce_consistent_e(S_new);
+  if (!init_pltfile_from_lm) {
+     enforce_consistent_e(S_new);
+  }
 
   amrex::Real cur_time = state[State_Type].curTime();
 #ifdef PELEC_USE_PLASMA

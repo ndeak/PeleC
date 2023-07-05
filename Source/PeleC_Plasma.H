@@ -255,12 +255,12 @@
   void ef_calc_transport(const amrex::MultiFab& S, const amrex::Real &time);
 
   // Version of ef transport that fits inside Diffusion.cpp loop
-  void ef_calc_transportNew(amrex::Box const& bx,
-                         amrex::Array4<const amrex::Real> const& rhoY_in,
-                         amrex::Array4<const amrex::Real> const& EoN_in,
-                         amrex::Array4<amrex::Real> const& Ke_out,
-                         amrex::Array4<amrex::Real> const& rhoDe_out,
-                         amrex::Array4<amrex::Real> const& K_out) ;
+//  void ef_calc_transportNew(amrex::Box const& bx,
+//                         amrex::Array4<const amrex::Real> const& rhoY_in,
+//                         amrex::Array4<const amrex::Real> const& EoN_in,
+//                         amrex::Array4<amrex::Real> const& Ke_out,
+//                         amrex::Array4<amrex::Real> const& rhoDe_out,
+//                         amrex::Array4<amrex::Real> const& K_out) ;
   
   // Boundary conditions
   void setBCPhiV ( std::array<amrex::LinOpBCType,AMREX_SPACEDIM> &linOp_lobc,

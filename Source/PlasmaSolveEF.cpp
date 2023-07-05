@@ -353,8 +353,8 @@ PeleC::solveEF ( Real time,
 
    // relative and absolute tolerances for linear solve
    const Real tol_rel = ef_PoissonTol;
-   amrex::Print() << "max charge tol = " << chargeDistrib.norm0()*ef_PoissonTol << " , max phiV tol = " << prob_parm.PhiV_top*ef_PoissonTol << ", abs tol = 1.0e-2\n"; 
-   const Real tol_abs = std::max(std::max(chargeDistrib.norm0(),phiV_alias.norm0()) * ef_PoissonTol, 1.0e-2);
+   amrex::Print() << "max charge tol = " << chargeDistrib.norm0()*ef_PoissonTol << " , max phiV tol = " << prob_parm.PhiV_top*ef_PoissonTol << ", abs tol = 1.0e-5\n"; 
+   const Real tol_abs = std::max(std::max(chargeDistrib.norm0(),phiV_alias.norm0()) * ef_PoissonTol, 1.0e-5);
 
    mlmg.setVerbose(ef_PoissonVerbose);
    mlmg.setBottomVerbose(ef_PoissonVerbose);
