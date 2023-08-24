@@ -691,12 +691,15 @@ initialize_EB2(
           std::string  tipstr = "pin_" + convertIntGG(ipin) + "_tip"; 
           std::string  cstr = "pin_" + convertIntGG(ipin) + "_c"; 
           std::string  dirstr = "pin_" + convertIntGG(ipin) + "_dir"; 
+          std::string  rstr = "pin_rmax"; 
           amrex::Vector<amrex::Real> vectip;
           amrex::Real  pinc;
+          amrex::Real  rmax;
           int  pindir;
           pp.getarr(tipstr.c_str(), vectip,  0, AMREX_SPACEDIM);
           pp.get(cstr.c_str(), pinc);
           pp.get(dirstr.c_str(), pindir);
+          pp.get(rstr.c_str(), rmax);
           for(int idir = 0; idir < AMREX_SPACEDIM; idir++)
           {
               tip[idir] = vectip[idir] ;
@@ -704,7 +707,7 @@ initialize_EB2(
           allpin[ipin] = tip;
 
           impfunc_pins[ipin] = std::unique_ptr<amrex::EB2::PinIF>
-                              (new amrex::EB2::PinIF(pinc, allpin[ipin], pindir, false));
+                              (new amrex::EB2::PinIF(pinc, allpin[ipin], pindir, rmax, false));
       }
 
       auto allpin_IF = amrex::EB2::makeUnion(*impfunc_pins[0],*impfunc_pins[1]);
