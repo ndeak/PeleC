@@ -60,26 +60,47 @@ struct SpeciesEnergyFlux
     T = q(ivm, QTEMP);
     eos.T2Hi(T, hi2);
     amrex::Real Vc = 0.0;
+    amrex::Real Vcamb = 0.0;
+    amrex::Real VcO2m = 0.0;
+    amrex::Real Mfac  = 0.0;
+    amrex::Real wavg  = 0.0;
     const amrex::Real dpdx = dxinv * (q(iv, QPRES) - q(ivm, QPRES));
     const amrex::Real dlnp = dpdx / (0.5 * (q(iv, QPRES) + q(ivm, QPRES)));
 
 #ifdef PELEC_USE_PLASMA
-    // amrex::Real beta; 
-    // amrex::Real beta_denom = 0.0;
-    // amrex::Real flx_zero[NUM_SPECIES];
-    // // Calculate the denominator for beta (used in ambipolar diffusion), and diffusive fluxes    
-    // if(use_ambiDiff){
-    //   for (int ns = 0; ns < NUM_SPECIES; ++ns) {
-    //     const amrex::Real Xface = (mole1[ns] + mole2[ns] >= 0.0) ? 0.5 * (mole1[ns] + mole2[ns]):0.0;
-    //     const amrex::Real dYdx = dxinv * (mass1[ns] - mass2[ns]);
-    //     beta_denom += chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * Xface;
-    //     flx_zero[ns] = -coef[dComp_rhoD + ns] * (dYdx);
-    //     if(beta_denom < 0.0){
-    //       printf("ERROR: BETA DENOMINATOR SHOULD BE GREATER THAN ZERO (%.6e)! \n", beta_denom);
-    //       exit(1);
-    //     }
-    //   }
-    // }
+     amrex::Real beta_denom = 0.0;
+     //amrex::Real flx_zero[NUM_SPECIES];
+     // Calculate the denominator for beta (used in ambipolar diffusion), and diffusive fluxes    
+     amrex::Real summ  = 0.0;
+     amrex::Real wsumj  = 0.0;
+     if(use_ambiDiff){
+       for (int ns = 0; ns < NUM_SPECIES; ++ns) {
+         const amrex::Real Xface = 0.5 * (mole1[ns] + mole2[ns]);
+         const amrex::Real Yface = 0.5 * (mass1[ns] + mass2[ns]);
+         const amrex::Real hface = 0.5 * (hi1[ns] + hi2[ns]);
+         const amrex::Real dXdx = dxinv * (mole1[ns] - mole2[ns]);
+         const amrex::Real dYdx = dxinv * (mass1[ns] - mass2[ns]);
+         amrex::Real Vd = 0.0;
+
+         beta_denom += chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * Xface;
+
+         if(ns == E_ID){
+           Vd = -coef[dComp_rhoD + ns] * (dYdx);
+         }
+         else{
+           Vd = -coef[dComp_rhoD + ns] * (dXdx + (Xface - Yface) * dlnp);
+         }
+
+         wsumj += chrg[ns]/wts[ns]*Vd;
+         summ += Yface/wts[ns];
+       }
+      //if(beta_denom < 0.0){
+       //beta_denom = 1.0e6;
+      //  printf("ERROR: BETA DENOMINATOR SHOULD BE GREATER THAN ZERO (%.6e)! \n", beta_denom);
+      //  exit(1);
+     // }
+      wavg = 1.0/summ;
+     }
 #endif
 
     for (int ns = 0; ns < NUM_SPECIES; ++ns) {
@@ -89,6 +110,7 @@ struct SpeciesEnergyFlux
       const amrex::Real dXdx = dxinv * (mole1[ns] - mole2[ns]);
       const amrex::Real dYdx = dxinv * (mass1[ns] - mass2[ns]);
       amrex::Real Vd = 0.0;
+      amrex::Real beta = 0.0;
 #ifdef PELEC_USE_PLASMA
       if(ns == E_ID){
         Vd = -coef[dComp_rhoD + ns] * (dYdx);
@@ -99,23 +121,14 @@ struct SpeciesEnergyFlux
 #else
         Vd = -coef[dComp_rhoD + ns] * (dXdx + (Xface - Yface) * dlnp);
 #endif
+      if(use_ambiDiff && chrg[ns] != 0){
+         beta = chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * Xface / beta_denom;
+         //Mfac = wavg/wts[ns]; 
+         Vd = Vd-beta*wts[ns]/chrg[ns]*wsumj;
+      }
     
-#ifdef PELEC_USE_PLASMA
-      // if(use_ambiDiff && beta_denom != 0.0 && chrg[ns] != 0){
-      //   amrex::Real Xtmp = (Xface >= 0.0) ? Xface:0.0;
-      //   amrex::Real beta = chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * amrex::Math::abs(Xtmp) / beta_denom;
-      //   amrex::Real tmp_sum = 0.0;
-      //   for (int nsp = 0; nsp < NUM_SPECIES; ++nsp) {
-      //     if(nsp != ns) tmp_sum += (chrg[nsp]*wts[ns]) / (chrg[ns]*wts[nsp]) * flx_zero[nsp];
-      //   }
-      //   if(beta < 0.0 || beta > 1.0) {
-      //     printf("ERROR: VALUE OF BETA NOT BETWEEN ZERO AND ONE (%.6e)\n", beta);
-      //     exit(1);
-      //   }
-      //   Vd = ((1.0 - beta) * flx_zero[ns] - beta * tmp_sum);
-      // }
-#endif
       flx(iv, UFS + ns) = Vd;
+
       Vc += Vd;
 #ifdef PELEC_USE_TWO_TEMP
       if(ns != E_ID) flx(iv, UEDEN) += Vd * hface;
@@ -127,14 +140,16 @@ struct SpeciesEnergyFlux
     for (int ns = 0; ns < NUM_SPECIES; ++ns) {
       const amrex::Real Yface = 0.5 * (mass1[ns] + mass2[ns]);
       const amrex::Real hface = 0.5 * (hi1[ns] + hi2[ns]);
-      // if(!use_ambiDiff || beta_denom == 0.0 || chrg[ns] == 0){
-        flx(iv, UFS + ns) -= Yface * Vc;
+      const amrex::Real Xface = 0.5 * (mole1[ns] + mole2[ns]);
+
+      flx(iv, UFS + ns) -= Yface * Vc;
+
 #ifdef PELEC_USE_TWO_TEMP
         if(ns != E_ID) flx(iv, UEDEN) -= Yface * hface * Vc;
 #else
         flx(iv, UEDEN) -= Yface * hface * Vc;
 #endif
-      // }
+      
     }
 
 #ifdef PELEC_USE_TWO_TEMP

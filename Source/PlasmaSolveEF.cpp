@@ -308,7 +308,7 @@ PeleC::solveEF ( Real time,
        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
        {   
            Real y = problo[1] + (j + 0.5)*dx[1]; 
-           if (y >= probhi[1] / 2.0) {
+           if (y >= (probhi[1]+problo[1]) / 2.0) {
                phiV_ar(i,j,k) = prob_parm.PhiV_top;
            } else {
                phiV_ar(i,j,k) = prob_parm.PhiV_bottom;
