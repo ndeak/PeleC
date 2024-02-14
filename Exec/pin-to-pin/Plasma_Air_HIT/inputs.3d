@@ -1,0 +1,179 @@
+# ------------------  INPUTS TO MAIN PROGRAM  -------------------
+max_step = 100000
+stop_time = 100.0e-9
+
+# PROBLEM SIZE & GEOMETRY
+geometry.is_periodic =  0  0  0
+geometry.coord_sys   =  0       # 0 => cart
+geometry.prob_lo     =  0    0    0
+geometry.prob_hi     =  1.0  0.5  1.0     # EB test case 2
+amr.n_cell           =  64 32 64
+
+# >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
+# Interior, UserBC, Symmetry, SlipWall, NoSlipWall
+# >>>>>>>>>>>>>  BC KEYWORDS <<<<<<<<<<<<<<<<<<<<<<
+pelec.lo_bc       =  "Symmetry" "SlipWall" "Symmetry"
+pelec.hi_bc       =  "Symmetry" "SlipWall" "Symmetry"
+
+# Problem setup
+pelec.eb_boundary_T = 400.
+pelec.eb_isothermal = 0
+pelec.eb_noslip = 1
+pelec.chem_integrator = "ReactorCvode"
+ode.implicit_solve = 1
+ode.analytical_jacobian = 0
+cvode.solve_type = "GMRES"
+pelec.redistribution_type = "StateRedist"
+pelec.allow_negative_energy = 1
+pelec.allow_small_energy = 1
+ode.rtol = 1.0e-6                     # Relative tolerance of the chemical solve
+ode.atol = 1.0e-5                     # Absolute tolerance factor applied on typical values
+cvode.max_order  = 4                  # CVODE max BDF order.
+
+# Initial thermo conditions (make sure rho and p are consistent with T you want)
+prob.p = 1013250
+prob.T = 400.0
+prob.rho = 8.8262e-4
+#prob.rho = 0.0024006256882
+#prob.p = 1013250
+#prob.T = 300.0
+#prob.rho = 0.0024006256882
+prob.iname = "HITDataScalar_1.0cm_1.0cm_1.0cm.bin"
+prob.inres = 512
+prob.restart = true
+prob.binfmt = true
+#amr.probinit_natonce = 14
+amr.restart = chk02000
+amr.loadbalance_with_workestimates = 1
+
+# Plasma variables
+pelec.ion_bc_type = 1             # ion BC type (0 -> weak efield BCs, 1 -> strong efield BCs)
+pelec.zero_bc_grad = 1            # attempt to impose 0 gradient BCs at all electrode surfaces for charged particles
+pelec.secondary_em_coef = 0.05    # secondary electron emission coefficient
+pelec.pulse_freq = 10.0e3            # pulse frequency (Hz)
+pelec.pulse_fwhm = 10.0e-9             # pulse FWHM (s)
+pelec.pulse_peak = 10000.0e7        # peak potential of the driven electrode (erg/C)
+#pelec.pulse_peak = 0.0        # peak potential of the driven electrode (erg/C)
+pelec.pulse_timing = 10.0e-9          # timing of the first pulse peak (s)
+pelec.pulse_num = 1              # number of pulses
+pelec.pulse_dt = 1.0e-10         # dt around each pulse (s)
+ef.use_nonLinearSolve = 0
+ef.sigmoid_pulse = 1         # Use sigmoid pulse with rise time = fwhm
+ef.sigmoid_pulse = 1         # Use sigmoid pulse with rise time = fwhm
+ef.pulse_delay = 3.0e-9
+ef.pulse_rise = 4.0e-9
+ef.pulse_plateau = 50.0e-9
+
+
+## ENERGY LIMITER
+ef.energy_limiter = 1
+ef.energy_zero = -49357.41964
+ef.energy_max = 8000.0
+
+
+# WHICH PHYSICS
+pelec.do_hydro = 1
+pelec.do_mol = 1
+pelec.do_react = 1
+pelec.diffuse_temp = 1
+pelec.diffuse_vel  = 1
+pelec.diffuse_spec = 1
+pelec.diffuse_enth = 1
+ef.do_drift = 1
+pelec.zero_bc_flux = 0          # overwrites ion_bc_type, sets species fluxes at electrodes to zero
+ef.noSpaceCharge = 0             # Solve Poisson problem without space charge effects
+ef.do_photoionization = 1
+ef.star_update = 0
+ef.semiImpEfield = 1
+ef.ion_rate_type = 1
+pelec.add_ext_src = 1           # turns on joule heating
+ef.relax_eleDiff = 0
+ef.use_nEDiffImp = 0
+ef.C_dielectric = 10.0
+
+
+# TIME STEP CONTROL
+pelec.dt_cutoff      = 5.e-20  # level 0 timestep below which we halt
+pelec.cfl            = 0.27     # cfl number for hyperbolic system
+pelec.init_shrink    = 0.8    # scale back initial timestep
+pelec.change_max     = 1.05     # maximum increase in dt over successive steps
+#pelec.fixed_dt = 2.0e-13
+pelec.max_dt = 1.0e-10
+
+# DIAGNOSTICS & VERBOSITY
+pelec.sum_interval   = 1       # timesteps between computing mass
+pelec.v              = 1       # verbosity in PeleC cpp files
+amr.v                = 1       # verbosity in Amr.cpp
+
+# REFINEMENT / REGRIDDING
+amr.max_level       = 5       # maximum level number allowed
+amr.ref_ratio       = 2 2 2 2 # refinement ratio
+amr.regrid_int      = 2       # how often to regrid
+amr.blocking_factor = 8       # block factor in grid generation
+amr.max_grid_size   = 64
+amr.subcycling_mode = None
+
+# TAGGING
+tagging.efielderr = 300.0
+tagging.max_efield_lev = 3
+tagging.negraderr = 1.0e-16
+tagging.max_negrad_lev = 0
+tagging.efieldgraderr = 50.0
+tagging.max_efieldgrad_lev = 10
+
+tagging.max_ne_lev = 0
+tagging.neerr = 1.0e11
+tagging.max_o4grad_lev = 0
+tagging.max_Telegrad_lev = 0
+tagging.max_Tele_lev = 0
+
+tagging.tempgrad = 100.0
+tagging.max_tempgrad_lev = 4
+tagging.pressgrad = 0.25e5
+tagging.max_pressgrad_lev = 3
+tagging.max_vfracerr_lev = 5
+
+tagging.plasma_channel_lev = 4
+tagging.plasma_channel_bottom = 0.11
+tagging.plasma_channel_top = 0.39
+tagging.plasma_channel_r0 = 0.5
+tagging.plasma_channel_rmax = 0.075
+
+# CHECKPOINT FILES
+amr.checkpoint_files_output = 1
+amr.check_file      = chk      # root name of checkpoint file
+#amr.check_file      = chk      # root name of checkpoint file
+amr.check_int       = 200       # amount of time between checkpoints
+
+# PLOTFILES
+amr.plot_files_output = 1
+amr.plot_file       = plt
+#amr.plot_file       = plt
+amr.plot_per        = 1.0e-10
+amr.derive_plot_vars = pressure x_velocity y_velocity z_velocity magvel
+amr.plot_vars  =  density Temp rho_E rho_e phiV nE Efieldx Efieldy Efieldz
+pelec.plot_massfrac = false
+pelec.plot_vfrac = true
+pelec.plot_rhoy = false
+ef.plot_numdens = true
+pelec.monitor_file = true
+ef.pac_mechanism = 0          # 0 for air, 1 for original PAC mechanism, 2 for PAC mechanism with negative ions
+
+# Parabolic pin-to-pin geometry
+eb2.use_eb2 = 1
+eb2.geom_type = pins
+#eb2.geom_type = all_regular
+eb2.small_volfrac = 1.e-4
+pins.num_pin = 2
+pins.pin_0_tip = 0.5 0.125 0.5
+pins.pin_1_tip = 0.5 0.375 0.5
+pins.pin_0_c = -20.0
+pins.pin_1_c = 20.0
+pins.pin_0_dir = 1
+pins.pin_1_dir = 1
+pins.pin_rmax = 0.1e10
+ebd.boundary_grad_stencil_type = 0
+
+#amrex.fpe_trap_invalid = 1
+#amrex.fpe_trap_zero = 1
+#amrex.fpe_trap_overflow = 1

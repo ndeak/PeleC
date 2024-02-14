@@ -66,12 +66,14 @@ PeleC::solvePI ( Real time,
     // Quenching pressure factor, see Pancheshnyi "Photoionization produced by low-current discharges in O2, air, N2 and CO2" (2015)
     // FIXME fix hard-coded to assume atmospheric pressure 
     // FIXME: Would this value differ when HC fuel present? probably...
-    amrex::Real pfact = 30.0 / (760 + 30.0);
+    amrex::Real pTorr = prob_parm.p*0.1*0.0075; // background pressure from [cgs] to [Torr]
+    amrex::Real pfact = 30.0 / (pTorr + 30.0);
 
     // Efficiency factor, see Breden "A numerical study of high-pressure non-equilibrium streamers for combustion ignition application" (2013)
     // Also see Luque "Photoionization in negative streamers: Fast computations and two propagation modes" (2007)
     // Quantity has a small dependence on E/N but can be considered approximately constant
     amrex::Real efact = 0.02;
+    if (streamer_test) efact = 0.075;
 
     amrex::Real mwt[NUM_SPECIES];
     auto eos = pele::physics::PhysicsType::eos();
@@ -141,9 +143,33 @@ PeleC::solvePI ( Real time,
           nO2 = rhoY_ar(i,j,k,O2_ID) * EFConst::Na / mwt[O2_ID];
           nN2 = rhoY_ar(i,j,k,N2_ID) * EFConst::Na / mwt[N2_ID];
 
+          // Added by Alfredo 5/15/2023 to override the default ionization rates
+          amrex::Real EoN = eon_ar(i,j,k);
+          if (eon_ar(i,j,k) < 1.0e-10) EoN = 0.0;
+          amrex::Real T0 = 273.0;
+          amrex::Real c1 = 1.75e3;
+          amrex::Real c2 = 1.15e12;
+          amrex::Real c3 = -4.0e4;
+          amrex::Real Tr1 = (T0/300.0);
+          amrex::Real Tr2 = (300.0/T0);
+          amrex::Real psi = 0.9 / (1.49 + exp(-(750.0/587.0) * Tr1) );
+          amrex::Real ndens = (nO2+nN2)*1e6;   // Convert from 1/cm3 --> 1/m3
+          amrex::Real Emag = EoN * 1.0e-21 * ndens;   // Convert from Td --> V/m
+          amrex::Real denom = (Emag / 750.0) * Tr2;
+          amrex::Real alphaBar = (EoN > 0.0) ? 750.0 * Tr1 * (c1 * (1.0 + c2/(pow(denom,3))) * exp(c3 / denom) - psi):-340.75;
+          amrex::Real mu_e = (EoN > 0.0) ? 2.3987 * pow(Emag, -0.26) : 0.0;
+          amrex::Real k_i = 0.0;
+          
+          if ((streamer_test)){
+             // rate (1/s)
+             k_i = mu_e * Emag * alphaBar;
+          }
+
+
           // Calculate PI emission rate [1/cm3-s]
           if(nEl > 0.0){
             ion_ar(i,j,k) = efact * pfact * nEl * (frateO2*nO2 + frateN2*nN2);
+            if (streamer_test) ion_ar(i,j,k) = efact * pfact * nEl * k_i;
           }
           else{
             ion_ar(i,j,k) = 0.0;
@@ -159,9 +185,13 @@ PeleC::solvePI ( Real time,
     amrex::Real PI_lambda[3] = {4.14785e-5, 1.095e-4, 6.6756e-4};   // [cm-1 Ba-1]
     amrex::Real PI_A[3] = {1.1173e-10, 2.869e-9, 2.7488e-7};        // [cm-2 Ba-2]
     
-    // 3 term exponential fit for ethylene/air mixture (same units as above)
-    // PI_lambda[0] = 7.1678576e-4;  PI_lambda[1] = 4.251459675e-4;  PI_lambda[2] = 1.5016644256e-3;
-    // PI_A[0] = 3.7617338e-8; PI_A[1] = 1.571636e-9;  PI_A[2] = 3.495984e-7;
+    // 3 term exponential fit for ethylene/air atmoshperic mixture (same units as above)
+    //PI_lambda[0] = 7.1678576e-4;  PI_lambda[1] = 4.251459675e-4;  PI_lambda[2] = 1.5016644256e-3;
+    //PI_A[0] = 3.7617338e-8; PI_A[1] = 1.571636e-9;  PI_A[2] = 3.495984e-7;
+
+    // 3 term exponential fit for ethylene/air mixture at hypersonic cavity conditions (Alfredo 10/06/2023)
+    //PI_lambda[0] = 2.16579334e-03;  PI_lambda[1] = 7.52475572e-04;  PI_lambda[2] = 2.51577673e-04;
+    //PI_A[0] = 1.49581507e-06; PI_A[1] = 1.50529995e-07;  PI_A[2] = 9.41728931e-10;
 
     // amrex::Real PI_lambda[3] = {3.35278e-5, 8.4082e-5, 4.49588e-4};   // [cm-1 Ba-1]
     // amrex::Real PI_A[3] = {5.025427e-6, 2.59522e-5, 2.294445e-4};        // [cm-1 Ba-1]
