@@ -17,7 +17,7 @@ PeleC::solvePI ( Real time,
 {
     BL_PROFILE("PeleC::solvePI()");
 
-    amrex::Print() << "Solving for photoionization source \n";
+    amrex::Print() << "Solving for photoionization source, with fit = " << ef_photo_fit << " \n ";
 
     // Photoionization model for air under atmospheric conditions
     // FIXME: Model does not account for photon absoption when hydrocarbons are present
@@ -177,19 +177,34 @@ PeleC::solvePI ( Real time,
         }); 
     }
 
-
+    // USE FUNCTIONALITY BELOW TO ADD NEW PHOTOIONIZATION FITS, MAKE SURE THE UNITS ARE CORRECT [CGS]
     // See Bourdon "Efficient models for photoionization produced by non-thermal gas discharges in air based on radiative transfer and the Helmholtz equations" (2007)
-    // Using 3 exponential model
+    // Using 3 exponential model for air
     // (-(lambda_j P_O2)^2 + nabla^2)S_ph^j = -A_j P_O2^2 I_r
-    amrex::Real P_O2 = prob_parm.p * 0.21;
-    amrex::Real PI_lambda[3] = {4.14785e-5, 1.095e-4, 6.6756e-4};   // [cm-1 Ba-1]
-    amrex::Real PI_A[3] = {1.1173e-10, 2.869e-9, 2.7488e-7};        // [cm-2 Ba-2]
-    
+    amrex::Real P_O2 = 0.0;
+    amrex::Real PI_lambda[3] = {0.0, 0.0, 0.0};   // [cm-1 Ba-1]
+    amrex::Real PI_A[3] = {0.0, 0.0, 0.0};        // [cm-2 Ba-2]
+    if (ef_photo_fit == 0){
+        P_O2 = prob_parm.p * 0.21;
+        //PI_lambda[3] = {4.14785e-5, 1.095e-4, 6.6756e-4};   // [cm-1 Ba-1]
+        //PI_A[3] = {1.1173e-10, 2.869e-9, 2.7488e-7};        // [cm-2 Ba-2]
+        PI_lambda[0] = 4.14785e-5;  PI_lambda[1] = 1.095e-4;  PI_lambda[2] = 6.6756e-4;
+        PI_A[0] = 1.1173e-10; PI_A[1] = 2.869e-9;  PI_A[2] = 2.7488e-7;
+    }
     // 3 term exponential fit for ethylene/air atmoshperic mixture (same units as above)
     //PI_lambda[0] = 7.1678576e-4;  PI_lambda[1] = 4.251459675e-4;  PI_lambda[2] = 1.5016644256e-3;
     //PI_A[0] = 3.7617338e-8; PI_A[1] = 1.571636e-9;  PI_A[2] = 3.495984e-7;
 
     // 3 term exponential fit for ethylene/air mixture at hypersonic cavity conditions (Alfredo 10/06/2023)
+    else if (ef_photo_fit == 1){
+        PI_lambda[0] = 2.16579334e-03;  PI_lambda[1] = 7.52475572e-04;  PI_lambda[2] = 2.51577673e-04;
+        PI_A[0] = 1.49581507e-06; PI_A[1] = 1.50529995e-07;  PI_A[2] = 9.41728931e-10;
+    }
+
+    else {
+        amrex::Print() << "This photoionization fit is not available ! Check ef_photo_fit options ! Turning photoionization off! \n";
+        ef_do_photoionization = 0;
+    }
     //PI_lambda[0] = 2.16579334e-03;  PI_lambda[1] = 7.52475572e-04;  PI_lambda[2] = 2.51577673e-04;
     //PI_A[0] = 1.49581507e-06; PI_A[1] = 1.50529995e-07;  PI_A[2] = 9.41728931e-10;
 

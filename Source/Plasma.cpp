@@ -56,6 +56,7 @@ PeleC::plasma_init()
     pp.query("pulse_plateau",ef_pulse_plateau);
     pp.query("do_drift",ef_do_drift);
     pp.query("do_photoionization", ef_do_photoionization);
+    pp.query("photo_fit", ef_photo_fit);
     pp.query("ion_rate_type", ion_rate_type);
     pp.query("star_update", ef_star_update);
     pp.query("semiImpEfield", ef_semiImpEfield);

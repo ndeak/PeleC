@@ -91,6 +91,7 @@
   static int         ef_constVoltage;         // Apply a constant voltage (no time variance)
   static int         ef_do_drift;             // Include drift processes for charged species
   static int         ef_do_photoionization;   // Include photoionization
+  static int         ef_photo_fit;   // Include photoionization
   static int         ef_star_update;         // Do update after just first start state (=1), and second star state (=2), neither (=0)
   static int         ef_semiImpEfield;         // Use a semi-implicit approach to solve for the reduced electric field
 

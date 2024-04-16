@@ -91,6 +91,7 @@ int PeleC::ef_star_update = 0;
 int PeleC::ef_constVoltage = 0;
 int PeleC::ef_do_drift = 1;
 int PeleC::ef_do_photoionization = 0;
+int PeleC::ef_photo_fit = 0;
 int PeleC::ef_semiImpEfield = 0;
 int PeleC::ef_triangle_pulse = 0;
 int PeleC::ef_trapezoidal_pulse = 0;
@@ -1085,7 +1086,7 @@ PeleC::estTimeStep(amrex::Real /*dt_old*/)
     // Tried factors of 50 and 100, but solution instability was observed 
     amrex::Real min_dielectric = 0.5*dielectric_ts.min(0, 0, false);
     amrex::Real min_diele = (min_dielectric == 0) ? 1000:min_dielectric;
-    estdt_hydro = (ef_semiImpEfield) ? amrex::min<amrex::Real>(estdt_hydro, ef_C_dielectric*min_diele):amrex::min<amrex::Real>(estdt_hydro, min_diele);
+    estdt_hydro = (ef_semiImpEfield || ef_ambiDiff) ? amrex::min<amrex::Real>(estdt_hydro, ef_C_dielectric*min_diele):amrex::min<amrex::Real>(estdt_hydro, min_diele);
 #endif
 
     // Determine if this is more restrictive than the maximum timestep limiting
