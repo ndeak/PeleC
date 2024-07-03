@@ -45,10 +45,28 @@ pc_initdata(
 
 
   // Mass fractions corresponding to 1e3 1/cm3 ICs for electrons and O2+, in stoichiometric ethylene air
-  mfs[0] = 7.7787881e-22;    // E
-  mfs[O2_ID] = 0.218157027610499;
-  mfs[N2_ID] = 0.78184297239;
-  mfs[O2p_ID] = 9.0678200e-17;    // O4+
+
+  //NOTE: The background level of ionization is assumed to be in 1/m3
+  amrex::Real mwO2 = 31.99;// g/mol
+  amrex::Real mwN2 = 28.01;// g/mol
+  amrex::Real me   = 9.1093837e-28;// g
+  amrex::Real mol  = 6.02214e23;//
+  amrex::Real kb   = 1.380649e-23;// 
+  amrex::Real masstot;// g
+  amrex::Real Ntot;  // 1/m3
+  amrex::Real n0   = prob_parm.n0;// 1/m3
+  //amrex::Real nO2  = 0.0;// 1/m3
+
+  Ntot = (prob_parm.p/10)/(kb*prob_parm.T); // particles 1/m3
+  Ntot = Ntot-2*n0;  
+  masstot = (mwO2*Ntot*0.21/mol) + (mwN2*Ntot*0.79/mol) + n0*me +n0/mol*mwO2;
+
+  mfs[0] = n0*me/masstot;    // E
+  mfs[O2p_ID] = (n0/mol*mwO2)/masstot;    // O4+
+  //mfs[O2_ID] = 0.218157027610499;
+  mfs[O2_ID] = (mwO2*Ntot*0.21/mol)/masstot;
+  //mfs[N2_ID] = 0.78184297239;
+  mfs[N2_ID] = (mwN2*Ntot*0.79/mol)/masstot;
 
 
   //mfs[40] = 2.869547e-02;//N2vib 1 

@@ -10,6 +10,7 @@ struct ProbParmDevice
   amrex::Real T = 1000.0;
   amrex::Real rho = 0.0;
   amrex::Real eint = 0.0;
+  amrex::Real n0 = 1.0e9; // 1/cm3
   amrex::Real vx_in = 0.0;
   amrex::Real vy_in = 0.0;
   amrex::Real Re_L = 0.0;

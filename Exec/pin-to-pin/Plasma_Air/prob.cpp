@@ -25,6 +25,7 @@ amrex_probinit(
   pp.query("p", PeleC::h_prob_parm_device->p);
   //pp.query("rho", PeleC::h_prob_parm_device->rho);
   pp.query("T", PeleC::h_prob_parm_device->T);
+  pp.query("n0", PeleC::h_prob_parm_device->n0);
   //pp.query("eint", PeleC::h_prob_parm_device->eint);
   pp.query("vx_in", PeleC::h_prob_parm_device->vx_in);
   pp.query("vy_in", PeleC::h_prob_parm_device->vy_in);

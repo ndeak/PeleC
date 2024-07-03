@@ -121,11 +121,14 @@ struct SpeciesEnergyFlux
 #else
         Vd = -coef[dComp_rhoD + ns] * (dXdx + (Xface - Yface) * dlnp);
 #endif
+
+#ifdef PELEC_USE_PLASMA
       if(use_ambiDiff && chrg[ns] != 0){
          beta = chrg[ns] * chrg[ns] * coef[dComp_rhoD + ns] * Xface / beta_denom;
          //Mfac = wavg/wts[ns]; 
          Vd = Vd-beta*wts[ns]/chrg[ns]*wsumj;
       }
+#endif
     
       flx(iv, UFS + ns) = Vd;
 
